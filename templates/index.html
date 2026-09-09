@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lab Exam File Submission Portal</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <div class="background-decor"></div>
+    <main class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="badge">ACCL Research Lab • IIT Bhilai</div>
+            <h1>Lab Exam Submission Portal</h1>
+            <p class="subtitle">Direct submission portal for student laboratory examinations. No login required.</p>
+        </header>
+
+        <!-- Main Submission Card -->
+        <section class="card" id="submissionCard">
+            <form id="submissionForm" enctype="multipart/form-data" novalidate>
+                <!-- Roll Number Section -->
+                <div class="form-group">
+                    <label for="rollNumber">
+                        <span class="label-title">Roll Number</span>
+                        <span class="label-hint">Alphanumeric (auto-capitalized)</span>
+                    </label>
+                    <div class="input-wrapper">
+                        <input 
+                            type="text" 
+                            id="rollNumber" 
+                            name="roll_number" 
+                            placeholder="e.g. CS21B001 or 12040120"
+                            autocomplete="off"
+                            autocapitalize="characters"
+                            spellcheck="false"
+                            required
+                            maxlength="30"
+                        >
+                        <span class="input-icon" id="rollIcon">🔤</span>
+                    </div>
+                    <div class="status-tip" id="rollStatusTip"></div>
+                </div>
+
+                <!-- File Upload Section -->
+                <div class="form-group">
+                    <label>
+                        <span class="label-title">Exam File (.zip)</span>
+                        <span class="label-hint">Multiple submissions allowed (latest is considered)</span>
+                    </label>
+                    <div class="drop-zone" id="dropZone">
+                        <input type="file" id="examFile" name="exam_file" accept=".zip,.tar.gz,.tgz,.7z,.rar,.tar" required>
+                        <div class="drop-content" id="dropContent">
+                            <div class="upload-icon">📦</div>
+                            <div class="drop-title">Drag & drop your <strong>.zip</strong> exam file here</div>
+                            <div class="drop-or">or</div>
+                            <button type="button" class="btn-browse" id="btnBrowse">Browse File</button>
+                            <div class="drop-limit">Accepts .zip archives (Max 150 MB)</div>
+                        </div>
+                        <div class="file-preview" id="filePreview" style="display: none;">
+                            <div class="file-info">
+                                <span class="file-icon">📁</span>
+                                <div class="file-details">
+                                    <span class="file-name" id="previewFileName">filename.zip</span>
+                                    <span class="file-size" id="previewFileSize">0 KB</span>
+                                </div>
+                            </div>
+                            <button type="button" class="btn-remove" id="btnRemoveFile" title="Remove file">✕</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info Alert -->
+                <div class="info-box">
+                    <span class="info-icon">ℹ️</span>
+                    <div>
+                        <strong>Notice:</strong> You may submit multiple times if you make updates. Each new submission will be saved and only your <strong>latest submitted file</strong> will be evaluated.
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="progress-container" id="progressContainer" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">Uploading... 0%</div>
+                </div>
+
+                <!-- Error Box -->
+                <div class="alert alert-error" id="errorAlert" style="display: none;"></div>
+
+                <!-- Submit Button -->
+                <button type="submit" class="btn-submit" id="btnSubmit">
+                    <span class="btn-text">Submit Exam File</span>
+                    <span class="btn-loader" style="display: none;">⏳ Uploading...</span>
+                </button>
+            </form>
+        </section>
+
+        <!-- Success Receipt Card (Shown after successful upload) -->
+        <section class="card receipt-card" id="receiptCard" style="display: none;">
+            <div class="receipt-header">
+                <div class="success-icon">✓</div>
+                <h2 class="receipt-title">Submitted</h2>
+                <p class="receipt-subtitle" id="receiptSubtitle">Your exam file has been successfully uploaded.</p>
+            </div>
+
+            <div class="receipt-body">
+                <div class="receipt-item">
+                    <span class="receipt-label">Roll Number</span>
+                    <span class="receipt-value highlight" id="receiptRoll">--</span>
+                </div>
+                <div class="receipt-item">
+                    <span class="receipt-label">Status</span>
+                    <span class="receipt-value status-badge" id="receiptStatus">Latest Considered</span>
+                </div>
+                <div class="receipt-item">
+                    <span class="receipt-label">Submission Version</span>
+                    <span class="receipt-value" id="receiptVersion">Submission #1</span>
+                </div>
+                <div class="receipt-item">
+                    <span class="receipt-label">File Name</span>
+                    <span class="receipt-value" id="receiptFilename">--</span>
+                </div>
+                <div class="receipt-item">
+                    <span class="receipt-label">File Size</span>
+                    <span class="receipt-value" id="receiptSize">--</span>
+                </div>
+                <div class="receipt-item">
+                    <span class="receipt-label">Submission Time</span>
+                    <span class="receipt-value" id="receiptTime">--</span>
+                </div>
+                <div class="receipt-item receipt-hash">
+                    <span class="receipt-label">Verification Hash (SHA-256)</span>
+                    <span class="receipt-value code" id="receiptHash">--</span>
+                </div>
+            </div>
+
+            <div class="receipt-actions">
+                <button type="button" class="btn-secondary" id="btnResubmit">
+                    Submit Another Version (Updates Latest)
+                </button>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Advanced Computing & Communication Lab (ACCL) • Department of CSE & EE • IIT Bhilai</p>
+            <p class="footer-sub">Server Time: <span id="serverClock">--:--:--</span> • Local Intranet Portal</p>
+        </footer>
+    </main>
+
+    <script src="static/script.js"></script>
+</body>
+</html>
