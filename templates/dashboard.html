@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}Course Dashboard - ACCLLMS{% endblock %}
+{% block title %}Course Dashboard - Hoodle{% endblock %}
 
 {% block content %}
-<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
   <div>
     <h1 style="font-size: 1.75rem; font-weight: 800; color: #1e3a8a;">
       {% if current_user.role == 'student' %}Enrolled Courses{% else %}My Classrooms & Courses{% endif %}
@@ -14,11 +14,10 @@
   </div>
 
   <div style="display: flex; gap: 0.75rem;">
-    {% if current_user.role == 'student' %}
-      <button onclick="openModal('joinCourseModal')" class="btn btn-primary">
-        ➕ Join Class
-      </button>
-    {% else %}
+    <button onclick="openModal('joinCourseModal')" class="btn btn-secondary">
+      ➕ Join Class
+    </button>
+    {% if current_user.role in ('teacher', 'admin') %}
       <button onclick="openModal('createCourseModal')" class="btn btn-primary">
         ➕ Create Course
       </button>
@@ -26,7 +25,7 @@
   </div>
 </div>
 
-<div style="display: grid; grid-template-columns: 1fr {% if current_user.role == 'student' %}320px{% endif %}; gap: 2rem;">
+<div class="dashboard-layout-grid">
   <!-- Courses Grid -->
   <div>
     {% if courses %}
@@ -56,7 +55,7 @@
 
             <div class="course-card-body">
               <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 1rem;">
-                {{ c.description[:120] if c.description else 'Coursework and lab assessments managed through ACCLLMS.' }}{% if c.description and c.description|length > 120 %}...{% endif %}
+                {{ c.description[:120] if c.description else 'Coursework and lab assessments managed through Hoodle.' }}{% if c.description and c.description|length > 120 %}...{% endif %}
               </div>
 
               <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 0.85rem; margin-top: auto;">
@@ -92,52 +91,40 @@
   </div>
 
   {% if current_user.role == 'student' %}
-    <!-- Student Sidebar (Deadlines & Private Locker Widget) -->
+    <!-- Student Sidebar (Upcoming Deadlines / To-Do) -->
     <div>
-      <!-- Private Locker Widget -->
-      <div class="card" style="margin-bottom: 1.5rem;">
-        <div class="card-header" style="margin-bottom: 0.5rem;">
-          <h3 class="card-title" style="font-size: 1rem;">🔒 My Private Locker</h3>
-          <a href="{{ url_for('locker') }}" style="font-size: 0.8rem; color: var(--primary); text-decoration: none; font-weight: 600;">Open →</a>
-        </div>
-        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-          Personal cloud storage for your code, drafts, and notes. Attach files directly to submissions!
-        </p>
-        <div class="quota-bar-wrapper">
-          <div class="quota-bar-fill" style="width: {{ locker_stats.percent }}%;"></div>
-        </div>
-        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
-          <span>{{ locker_stats.used_formatted }} of {{ locker_stats.quota_formatted }} used</span>
-          <span>{{ locker_stats.percent }}%</span>
-        </div>
-        <div style="margin-top: 1rem;">
-          <a href="{{ url_for('locker') }}" class="btn btn-secondary btn-sm" style="width: 100%;">Manage My Storage</a>
-        </div>
-      </div>
-
-      <!-- Upcoming Deadlines -->
-      <div class="card">
-        <div class="card-header" style="margin-bottom: 0.5rem;">
-          <h3 class="card-title" style="font-size: 1rem;">⏳ Upcoming Deadlines</h3>
+      <div class="card todo-card">
+        <div class="card-header" style="margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
+          <h3 class="card-title" style="font-size: 1rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>⏳</span>
+            <span>Upcoming Deadlines</span>
+          </h3>
+          {% if upcoming_deadlines %}
+            <span class="badge" style="background: #eff6ff; color: #1d4ed8; font-size: 0.75rem; font-weight: 700; padding: 0.2rem 0.5rem; border-radius: 9999px;">
+              {{ upcoming_deadlines|length }} Due
+            </span>
+          {% endif %}
         </div>
         {% if upcoming_deadlines %}
-          <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <div class="todo-list">
             {% for item in upcoming_deadlines %}
-              <div style="border-left: 3px solid var(--primary); padding-left: 0.75rem;">
+              <div class="todo-item">
                 <div style="font-size: 0.75rem; font-weight: 700; color: var(--primary);">{{ item.course_code }}</div>
-                <a href="{{ url_for('coursework_detail', course_id=item.course_id, coursework_id=item.id) }}" style="font-size: 0.88rem; font-weight: 600; color: var(--text-main); text-decoration: none;">
+                <a href="{{ url_for('coursework_detail', course_id=item.course_id, coursework_id=item.id) }}" class="todo-title">
                   {{ item.title }}
                 </a>
-                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem;">
+                <div class="todo-due">
                   Due: {{ item.due_date | format_dt }}
                 </div>
               </div>
             {% endfor %}
           </div>
         {% else %}
-          <p style="font-size: 0.85rem; color: var(--text-muted); text-align: center; padding: 1rem 0;">
-            🎉 No pending deadlines!
-          </p>
+          <div style="text-align: center; padding: 1.5rem 0.5rem; color: var(--text-muted);">
+            <div style="font-size: 2rem; margin-bottom: 0.4rem;">🎉</div>
+            <p style="font-size: 0.88rem; font-weight: 600; margin: 0;">All caught up!</p>
+            <p style="font-size: 0.78rem; margin-top: 0.2rem; color: var(--text-light);">No pending coursework or exam deadlines.</p>
+          </div>
         {% endif %}
       </div>
     </div>
@@ -159,7 +146,26 @@
         </p>
         <input type="text" id="join_code" name="join_code" class="form-control" placeholder="e.g. ACCL26" style="text-transform: uppercase; font-family: monospace; font-size: 1.1rem; font-weight: 700; letter-spacing: 0.1em;" required>
       </div>
-      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+
+      {% if current_user.role in ('teacher', 'admin') %}
+        <div class="form-group" style="margin-top: 1rem; padding: 0.75rem; background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+          <label class="form-label" style="font-size: 0.85rem; font-weight: 700; margin-bottom: 0.35rem;">Join Role in Class</label>
+          <div style="display: flex; gap: 1.25rem;">
+            <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+              <input type="radio" name="enrollment_role" value="student" checked>
+              <span>Student (Default)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; color: #15803d; font-weight: 600;">
+              <input type="radio" name="enrollment_role" value="ta">
+              <span>Co-Teacher / TA</span>
+            </label>
+          </div>
+        </div>
+      {% else %}
+        <input type="hidden" name="enrollment_role" value="student">
+      {% endif %}
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
         <button type="button" class="btn btn-secondary" onclick="closeModal('joinCourseModal')">Cancel</button>
         <button type="submit" class="btn btn-primary">Join Class</button>
       </div>

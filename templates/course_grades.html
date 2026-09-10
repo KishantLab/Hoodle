@@ -1,19 +1,21 @@
 {% extends "base.html" %}
 
-{% block title %}{{ course.code }} Grades - ACCLLMS{% endblock %}
+{% block title %}{{ course.code }} Grades - Hoodle{% endblock %}
 
 {% block content %}
-<!-- Google Classroom Course Header Banner -->
+<!-- Hoodle Course Header Banner -->
 <div class="course-banner banner-{{ course.theme_color }}">
   <h1>{{ course.code }}: {{ course.title }}</h1>
   <div class="course-subtitle">{{ course.section or 'Section A' }}</div>
   <div class="course-meta">
     <span>👨‍🏫 {{ course.teacher_name }}</span>
-    <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')">
-      <span>Class Code:</span>
-      <strong>{{ course.join_code }}</strong>
-      <span>📋</span>
-    </div>
+    {% if is_teacher_or_admin %}
+      <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')">
+        <span>Class Code:</span>
+        <strong>{{ course.join_code }}</strong>
+        <span>📋</span>
+      </div>
+    {% endif %}
   </div>
 </div>
 
@@ -36,86 +38,671 @@
   </a>
 </nav>
 
-<!-- Gradebook Header & CSV Export -->
-<div class="card" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem;">
-  <div>
-    <h2 class="card-title" style="font-size: 1.25rem; color: #1e3a8a;">Course Gradebook Matrix</h2>
-    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">
-      Full assessment breakdown for all enrolled students across assignments and exams.
-    </p>
+{% if is_student %}
+  <!-- ============================================================ -->
+  <!-- 🎓 STUDENT VIEW: PERSONAL GRADE SCORECARD                   -->
+  <!-- ============================================================ -->
+  <div style="max-width: 1000px; margin: 0 auto; padding-bottom: 3rem;">
+    <!-- Hero Summary Card -->
+    <div class="card" style="margin-bottom: 2rem; border-left: 5px solid #2563eb; padding: 1.5rem 1.75rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.25rem;">
+        <div>
+          <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+            Student Grade Report • Weighted Evaluation
+          </span>
+          <h2 style="font-size: 1.4rem; font-weight: 800; color: #1e3a8a; margin: 0.25rem 0 0.4rem 0;">
+            {{ student.display_name if student else current_user.display_name }}
+          </h2>
+          <div style="font-family: monospace; font-size: 0.88rem; color: var(--text-muted);">
+            Roll: <strong style="color: var(--primary);">{{ student.roll_number if student else current_user.roll_number or '-' }}</strong>
+          </div>
+        </div>
+
+        <!-- Weighted Total Display (No Letter Grade) -->
+        <div style="display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;">
+          <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: var(--radius-md); padding: 0.85rem 1.5rem; text-align: right;">
+            <div style="font-size: 0.75rem; font-weight: 700; color: #166534; text-transform: uppercase; letter-spacing: 0.04em;">
+              Weighted Total (Out of 100)
+            </div>
+            <div style="font-size: 2.2rem; font-weight: 900; color: #15803d; line-height: 1.1; margin-top: 2px;">
+              {{ student.final_grade if student else 0.0 }} <span style="font-size: 1.15rem; color: #166534; font-weight: 600;">/ 100</span>
+            </div>
+            <div style="font-size: 0.8rem; color: #15803d; margin-top: 3px;">
+              Running Score: <strong>{{ student.running_grade if student else 0.0 }}%</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1. Individual Coursework Breakdown Table (Top Priority) -->
+    <div class="card" style="margin-bottom: 2rem;">
+      <div class="card-header">
+        <h3 class="card-title" style="font-size: 1.15rem; color: #1e3a8a;">
+          📋 Individual Assessment Breakdown
+        </h3>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">
+          Detailed itemized scores, submission status, and instructor feedback
+        </span>
+      </div>
+
+      {% if coursework_list %}
+        <div style="overflow-x: auto;">
+          <table class="lms-table" style="margin: 0;">
+            <thead>
+              <tr>
+                <th>Assessment</th>
+                <th>Category</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th style="text-align: center;">Score</th>
+                <th style="text-align: center;">Percentage</th>
+                <th>Feedback</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for cw in coursework_list %}
+                {% set sc = student.cw_scores.get(cw.id) if student else None %}
+                <tr>
+                  <td>
+                    <a href="{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}" style="font-weight: 700; color: #1e3a8a; text-decoration: none;">
+                      {{ cw.title }}
+                    </a>
+                  </td>
+                  <td>
+                    <span class="role-badge" style="background: #eff6ff; color: #1e40af; font-size: 0.72rem;">
+                      {{ cw.category_name or 'Uncategorized' }}
+                    </span>
+                  </td>
+                  <td style="font-size: 0.82rem; color: var(--text-muted);">
+                    {{ cw.due_date | format_dt if cw.due_date else 'No Due Date' }}
+                  </td>
+                  <td>
+                    {% if sc and sc.grade is not none %}
+                      <span class="badge" style="background:#dcfce7; color:#15803d; font-weight:700; font-size:0.75rem;">Graded</span>
+                    {% elif sc and sc.status == 'turned_in' %}
+                      <span class="badge badge-turned-in" style="font-size:0.75rem;">Turned In</span>
+                    {% else %}
+                      <span class="badge badge-missing" style="font-size:0.75rem;">Missing</span>
+                    {% endif %}
+                  </td>
+                  <td style="text-align: center; font-weight: 700;">
+                    {% if sc and sc.grade is not none %}
+                      <span style="color: #15803d; font-size: 1.05rem;">{{ sc.grade }}</span>
+                      <span style="font-size: 0.75rem; color: var(--text-muted);">/{{ cw.points }}</span>
+                    {% else %}
+                      <span style="color: var(--text-muted); font-size: 0.85rem;">-</span>
+                    {% endif %}
+                  </td>
+                  <td style="text-align: center;">
+                    {% if sc and sc.percentage is not none %}
+                      <span style="font-weight: 700; color: #15803d;">{{ sc.percentage }}%</span>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td style="font-size: 0.82rem; color: var(--text-muted); max-width: 200px;">
+                    {% if sc and sc.submission and sc.submission.feedback %}
+                      <em>"{{ sc.submission.feedback }}"</em>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+          <p>No assessment items have been posted in this course yet.</p>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- 2. Assessment Groups & Weighting Scheme Table (Placed Down Below Breakdown) -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title" style="font-size: 1.15rem; color: #1e3a8a;">
+          ⚖️ Assessment Weighting Scheme
+        </h3>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">
+          Final marks calculated out of 100 based on course section weights
+        </span>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table class="lms-table" style="margin: 0;">
+          <thead>
+            <tr>
+              <th>Assessment Group</th>
+              <th style="text-align: center;">Weight %</th>
+              <th style="text-align: center;">Group Score</th>
+              <th style="text-align: center;">Score %</th>
+              <th style="text-align: right;">Final Marks Contribution</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for cat in categories %}
+              {% set cat_data = student.cat_scores.get(cat.id) if student else None %}
+              <tr>
+                <td style="font-weight: 700; color: var(--text-main);">
+                  {% if cat.is_attendance %}📅 {% else %}📝 {% endif %}
+                  {{ cat.name }}
+                  {% if cat.is_attendance %}
+                    <span class="role-badge" style="background:#ecfdf5; color:#047857; font-size:0.7rem; margin-left:0.35rem;">Live Attendance</span>
+                  {% endif %}
+                </td>
+                <td style="text-align: center; font-family: monospace; font-weight: 700; color: #1e3a8a;">
+                  {{ cat.weight }}%
+                </td>
+                <td style="text-align: center; font-size: 0.88rem; color: var(--text-muted);">
+                  {% if cat_data and cat_data.max_points > 0 %}
+                    {{ cat_data.earned_points }} / {{ cat_data.max_points }} pts
+                  {% elif cat.is_attendance and student %}
+                    {{ student.attendance.present_count }} / {{ student.attendance.total_sessions }} sessions
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td style="text-align: center;">
+                  {% if cat_data and cat_data.percentage is not none %}
+                    <span style="font-weight: 700; color: #15803d;">{{ cat_data.percentage }}%</span>
+                  {% else %}
+                    <span style="color: var(--text-light); font-size: 0.82rem;">Not Yet Graded</span>
+                  {% endif %}
+                </td>
+                <td style="text-align: right; font-weight: 800; font-size: 0.95rem; color: #1e3a8a;">
+                  {% if cat_data and cat_data.weighted_points is not none %}
+                    {{ cat_data.weighted_points }} <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">/ {{ cat.weight }} pts</span>
+                  {% else %}
+                    0.0 / {{ cat.weight }} pts
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+            <tr style="background: #f8fafc; font-weight: 800; border-top: 2px solid var(--border);">
+              <td style="color: #1e3a8a;">Total Scale</td>
+              <td style="text-align: center; font-family: monospace; color: #1e3a8a;">100.0%</td>
+              <td colspan="2"></td>
+              <td style="text-align: right; color: #15803d; font-size: 1.05rem;">
+                {{ student.final_grade if student else 0.0 }} / 100
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
-  <a href="{{ url_for('export_grades_csv', course_id=course.id) }}" class="btn btn-primary btn-sm">
-    📥 Export Gradebook (CSV)
-  </a>
-</div>
+{% else %}
+  <!-- ============================================================ -->
+  <!-- 👨‍🏫 INSTRUCTOR VIEW: GRADEBOOK MATRIX & TOOLS               -->
+  <!-- ============================================================ -->
 
-<!-- Matrix Table -->
-<div class="card" style="padding: 0; overflow: hidden;">
-  {% if students and coursework_list %}
-    <div style="overflow-x: auto; max-height: 70vh;">
-      <table class="lms-table" style="margin: 0; min-width: 800px;">
-        <thead style="position: sticky; top: 0; z-index: 10;">
-          <tr>
-            <th style="min-width: 220px; background: #f8fafc;">Student Information</th>
-            {% for cw in coursework_list %}
-              <th style="text-align: center; min-width: 140px; background: #f8fafc;">
-                <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px;" title="{{ cw.title }}">
-                  {{ cw.title }}
+  <!-- Top Action Toolbar -->
+  <div class="card" style="margin-bottom: 1.5rem; padding: 1.25rem 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <h2 class="card-title" style="font-size: 1.25rem; color: #1e3a8a; margin-bottom: 0.2rem;">
+          Course Gradebook Matrix & Assessment Weights
+        </h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+          Weighted evaluation out of 100, live attendance factor, CSV/Excel bulk import, and inline grading.
+        </p>
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+        <button onclick="openModal('gradingPolicyModal')" class="btn btn-secondary btn-sm" style="font-weight: 700;">
+          ⚖️ Weights & Formula
+        </button>
+        <button onclick="openModal('importGradesModal')" class="btn btn-secondary btn-sm" style="font-weight: 700; color: #1e40af;">
+          📥 Bulk Import (Excel/CSV)
+        </button>
+        <a href="{{ url_for('export_grades_template', course_id=course.id) }}" class="btn btn-secondary btn-sm" title="Download Pre-filled Template for Excel or Google Sheets">
+          📋 Download Template
+        </a>
+        <a href="{{ url_for('export_grades_csv', course_id=course.id) }}" class="btn btn-primary btn-sm" style="font-weight: 700;">
+          📤 Export Full Gradebook
+        </a>
+      </div>
+    </div>
+
+    <!-- Category Weight Badges Strip -->
+    <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+        <span style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+          Grading Weights:
+        </span>
+        {% for cat in categories %}
+          <div class="category-pill" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; padding: 0.25rem 0.65rem; border-radius: 9999px; font-size: 0.8rem; display: flex; align-items: center; gap: 0.35rem;">
+            <span>{% if cat.is_attendance %}📅{% else %}📝{% endif %} {{ cat.name }}</span>
+            <strong style="color: #0284c7;">{{ cat.weight }}%</strong>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem;">
+        <span style="color: var(--text-muted);">Total Weight:</span>
+        <strong style="color: {% if total_scheme_weight == 100.0 %}#15803d{% else %}#b45309{% endif %}; font-family: monospace; font-size: 0.95rem;">
+          {{ total_scheme_weight }}%
+        </strong>
+        {% if total_scheme_weight != 100.0 %}
+          <span style="color: #b45309; font-size: 0.75rem;">(Notice: Recommended total is 100%)</span>
+        {% else %}
+          <span style="color: #15803d; font-size: 0.75rem;">✓ Valid 100%</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Gradebook Matrix Table -->
+  <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 2.5rem;">
+    {% if students and coursework_list %}
+      <div style="overflow-x: auto; max-height: 72vh;">
+        <table class="lms-table" style="margin: 0; min-width: 1000px; border-collapse: separate; border-spacing: 0;">
+          <thead style="position: sticky; top: 0; z-index: 10;">
+            <tr>
+              <th style="position: sticky; left: 0; z-index: 12; min-width: 220px; background: #f1f5f9; box-shadow: 2px 0 5px rgba(0,0,0,0.05);">
+                Student Details
+              </th>
+
+              <!-- Individual Coursework Headers -->
+              {% for cw in coursework_list %}
+                <th style="text-align: center; min-width: 140px; background: #f8fafc;">
+                  <div style="font-weight: 700; font-size: 0.82rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;" title="{{ cw.title }}">
+                    {{ cw.title }}
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
+                    {{ cw.points }} pts • <span style="color: #0284c7; font-weight: 600;">{{ cw.category_name or 'General' }}</span>
+                  </div>
+                </th>
+              {% endfor %}
+
+              <!-- Category Subtotals -->
+              {% for cat in categories %}
+                <th style="text-align: center; min-width: 120px; background: #f0fdf4; border-left: 1px solid #bbf7d0;">
+                  <div style="font-size: 0.8rem; font-weight: 800; color: #166534;">
+                    {{ cat.name }}
+                  </div>
+                  <div style="font-size: 0.7rem; color: #15803d;">
+                    Weight: {{ cat.weight }}%
+                  </div>
+                </th>
+              {% endfor %}
+
+              <!-- Final Weighted Score Column -->
+              <th style="text-align: center; min-width: 140px; background: #e0f2fe; border-left: 2px solid #7dd3fc; position: sticky; right: 0; z-index: 12; box-shadow: -2px 0 5px rgba(0,0,0,0.05);">
+                <div style="font-size: 0.88rem; font-weight: 900; color: #0369a1;">
+                  Weighted Total
                 </div>
-                <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
-                  Out of {{ cw.points }} pts
+                <div style="font-size: 0.72rem; color: #0284c7; font-weight: 600;">
+                  Out of 100
                 </div>
               </th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in students %}
+              <tr>
+                <!-- Sticky Student Info -->
+                <td style="position: sticky; left: 0; z-index: 5; background: white; box-shadow: 2px 0 5px rgba(0,0,0,0.03);">
+                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.92rem;">
+                    {{ s.display_name }}
+                  </div>
+                  <div style="display: flex; gap: 0.4rem; align-items: center; font-size: 0.78rem;">
+                    <span style="font-family: monospace; font-weight: 700; color: var(--primary);">
+                      {{ s.roll_number or 'N/A' }}
+                    </span>
+                    <span style="color: var(--text-light);">&bull;</span>
+                    <span style="color: var(--text-muted);">{{ s.email or '-' }}</span>
+                  </div>
+                </td>
+
+                <!-- Coursework Cells (Click to Edit) -->
+                {% for cw in coursework_list %}
+                  {% set sc = s.cw_scores.get(cw.id) %}
+                  <td style="text-align: center; vertical-align: middle; cursor: pointer;"
+                      onclick="openQuickGradeModal({{ s.id }}, '{{ s.display_name | escape }}', {{ cw.id }}, '{{ cw.title | escape }}', '{{ sc.grade if sc and sc.grade is not none else '' }}', '{{ sc.submission.feedback if sc and sc.submission and sc.submission.feedback else '' }}')"
+                      title="Click to edit grade for {{ s.display_name }}">
+                    {% if sc and sc.grade is not none %}
+                      <div style="font-size: 1.05rem; font-weight: 800; color: #166534;">
+                        {{ sc.grade }}
+                      </div>
+                      <div style="font-size: 0.72rem; color: var(--text-muted);">
+                        /{{ cw.points }}
+                      </div>
+                    {% elif sc and sc.status == 'turned_in' %}
+                      <span class="badge badge-turned-in" style="font-size: 0.72rem;">
+                        Turned In
+                      </span>
+                    {% else %}
+                      <span class="badge badge-missing" style="font-size: 0.72rem; opacity: 0.65;">
+                        Missing
+                      </span>
+                    {% endif %}
+                  </td>
+                {% endfor %}
+
+                <!-- Category Subtotal Columns -->
+                {% for cat in categories %}
+                  {% set cat_info = s.cat_scores.get(cat.id) %}
+                  <td style="text-align: center; vertical-align: middle; background: #f0fdf4; border-left: 1px solid #bbf7d0;">
+                    {% if cat_info and cat_info.percentage is not none %}
+                      <div style="font-weight: 800; color: #15803d; font-size: 0.9rem;">
+                        {{ cat_info.percentage }}%
+                      </div>
+                      <div style="font-size: 0.72rem; color: #166534;">
+                        {{ cat_info.weighted_points }} / {{ cat.weight }} pts
+                      </div>
+                    {% elif cat.is_attendance %}
+                      <div style="font-weight: 800; color: #15803d; font-size: 0.9rem;">
+                        {{ s.attendance.percentage }}%
+                      </div>
+                      <div style="font-size: 0.72rem; color: #166534;">
+                        {{ s.attendance.weighted_points }} / {{ cat.weight }} pts
+                      </div>
+                    {% else %}
+                      <span style="color: var(--text-light); font-size: 0.78rem;">-</span>
+                    {% endif %}
+                  </td>
+                {% endfor %}
+
+                <!-- Final Score Sticky Right -->
+                <td style="text-align: center; vertical-align: middle; background: #f0f9ff; border-left: 2px solid #7dd3fc; position: sticky; right: 0; z-index: 5; box-shadow: -2px 0 5px rgba(0,0,0,0.03);">
+                  <div style="font-size: 1.25rem; font-weight: 900; color: #0369a1; line-height: 1.1;">
+                    {{ s.final_grade }}
+                    <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">/100</span>
+                  </div>
+                </td>
+              </tr>
             {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div style="text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
+        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📊</div>
+        <h3 style="font-size: 1.25rem; font-weight: 700;">Gradebook Ready</h3>
+        <p style="font-size: 0.88rem; max-width: 480px; margin: 0.25rem auto 1.5rem auto;">
+          Add coursework assignments and enroll students to populate the course gradebook.
+        </p>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Assessment Weighting Scheme Reference (Below Gradebook Matrix) -->
+  <div class="card" style="margin-bottom: 2.5rem;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+      <div>
+        <h3 class="card-title" style="font-size: 1.15rem; color: #1e3a8a;">
+          ⚖️ Assessment Weighting Scheme & Course Weights
+        </h3>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">
+          Configured percentage breakdown for calculating final marks out of 100
+        </span>
+      </div>
+      <button onclick="openModal('gradingPolicyModal')" class="btn btn-secondary btn-sm" style="font-weight: 700;">
+        ✏️ Edit Weights & Formula
+      </button>
+    </div>
+
+    <div style="overflow-x: auto;">
+      <table class="lms-table" style="margin: 0;">
+        <thead>
+          <tr>
+            <th>Assessment Group</th>
+            <th style="text-align: center;">Assigned Weight %</th>
+            <th>Description & Sync Status</th>
           </tr>
         </thead>
         <tbody>
-          {% for s in students %}
+          {% for cat in categories %}
             <tr>
-              <td>
-                <div style="font-weight: 700; color: var(--text-main);">{{ s.display_name }}</div>
-                <div style="font-family: monospace; font-size: 0.78rem; color: var(--primary);">{{ s.roll_number or 'N/A' }}</div>
+              <td style="font-weight: 700; color: var(--text-main);">
+                {% if cat.is_attendance %}📅{% else %}📝{% endif %} {{ cat.name }}
               </td>
-
-              {% for cw in coursework_list %}
-                {% set sub = sub_map.get((s.id, cw.id)) %}
-                <td style="text-align: center; vertical-align: middle;">
-                  {% if sub %}
-                    {% if sub.grade is not none %}
-                      <span style="font-size: 1.05rem; font-weight: 800; color: #166534;">
-                        {{ sub.grade }}
-                      </span>
-                      <span style="font-size: 0.75rem; color: var(--text-muted);">/{{ cw.points }}</span>
-                    {% else %}
-                      <span class="badge badge-turned-in" style="font-size: 0.75rem;">
-                        Turned In
-                      </span>
-                    {% endif %}
-
-                    {% if sub.is_late %}
-                      <div style="font-size: 0.68rem; color: var(--warning); font-weight: 700; margin-top: 2px;">Late</div>
-                    {% endif %}
-                  {% else %}
-                    <span class="badge badge-missing" style="font-size: 0.75rem;">
-                      Missing
-                    </span>
-                  {% endif %}
-                </td>
-              {% endfor %}
+              <td style="text-align: center; font-family: monospace; font-weight: 800; font-size: 1rem; color: #1e3a8a;">
+                {{ cat.weight }}%
+              </td>
+              <td style="font-size: 0.85rem; color: var(--text-muted);">
+                {% if cat.is_attendance %}
+                  <span class="role-badge" style="background:#ecfdf5; color:#047857; font-weight: 600;">✓ Synced with student attendance scans</span>
+                {% else %}
+                  Aggregates all coursework assigned to this category
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
+          <tr style="background: #f8fafc; font-weight: 800; border-top: 2px solid var(--border);">
+            <td style="color: #1e3a8a;">Total Weight Scale</td>
+            <td style="text-align: center; font-family: monospace; color: {% if total_scheme_weight == 100.0 %}#15803d{% else %}#b45309{% endif %}; font-size: 1.05rem;">
+              {{ total_scheme_weight }}%
+            </td>
+            <td style="font-size: 0.82rem; color: var(--text-muted);">
+              {% if total_scheme_weight == 100.0 %}
+                <span style="color: #15803d; font-weight: 700;">✓ Properly configured to 100.0%</span>
+              {% else %}
+                <span style="color: #b45309; font-weight: 700;">⚠ Sum is {{ total_scheme_weight }}% (Recommended total is 100%)</span>
+              {% endif %}
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>
-  {% else %}
-    <div style="text-align: center; padding: 3rem; color: var(--text-muted);">
-      <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📊</div>
-      <h3>Gradebook Empty</h3>
-      <p style="font-size: 0.88rem; margin-top: 0.25rem;">
-        Add coursework assignments and enroll students to populate the grading grid.
-      </p>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MODALS FOR INSTRUCTORS: POLICY, BULK IMPORT, QUICK GRADE    -->
+  <!-- ============================================================ -->
+
+  <!-- Modal 1: Grading Scheme & Weighting Policy -->
+  <div id="gradingPolicyModal" class="modal-backdrop">
+    <div class="modal-content" style="max-width: 650px;">
+      <div class="modal-header">
+        <h3 style="font-size: 1.2rem; font-weight: 800; color: #1e3a8a;">
+          ⚖️ Grading Scheme & Section Weights
+        </h3>
+        <button class="modal-close" onclick="closeModal('gradingPolicyModal')">&times;</button>
+      </div>
+
+      <form action="{{ url_for('save_grading_categories', course_id=course.id) }}" method="POST">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.5;">
+          Configure weighted assessment groups totaling 100%. Hoodle automatically scales marks earned in each group and factors in real-time student attendance.
+        </p>
+
+        <div style="border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 1.25rem;">
+          <table class="lms-table" style="margin: 0;">
+            <thead>
+              <tr style="background: #f8fafc;">
+                <th>Category Name</th>
+                <th style="width: 110px; text-align: center;">Weight %</th>
+                <th style="width: 90px; text-align: center;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for cat in categories %}
+                <tr>
+                  <td>
+                    <input type="hidden" name="cat_id" value="{{ cat.id }}">
+                    <input type="text" name="name" value="{{ cat.name }}" class="form-control" style="font-size: 0.88rem; font-weight: 600;" required>
+                    {% if cat.is_attendance %}
+                      <span style="font-size: 0.72rem; color: #047857; font-weight: 600;">✓ Synced with student attendance scans</span>
+                    {% endif %}
+                  </td>
+                  <td style="text-align: center;">
+                    <input type="number" step="0.5" min="0" max="100" name="weight" value="{{ cat.weight }}" class="form-control category-weight-input" style="text-align: center; font-family: monospace; font-weight: 700;" onchange="updateTotalWeightMeter()" required>
+                  </td>
+                  <td style="text-align: center;">
+                    {% if not cat.is_attendance and categories | length > 1 %}
+                      <button type="submit" formaction="{{ url_for('delete_grading_category', course_id=course.id, category_id=cat.id) }}" class="btn btn-secondary btn-sm" style="color: var(--danger); font-size: 0.75rem; padding: 0.25rem 0.45rem;" onclick="return confirm('Delete this category? Associated coursework will become uncategorized.');">
+                        🗑️
+                      </button>
+                    {% else %}
+                      <span style="font-size: 0.75rem; color: var(--text-light);">-</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Add New Category Sub-form -->
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.25rem;">
+          <div style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a; margin-bottom: 0.5rem;">
+            ➕ Add Another Category
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <input type="text" name="new_category_name" placeholder="e.g. Quizzes or Project" class="form-control" style="flex: 2; min-width: 160px; font-size: 0.85rem;">
+            <input type="number" step="0.5" min="0" max="100" name="new_category_weight" placeholder="Weight %" class="form-control" style="width: 100px; font-size: 0.85rem; text-align: center;">
+            <label style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: var(--text-muted); cursor: pointer;">
+              <input type="checkbox" name="new_is_attendance" value="1">
+              Attendance?
+            </label>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem;">
+          <div id="modalWeightMeter" style="font-size: 0.88rem; font-weight: 700;">
+            Sum: <span id="weightSumDisplay">100.0%</span>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('gradingPolicyModal')">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Grading Scheme</button>
+          </div>
+        </div>
+      </form>
+
+      <!-- Optional Specific Formula Section -->
+      <div style="margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--border);">
+        <div style="font-size: 0.9rem; font-weight: 800; color: #1e3a8a; margin-bottom: 0.35rem;">
+          Custom Grade Formula (Optional)
+        </div>
+        <p style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 0.75rem;">
+          If your course has a custom formula, enter a mathematical expression using category variable names (e.g., <code>0.20*EndSemesterExam + 0.20*MidSemesterExam + 0.10*LabExams + 0.45*AssignmentsQuizzes + 0.05*Attendance</code>). Leave blank to use standard weighted categories.
+        </p>
+        <form action="{{ url_for('save_grading_formula', course_id=course.id) }}" method="POST" style="display: flex; gap: 0.5rem;">
+          <input type="text" name="grading_formula" value="{{ course.grading_formula or '' }}" placeholder="e.g. 0.20*EndSemesterExam + 0.10*LabExams + 0.05*Attendance" class="form-control" style="font-family: monospace; font-size: 0.85rem;">
+          <button type="submit" class="btn btn-secondary btn-sm" style="white-space: nowrap;">Update Formula</button>
+        </form>
+      </div>
     </div>
-  {% endif %}
-</div>
+  </div>
+
+  <!-- Modal 2: Bulk Import Grades (CSV / Excel) -->
+  <div id="importGradesModal" class="modal-backdrop">
+    <div class="modal-content" style="max-width: 580px;">
+      <div class="modal-header">
+        <h3 style="font-size: 1.2rem; font-weight: 800; color: #1e3a8a;">
+          📥 Bulk Import Assessment Grades
+        </h3>
+        <button class="modal-close" onclick="closeModal('importGradesModal')">&times;</button>
+      </div>
+
+      <form action="{{ url_for('import_grades', course_id=course.id) }}" method="POST" enctype="multipart/form-data">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.5;">
+          Upload an Excel spreadsheet (<code>.xlsx</code>) or CSV exported from <strong>Google Sheets</strong> or <strong>Excel</strong>. Student rows will be matched by Roll Number, Username, or Email, and assessment columns will be matched by title.
+        </p>
+
+        <div style="background: #eff6ff; border: 1px dashed #3b82f6; border-radius: var(--radius-sm); padding: 1.5rem; text-align: center; margin-bottom: 1.25rem;">
+          <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">📊</div>
+          <label class="btn btn-secondary btn-sm" style="cursor: pointer; margin-bottom: 0.5rem;">
+            <span>Choose File (.xlsx, .csv, .tsv)</span>
+            <input type="file" name="grades_file" accept=".xlsx,.csv,.tsv,.txt" style="display: none;" onchange="document.getElementById('chosenFileName').textContent = this.files[0] ? this.files[0].name : '';" required>
+          </label>
+          <div id="chosenFileName" style="font-size: 0.85rem; font-weight: 700; color: #1e40af; margin-top: 0.35rem;"></div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Supported formats: Excel (.xlsx), CSV (.csv), TSV (.tsv)</div>
+        </div>
+
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.85rem 1rem; margin-bottom: 1.25rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;">
+          <strong>Tip:</strong> Don't have a spreadsheet yet? Download the pre-formatted course template with all enrolled student rolls and assessment columns pre-filled:
+          <div style="margin-top: 0.5rem;">
+            <a href="{{ url_for('export_grades_template', course_id=course.id) }}" class="btn btn-secondary btn-sm" style="font-size: 0.78rem;">
+              📋 Download Course Template (.csv)
+            </a>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('importGradesModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Upload & Import Grades</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 3: Quick Grade Editor (SpeedGrader Style) -->
+  <div id="quickGradeModal" class="modal-backdrop">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a;">
+          ✏️ Edit Assessment Grade
+        </h3>
+        <button class="modal-close" onclick="closeModal('quickGradeModal')">&times;</button>
+      </div>
+
+      <form id="quickGradeForm" action="{{ url_for('quick_grade_update', course_id=course.id) }}" method="POST">
+        <input type="hidden" id="qgStudentId" name="student_id">
+        <input type="hidden" id="qgCourseworkId" name="coursework_id">
+
+        <div style="margin-bottom: 1rem; padding: 0.75rem; background: #f8fafc; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+          <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Student</div>
+          <div id="qgStudentName" style="font-weight: 700; color: #1e3a8a; font-size: 1rem;"></div>
+          <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; margin-top: 0.5rem;">Assessment</div>
+          <div id="qgCourseworkTitle" style="font-weight: 600; color: var(--text-main); font-size: 0.9rem;"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="qgGradeInput">Grade Score</label>
+          <input type="number" step="0.5" id="qgGradeInput" name="grade" class="form-control" placeholder="e.g. 85.5" style="font-size: 1.1rem; font-weight: 700;" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="qgFeedbackInput">Instructor Feedback (Private)</label>
+          <textarea id="qgFeedbackInput" name="feedback" rows="3" class="form-control" placeholder="Provide feedback or rubric remarks for student"></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('quickGradeModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Grade</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function openQuickGradeModal(studentId, studentName, courseworkId, courseworkTitle, grade, feedback) {
+      document.getElementById('qgStudentId').value = studentId;
+      document.getElementById('qgStudentName').textContent = studentName;
+      document.getElementById('qgCourseworkId').value = courseworkId;
+      document.getElementById('qgCourseworkTitle').textContent = courseworkTitle;
+      document.getElementById('qgGradeInput').value = grade;
+      document.getElementById('qgFeedbackInput').value = feedback;
+      openModal('quickGradeModal');
+      setTimeout(() => document.getElementById('qgGradeInput').focus(), 150);
+    }
+
+    function updateTotalWeightMeter() {
+      const inputs = document.querySelectorAll('.category-weight-input');
+      let sum = 0;
+      inputs.forEach(inp => {
+        const v = parseFloat(inp.value);
+        if (!isNaN(v)) sum += v;
+      });
+      const display = document.getElementById('weightSumDisplay');
+      if (display) {
+        display.textContent = sum.toFixed(1) + '%';
+        if (Math.abs(sum - 100.0) < 0.01) {
+          display.style.color = '#15803d';
+        } else {
+          display.style.color = '#b45309';
+        }
+      }
+    }
+  </script>
+{% endif %}
 {% endblock %}
+

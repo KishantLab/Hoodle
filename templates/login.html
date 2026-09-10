@@ -1,14 +1,21 @@
 {% extends "base.html" %}
 
-{% block title %}Sign In / Register - ACCLLMS{% endblock %}
+{% block title %}Sign In / Register - Hoodle{% endblock %}
 
 {% block content %}
 <div style="max-width: 460px; margin: 2rem auto;">
   <div class="card" style="padding: 2.25rem;">
     <div style="text-align: center; margin-bottom: 2rem;">
-      <img src="{{ url_for('static', filename='images/iitbhilai_logo.png') }}" alt="IIT Bhilai" style="height: 60px; margin-bottom: 0.75rem;">
-      <h2 style="font-size: 1.5rem; font-weight: 800; color: #1e3a8a;">ACCLLMS Portal</h2>
-      <p style="font-size: 0.85rem; color: var(--text-muted);">Learning Management System & Student Space</p>
+      <div style="display: flex; justify-content: center; align-items: center; gap: 1rem; margin-bottom: 1.25rem;">
+        <img src="{{ url_for('static', filename='images/accl_logo.png') }}" alt="ACCL Lab" style="height: 54px; object-fit: contain;">
+        <div style="width: 1.5px; height: 38px; background: #cbd5e1;"></div>
+        <img src="{{ url_for('static', filename='images/iitbhilai_logo.png') }}" alt="IIT Bhilai" style="height: 54px; object-fit: contain;">
+      </div>
+      <div class="hoodle-brand-logo" style="font-size: 2.4rem; justify-content: center; margin-bottom: 0.35rem;">
+        <span class="hoodle-name">Hoodle</span>
+        <span class="hoodle-accent-dot" style="width: 9px; height: 9px;"></span>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">Accelerated Classroom & Lab Learning • ACCL IIT Bhilai</p>
     </div>
 
     <!-- Toggle between Sign In and Registration -->

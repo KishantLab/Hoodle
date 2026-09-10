@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ course.code }} Classwork - ACCLLMS{% endblock %}
+{% block title %}{{ course.code }} Classwork - Hoodle{% endblock %}
 
 {% block content %}
 <!-- Google Classroom Course Header Banner -->
@@ -9,11 +9,13 @@
   <div class="course-subtitle">{{ course.section or 'Section A' }}</div>
   <div class="course-meta">
     <span>👨‍🏫 {{ course.teacher_name }}</span>
-    <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')">
-      <span>Class Code:</span>
-      <strong>{{ course.join_code }}</strong>
-      <span>📋</span>
-    </div>
+    {% if is_teacher_or_admin %}
+      <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')">
+        <span>Class Code:</span>
+        <strong>{{ course.join_code }}</strong>
+        <span>📋</span>
+      </div>
+    {% endif %}
   </div>
 </div>
 
@@ -31,16 +33,14 @@
   <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="course-tab">
     📅 Attendance
   </a>
-  {% if current_user.role in ('teacher', 'admin') %}
-    <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
-      📊 Grades
-    </a>
-  {% endif %}
+  <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
+    📊 Grades
+  </a>
 </nav>
 
 <!-- Teacher Action Bar -->
 {% if current_user.role in ('teacher', 'admin') %}
-  <div style="display: flex; gap: 0.75rem; margin-bottom: 2rem;">
+  <div class="classwork-actions-strip">
     <button onclick="openModal('createCourseworkModal')" class="btn btn-primary">
       ➕ Create Coursework
     </button>
@@ -55,8 +55,8 @@
   {% for t_id, data in topic_map.items() %}
     {% if data.cw_items or current_user.role in ('teacher', 'admin') %}
       <div>
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--primary); padding-bottom: 0.5rem; margin-bottom: 1rem;">
-          <h2 style="font-size: 1.35rem; font-weight: 700; color: #1e3a8a;">
+        <div class="topic-header-row">
+          <h2 class="topic-title">
             📁 {{ data.topic.name }}
           </h2>
           {% if current_user.role in ('teacher', 'admin') and data.topic.id %}
@@ -71,17 +71,17 @@
         {% if data.cw_items %}
           <div style="display: flex; flex-direction: column; gap: 0.85rem;">
             {% for cw in data.cw_items %}
-              <div class="card" style="margin-bottom: 0; padding: 1.15rem 1.35rem; {% if cw.is_exam_mode %}border-left: 4px solid var(--danger); background: #fffbfb;{% endif %}">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <div style="display: flex; align-items: center; gap: 1rem;">
+              <div class="card classwork-card {% if cw.is_exam_mode %}exam-mode{% endif %}">
+                <div class="classwork-item-row">
+                  <div class="classwork-item-main">
                     <!-- Type Icon -->
-                    <div style="width: 42px; height: 42px; border-radius: 50%; background: {% if cw.type == 'exam' %}#fee2e2; color:#b91c1c;{% elif cw.type == 'material' %}#f1f5f9; color:#475569;{% else %}#eff6ff; color:#1d4ed8;{% endif %} display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">
+                    <div class="classwork-item-icon" style="background: {% if cw.type == 'exam' %}#fee2e2; color:#b91c1c;{% elif cw.type == 'material' %}#f1f5f9; color:#475569;{% else %}#eff6ff; color:#1d4ed8;{% endif %};">
                       {% if cw.type == 'exam' %}🧪{% elif cw.type == 'material' %}📄{% else %}📝{% endif %}
                     </div>
 
-                    <div>
-                      <div style="display: flex; align-items: center; gap: 0.6rem;">
-                        <a href="{% if cw.is_exam_mode and current_user.role == 'student' %}{{ url_for('exam_view', course_id=course.id, coursework_id=cw.id) }}{% else %}{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}{% endif %}" style="font-size: 1.05rem; font-weight: 700; color: var(--text-main); text-decoration: none;">
+                    <div class="classwork-item-content">
+                      <div class="classwork-item-title-row">
+                        <a href="{% if cw.is_exam_mode and current_user.role == 'student' %}{{ url_for('exam_view', course_id=course.id, coursework_id=cw.id) }}{% else %}{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}{% endif %}" class="classwork-item-title">
                           {{ cw.title }}
                         </a>
                         {% if cw.is_exam_mode %}
@@ -89,7 +89,7 @@
                         {% endif %}
                       </div>
 
-                      <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
+                      <div class="classwork-item-meta">
                         {% if cw.type != 'material' %}
                           {% if cw.due_date %}Due: {{ cw.due_date | format_dt }} • {% endif %}
                           {{ cw.points }} points
@@ -101,7 +101,7 @@
                   </div>
 
                   <!-- Right Side: Status Badge or Teacher Actions -->
-                  <div style="display: flex; align-items: center; gap: 0.85rem;">
+                  <div class="classwork-item-actions">
                     {% if current_user.role == 'student' and cw.type != 'material' %}
                       {% if cw.my_status == 'graded' %}
                         <span class="badge badge-graded">Graded: {{ cw.my_grade }}/{{ cw.points }}</span>
@@ -187,7 +187,7 @@
 
       <!-- Assignment & Exam specific fields -->
       <div id="gradingFields">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="modal-grid-2col">
           <div class="form-group">
             <label class="form-label" for="cw_points">Maximum Points</label>
             <input type="number" id="cw_points" name="points" class="form-control" value="100">
@@ -204,7 +204,7 @@
             🔒 Strict Exam Mode Lockdown Settings
           </h4>
           <p style="font-size: 0.8rem; color: #7f1d1d; margin-bottom: 0.75rem;">
-            When active, students cannot browse materials, stream discussions, or their locker. They can only access this single exam submission link and submit ONLY .zip files.
+            When active, students cannot browse materials or stream discussions. They can only access this single exam submission link and submit ONLY .zip files. Lockdown automatically disables when the exam ends.
           </p>
 
           <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 700; color: #991b1b; cursor: pointer; margin-bottom: 0.75rem;">
@@ -212,7 +212,7 @@
             Enable Strict Exam Lockdown Immediately
           </label>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <div class="modal-grid-2col">
             <div>
               <label class="form-label" style="font-size: 0.8rem;">Exam Start Time</label>
               <input type="datetime-local" name="start_time" class="form-control" style="font-size: 0.85rem;">
@@ -229,7 +229,7 @@
           </div>
         </div>
 
-        <div style="display: flex; gap: 1.5rem; margin-bottom: 1.25rem;">
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem;">
           <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
             <input type="checkbox" name="allow_multiple" value="1" checked>
             Allow Resubmissions (Keeps Latest Version)

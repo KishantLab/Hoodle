@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}🔒 Exam Portal: {{ exam.title }} - ACCLLMS{% endblock %}
+{% block title %}🔒 Exam Portal: {{ exam.title }} - Hoodle{% endblock %}
 
 {% block content %}
-<div style="max-width: 800px; margin: 1rem auto;">
+<div class="exam-view-container">
   <!-- Strict Exam Lockdown Header Card -->
-  <div style="background: linear-gradient(135deg, #991b1b 0%, #b91c1c 100%); color: white; border-radius: var(--radius-lg); padding: 2rem; box-shadow: var(--shadow-lg); margin-bottom: 2rem; position: relative; overflow: hidden;">
-    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+  <div class="exam-hero-card">
+    <div class="exam-hero-top">
       <div>
         <span style="background: rgba(255, 255, 255, 0.2); padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;">
           🔒 STRICT EXAM MODE LOCKDOWN
@@ -19,8 +19,8 @@
         </div>
       </div>
 
-      <div style="text-align: right;">
-        <div id="examTimer" data-end="{{ end_iso }}" style="background: rgba(0,0,0,0.3); padding: 0.5rem 1rem; border-radius: var(--radius-md); font-size: 0.95rem; font-family: monospace;">
+      <div>
+        <div id="examTimer" class="exam-timer-box" data-end="{{ end_iso }}">
           {% if end_iso %}
             ⏱ Loading timer...
           {% else %}
@@ -30,7 +30,7 @@
       </div>
     </div>
 
-    <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.2); font-size: 0.85rem; display: flex; gap: 2rem;">
+    <div class="exam-hero-meta-strip">
       <span><strong>Student:</strong> {{ current_user.display_name }} ({{ current_user.roll_number or current_user.username }})</span>
       {% if exam.start_time %}<span><strong>Start:</strong> {{ exam.start_time | format_dt }}</span>{% endif %}
       {% if exam.end_time %}<span><strong>Deadline:</strong> {{ exam.end_time | format_dt }}</span>{% endif %}
@@ -42,25 +42,25 @@
     <h2 class="card-title" style="font-size: 1.15rem; color: #b91c1c; display: flex; align-items: center; gap: 0.5rem;">
       <span>📋</span> Examination Instructions & Guidelines
     </h2>
-    <div style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main); margin-top: 0.75rem; white-space: pre-wrap;">
+    <div style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main); margin-top: 0.75rem; white-space: pre-wrap; word-break: break-word;">
       {{ exam.description | nl2br if exam.description else 'Complete all required practical programming problems. Compress all source files into a single .zip archive.' }}
     </div>
 
-    <div style="margin-top: 1.25rem; padding: 0.85rem 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-md); font-size: 0.85rem; color: #991b1b;">
+    <div style="margin-top: 1.25rem; padding: 0.85rem 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-md); font-size: 0.85rem; color: #991b1b; line-height: 1.5;">
       <strong>⚠️ Strict Exam Policy:</strong>
       <ul style="margin-left: 1.25rem; margin-top: 0.35rem;">
         <li>Only <strong>.zip</strong> archive submissions are permitted. Other formats will be strictly rejected.</li>
-        <li>Access to other classroom materials, course stream, and your personal locker is restricted during the exam.</li>
+        <li>Access to other classroom materials and course stream is restricted during the exam. Lockdown will automatically lift when exam time expires.</li>
         <li>Upon submission, a cryptographic SHA-256 receipt token is generated. Keep this receipt as official proof of submission.</li>
       </ul>
     </div>
   </div>
 
   <!-- Submission Status / Upload Form -->
-  <div class="card" style="padding: 2rem; box-shadow: var(--shadow-md);">
+  <div class="card" style="box-shadow: var(--shadow-md);">
     {% if my_sub %}
       <!-- Existing Submission Receipt Box -->
-      <div style="background: #f0fdf4; border: 2px solid #86efac; border-radius: var(--radius-lg); padding: 1.5rem; text-align: center; margin-bottom: 1.5rem;">
+      <div class="exam-receipt-box">
         <div style="font-size: 3rem; margin-bottom: 0.5rem;">✅</div>
         <h2 style="font-size: 1.4rem; font-weight: 800; color: #166534; margin-bottom: 0.25rem;">
           Exam Successfully Submitted!
@@ -69,38 +69,38 @@
           Your submission is safely recorded with version {{ my_sub.version }} on the local exam server.
         </p>
 
-        <div style="max-width: 540px; margin: 0 auto; background: white; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem; text-align: left; font-size: 0.88rem;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-            <span style="color: var(--text-muted);">Roll Number:</span>
-            <strong style="font-family: monospace;">{{ my_sub.roll_number }}</strong>
+        <div class="exam-receipt-card">
+          <div class="exam-receipt-row">
+            <span style="color: var(--text-muted); font-size: 0.82rem;">Roll Number:</span>
+            <strong class="exam-receipt-val" style="font-family: monospace;">{{ my_sub.roll_number }}</strong>
           </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-            <span style="color: var(--text-muted);">File Name:</span>
-            <strong>{{ my_sub.original_filename }}</strong>
+          <div class="exam-receipt-row">
+            <span style="color: var(--text-muted); font-size: 0.82rem;">File Name:</span>
+            <strong class="exam-receipt-val">{{ my_sub.original_filename }}</strong>
           </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-            <span style="color: var(--text-muted);">File Size:</span>
-            <span>{{ my_sub.file_size | filesize }}</span>
+          <div class="exam-receipt-row">
+            <span style="color: var(--text-muted); font-size: 0.82rem;">File Size:</span>
+            <span class="exam-receipt-val">{{ my_sub.file_size | filesize }}</span>
           </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-            <span style="color: var(--text-muted);">Lab Venue:</span>
-            <span>{{ my_sub.lab_name }}</span>
+          <div class="exam-receipt-row">
+            <span style="color: var(--text-muted); font-size: 0.82rem;">Lab Venue:</span>
+            <span class="exam-receipt-val">{{ my_sub.lab_name }}</span>
           </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-            <span style="color: var(--text-muted);">Submitted At:</span>
-            <span>{{ my_sub.submitted_at | format_dt }}</span>
+          <div class="exam-receipt-row">
+            <span style="color: var(--text-muted); font-size: 0.82rem;">Submitted At:</span>
+            <span class="exam-receipt-val">{{ my_sub.submitted_at | format_dt }}</span>
           </div>
           {% if my_sub.is_late %}
-            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; color: var(--danger); font-weight: 700;">
-              <span>Timing Status:</span>
-              <span>⚠️ Late (+{{ my_sub.late_minutes }}m)</span>
+            <div class="exam-receipt-row" style="color: var(--danger); font-weight: 700;">
+              <span style="font-size: 0.82rem;">Timing Status:</span>
+              <span class="exam-receipt-val">⚠️ Late (+{{ my_sub.late_minutes }}m)</span>
             </div>
           {% endif %}
           <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed var(--border);">
             <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">
               SHA-256 Cryptographic Checksum:
             </div>
-            <div style="font-family: monospace; font-size: 0.72rem; background: #f8fafc; padding: 6px; border-radius: 4px; border: 1px solid var(--border); word-break: break-all;">
+            <div style="font-family: monospace; font-size: 0.7rem; background: #f8fafc; padding: 6px; border-radius: 4px; border: 1px solid var(--border); word-break: break-all;">
               {{ my_sub.sha256 }}
             </div>
           </div>
@@ -114,12 +114,34 @@
       </div>
     {% endif %}
 
-    <!-- Upload Form (If not submitted, or resubmissions allowed) -->
-    {% if not my_sub or exam.allow_multiple %}
-      <div {% if my_sub %}style="border-top: 2px dashed var(--border); padding-top: 1.5rem; margin-top: 1.5rem;"{% endif %}>
+    <!-- Upload Form (If not submitted, or resubmissions allowed before exam ends) -->
+    {% if not my_sub and not is_ended %}
+      <div>
         <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main);">
-          {% if my_sub %}🔄 Submit Revised Exam Archive (.zip){% else %}🚀 Submit Exam Solution (.zip){% endif %}
+          🚀 Submit Exam Solution (.zip)
         </h3>
+    {% elif my_sub and not is_ended and exam.allow_multiple %}
+      <div style="border-top: 2px dashed var(--border); padding-top: 1.5rem; margin-top: 1.5rem;">
+        <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main);">
+          🔄 Submit Revised Exam Archive (.zip)
+        </h3>
+    {% elif my_sub and is_ended %}
+      <div style="border-top: 1px solid var(--border); padding: 1.25rem; margin-top: 1.5rem; text-align: center; background: #f8fafc; border-radius: var(--radius-md);">
+        <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">🔒</div>
+        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">Exam Concluded & Submission Permanently Locked</div>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.25rem; margin-bottom: 0;">
+          The exam time has expired. Your submission has been securely finalized and cannot be modified.
+        </p>
+      </div>
+    {% elif not my_sub and is_ended %}
+      <div style="padding: 1.5rem; text-align: center; background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-md); color: #991b1b;">
+        <div style="font-size: 1.75rem; margin-bottom: 0.35rem;">⚠️</div>
+        <div style="font-weight: 700; font-size: 1rem;">Exam Time Over</div>
+        <p style="font-size: 0.85rem; margin-top: 0.25rem; margin-bottom: 0;">The submission deadline for this exam has passed. New submissions are closed.</p>
+      </div>
+    {% endif %}
+
+    {% if (not my_sub and not is_ended) or (my_sub and not is_ended and exam.allow_multiple) %}
 
         <form id="examSubmitForm" action="{{ url_for('exam_submit', course_id=course.id, coursework_id=exam.id) }}" method="POST" enctype="multipart/form-data">
           <!-- Seated Lab Dropdown -->

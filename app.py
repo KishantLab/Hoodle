@@ -15,6 +15,8 @@ import hashlib
 import zipfile
 import io
 import json
+import csv
+import xml.etree.ElementTree as ET
 import secrets
 from datetime import datetime
 from pathlib import Path
@@ -367,6 +369,34 @@ def init_db():
     c.execute("CREATE INDEX IF NOT EXISTS idx_att_course_date ON attendance_logs (course_id, attendance_date)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_att_student ON attendance_logs (student_id)")
 
+    # 13. Course Grading Categories & Weights (Canvas LMS Style)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS course_grading_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            weight REAL NOT NULL DEFAULT 0.0,
+            is_attendance INTEGER DEFAULT 0,
+            drop_lowest INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_cat_course ON course_grading_categories (course_id)")
+
+    # Migration for courses table
+    c.execute("PRAGMA table_info(courses)")
+    course_cols = [row["name"] for row in c.fetchall()]
+    if "grading_formula" not in course_cols:
+        c.execute("ALTER TABLE courses ADD COLUMN grading_formula TEXT DEFAULT NULL")
+    if "grade_calculation_mode" not in course_cols:
+        c.execute("ALTER TABLE courses ADD COLUMN grade_calculation_mode TEXT DEFAULT 'weighted_categories'")
+
+    # Migration for coursework table
+    c.execute("PRAGMA table_info(coursework)")
+    cw_cols = [row["name"] for row in c.fetchall()]
+    if "category_id" not in cw_cols:
+        c.execute("ALTER TABLE coursework ADD COLUMN category_id INTEGER DEFAULT NULL")
 
     conn.commit()
 
@@ -562,21 +592,37 @@ def get_active_exam_lockdown_for_student(user_id):
           AND (cw.is_exam_mode = 1 OR c.active_exam_id = cw.id)
         LIMIT 1
     """, (user_id,)).fetchone()
-    conn.close()
 
     if not row:
+        conn.close()
         return None
 
     now = datetime.now()
     st = parse_iso_datetime(row["start_time"])
     et = parse_iso_datetime(row["end_time"])
 
-    # If exam mode is explicitly toggled ON, or if we are within the start-end window
-    if row["is_exam_mode"] == 1:
-        return dict(row)
-    if st and et and (st <= now <= et):
-        return dict(row)
+    # If exam end time is specified and has passed, automatically disable exam lockdown
+    if et and now > et:
+        # Auto-disable in database
+        conn.execute("UPDATE coursework SET is_exam_mode = 0 WHERE id = ?", (row["coursework_id"],))
+        conn.execute("UPDATE courses SET active_exam_id = NULL WHERE active_exam_id = ?", (row["coursework_id"],))
+        conn.commit()
+        conn.close()
+        return None
 
+    # If is_exam_mode is 1 (explicitly toggled on by teacher), lockdown is active!
+    if row["is_exam_mode"] == 1:
+        res = dict(row)
+        conn.close()
+        return res
+
+    # If scheduled start and end window is active
+    if st and et and st <= now <= et:
+        res = dict(row)
+        conn.close()
+        return res
+
+    conn.close()
     return None
 
 
@@ -885,24 +931,34 @@ def join_course():
         flash("No active course found with that Class Code. Please verify with your instructor.", "danger")
         return redirect(url_for("dashboard"))
 
+    user = get_current_user()
+    user_id = user["id"]
+
     existing = conn.execute("""
         SELECT * FROM course_enrollments WHERE course_id = ? AND user_id = ?
-    """, (course["id"], session["user_id"])).fetchone()
+    """, (course["id"], user_id)).fetchone()
 
     if existing:
         conn.close()
         flash(f"You are already enrolled in {course['code']} - {course['title']}.", "info")
         return redirect(url_for("course_stream", course_id=course["id"]))
 
+    requested_role = request.form.get("enrollment_role", "student").strip().lower()
+    # Default is students; only users with teacher or admin global roles can choose to join as a co-teacher
+    enrollment_role = "student"
+    if user["role"] in ("teacher", "admin") and requested_role in ("ta", "teacher", "co-teacher"):
+        enrollment_role = "ta"
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute("""
         INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at)
-        VALUES (?, ?, 'student', ?)
-    """, (course["id"], session["user_id"], now_str))
+        VALUES (?, ?, ?, ?)
+    """, (course["id"], user_id, enrollment_role, now_str))
     conn.commit()
     conn.close()
 
-    flash(f"Successfully joined {course['code']}: {course['title']}!", "success")
+    role_label = "Co-Teacher" if enrollment_role == "ta" else "Student"
+    flash(f"Successfully joined {course['code']}: {course['title']} as {role_label}!", "success")
     return redirect(url_for("course_stream", course_id=course["id"]))
 
 
@@ -1582,6 +1638,20 @@ def exam_submit(course_id, coursework_id):
     is_late = 0
     late_minutes = 0
 
+    existing = conn.execute("SELECT * FROM submissions WHERE coursework_id = ? AND student_id = ?", (coursework_id, user_id)).fetchone()
+    if existing:
+        # If student already submitted once and exam end time has passed, strictly lock submission
+        if cw["end_time"]:
+            et = parse_iso_datetime(cw["end_time"])
+            if et and now > et:
+                conn.close()
+                flash("The exam deadline has passed. Modifying or re-submitting after the exam has ended is strictly locked.", "danger")
+                return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
+        if cw["allow_multiple"] == 0:
+            conn.close()
+            flash("Single submission policy: You have already submitted your exam.", "warning")
+            return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
+
     if cw["end_time"]:
         et = parse_iso_datetime(cw["end_time"])
         if et and now > et:
@@ -1591,12 +1661,6 @@ def exam_submit(course_id, coursework_id):
                 return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
             is_late = 1
             late_minutes = int((now - et).total_seconds() / 60)
-
-    existing = conn.execute("SELECT * FROM submissions WHERE coursework_id = ? AND student_id = ?", (coursework_id, user_id)).fetchone()
-    if existing and cw["allow_multiple"] == 0:
-        conn.close()
-        flash("Single submission policy: You have already submitted your exam.", "warning")
-        return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
 
     version = (existing["version"] + 1) if existing else 1
     lab_name = request.form.get("lab_name", "Lab 1").strip()
@@ -1671,17 +1735,18 @@ def exam_receipt(receipt_token):
 def course_people(course_id):
     course = get_course_or_404(course_id)
     conn = get_db()
+    curr_user = get_current_user()
 
     teachers = conn.execute("""
-        SELECT u.id, u.display_name, u.email, u.role
+        SELECT u.id, u.display_name, u.email, u.roll_number, u.role as system_role, ce.role as enrollment_role
         FROM course_enrollments ce
         JOIN users u ON ce.user_id = u.id
-        WHERE ce.course_id = ? AND ce.role IN ('teacher', 'ta')
-        ORDER BY u.display_name ASC
-    """, (course_id,)).fetchall()
+        WHERE ce.course_id = ? AND ce.role IN ('teacher', 'ta', 'co-teacher')
+        ORDER BY (CASE WHEN u.id = ? THEN 0 ELSE 1 END), u.display_name ASC
+    """, (course_id, course["teacher_id"])).fetchall()
 
     students = conn.execute("""
-        SELECT u.id, u.display_name, u.roll_number, u.email, ce.enrolled_at,
+        SELECT u.id, u.display_name, u.roll_number, u.email, ce.enrolled_at, ce.role as enrollment_role,
                (SELECT COUNT(*) FROM submissions s
                 JOIN coursework cw ON s.coursework_id = cw.id
                 WHERE cw.course_id = ? AND s.student_id = u.id) as submissions_count
@@ -1691,70 +1756,898 @@ def course_people(course_id):
         ORDER BY u.roll_number ASC, u.display_name ASC
     """, (course_id, course_id)).fetchall()
 
+    available_users = conn.execute("""
+        SELECT u.id, u.display_name, u.roll_number, u.email, u.role,
+               (SELECT role FROM course_enrollments ce WHERE ce.course_id = ? AND ce.user_id = u.id) as course_role
+        FROM users u
+        WHERE u.id != ?
+        ORDER BY u.role DESC, u.roll_number ASC, u.display_name ASC
+    """, (course_id, course["teacher_id"])).fetchall()
+
+    is_teacher_or_admin = (
+        curr_user["role"] in ("teacher", "admin") or
+        course["teacher_id"] == curr_user["id"] or
+        any(t["id"] == curr_user["id"] for t in teachers)
+    )
+
     conn.close()
     return render_template(
         "course_people.html",
         course=course,
         teachers=teachers,
         students=students,
+        available_users=available_users,
+        is_teacher_or_admin=is_teacher_or_admin,
         active_tab="people"
     )
+
+
+@app.route("/courses/<int:course_id>/people/add-coteacher", methods=["POST"])
+@teacher_required
+def add_co_teacher(course_id):
+    course = get_course_or_404(course_id)
+    target_id = request.form.get("user_id")
+    identifier = request.form.get("identifier", "").strip()
+    assigned_role = request.form.get("role", "ta").strip().lower()
+    if assigned_role not in ("student", "ta", "teacher"):
+        assigned_role = "ta"
+
+    conn = get_db()
+    user = None
+    if target_id and target_id.isdigit():
+        user = conn.execute("SELECT * FROM users WHERE id = ?", (int(target_id),)).fetchone()
+    elif identifier:
+        user = conn.execute("""
+            SELECT * FROM users
+            WHERE LOWER(username) = ? OR LOWER(roll_number) = ? OR (email != '' AND LOWER(email) = ?)
+        """, (identifier.lower(), identifier.lower(), identifier.lower())).fetchone()
+
+    if not user:
+        conn.close()
+        flash("User not found. Please verify the roll number, username, or email.", "danger")
+        return redirect(url_for("course_people", course_id=course_id))
+
+    # If assigning teacher role, elevate user system role to teacher
+    if assigned_role == "teacher":
+        conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (user["id"],))
+        enroll_role = "ta"
+        role_label = "Faculty / Teacher"
+    elif assigned_role == "student":
+        enroll_role = "student"
+        role_label = "Student"
+    else:
+        enroll_role = "ta"
+        role_label = "Co-Teacher"
+
+    existing = conn.execute("SELECT * FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, user["id"])).fetchone()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if existing:
+        conn.execute("UPDATE course_enrollments SET role = ? WHERE course_id = ? AND user_id = ?", (enroll_role, course_id, user["id"]))
+    else:
+        conn.execute("INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at) VALUES (?, ?, ?, ?)", (course_id, user["id"], enroll_role, now_str))
+
+    conn.commit()
+    conn.close()
+    flash(f"'{user['display_name']}' is now configured as {role_label} for {course['code']}.", "success")
+    return redirect(url_for("course_people", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/people/<int:target_user_id>/role", methods=["POST"])
+@teacher_required
+def change_course_person_role(course_id, target_user_id):
+    course = get_course_or_404(course_id)
+    new_role = request.form.get("role", "student").strip().lower()
+    if new_role not in ("student", "ta", "teacher"):
+        flash("Invalid role selected.", "danger")
+        return redirect(url_for("course_people", course_id=course_id))
+
+    if target_user_id == course["teacher_id"] and new_role == "student":
+        flash("The primary course instructor cannot be demoted to student.", "warning")
+        return redirect(url_for("course_people", course_id=course_id))
+
+    conn = get_db()
+    target_user = conn.execute("SELECT * FROM users WHERE id = ?", (target_user_id,)).fetchone()
+    if not target_user:
+        conn.close()
+        abort(404)
+
+    if new_role == "teacher":
+        conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (target_user_id,))
+        conn.execute("UPDATE course_enrollments SET role = 'ta' WHERE course_id = ? AND user_id = ?", (course_id, target_user_id))
+        label = "Teacher / Faculty"
+    elif new_role == "ta":
+        conn.execute("UPDATE course_enrollments SET role = 'ta' WHERE course_id = ? AND user_id = ?", (course_id, target_user_id))
+        label = "Co-Teacher"
+    else:  # student
+        conn.execute("UPDATE course_enrollments SET role = 'student' WHERE course_id = ? AND user_id = ?", (course_id, target_user_id))
+        # If demoted to student, also demote system role if they are not lead teacher of any course and not admin
+        other_lead = conn.execute("SELECT COUNT(*) FROM courses WHERE teacher_id = ?", (target_user_id,)).fetchone()[0]
+        if other_lead == 0 and target_user["role"] != "admin":
+            conn.execute("UPDATE users SET role = 'student' WHERE id = ?", (target_user_id,))
+        label = "Student"
+
+    conn.commit()
+    conn.close()
+
+    flash(f"Updated {target_user['display_name']}'s role in {course['code']} to {label}.", "success")
+    return redirect(url_for("course_people", course_id=course_id))
 
 
 @app.route("/courses/<int:course_id>/people/remove/<int:target_user_id>", methods=["POST"])
 @teacher_required
 def remove_student(course_id, target_user_id):
+    course = get_course_or_404(course_id)
+    if target_user_id == course["teacher_id"]:
+        flash("Cannot remove the primary course instructor.", "danger")
+        return redirect(url_for("course_people", course_id=course_id))
+
     conn = get_db()
     conn.execute("DELETE FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, target_user_id))
     conn.commit()
     conn.close()
-    flash("Student removed from course roster.", "info")
+    flash("Person removed from course roster.", "info")
     return redirect(url_for("course_people", course_id=course_id))
 
 
-# --- Tab 4: Grades ---
+# --- Tab 4: Grades & Canvas-Inspired Weighted Assessment Engine ---
+
+def ensure_course_grading_categories(course_id, conn=None):
+    """
+    Ensures that default Canvas-style grading categories exist for a course.
+    Default weighting scheme totaling 100%:
+      - End-Semester Exam: 20%
+      - Mid-Semester Exam: 20%
+      - Lab Exams: 10%
+      - Assignments & Quizzes: 45%
+      - Attendance: 5% (is_attendance=1)
+    """
+    close_at_end = False
+    if conn is None:
+        conn = get_db()
+        close_at_end = True
+
+    cats = conn.execute("""
+        SELECT * FROM course_grading_categories
+        WHERE course_id = ?
+        ORDER BY is_attendance ASC, id ASC
+    """, (course_id,)).fetchall()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if not cats:
+        default_cats = [
+            ("Assignments & Quizzes", 45.0, 0),
+            ("Lab Exams", 10.0, 0),
+            ("Mid-Semester Exam", 20.0, 0),
+            ("End-Semester Exam", 20.0, 0),
+            ("Attendance", 5.0, 1),
+        ]
+        for name, weight, is_att in default_cats:
+            conn.execute("""
+                INSERT INTO course_grading_categories (course_id, name, weight, is_attendance, drop_lowest, created_at)
+                VALUES (?, ?, ?, ?, 0, ?)
+            """, (course_id, name, weight, is_att, now_str))
+        conn.commit()
+        cats = conn.execute("""
+            SELECT * FROM course_grading_categories
+            WHERE course_id = ?
+            ORDER BY is_attendance ASC, id ASC
+        """, (course_id,)).fetchall()
+
+    # Automatically map unassigned coursework to the best matching category
+    unassigned = conn.execute("""
+        SELECT id, title, type FROM coursework
+        WHERE course_id = ? AND category_id IS NULL AND type != 'material'
+    """, (course_id,)).fetchall()
+
+    if unassigned:
+        cat_map = {c["name"].lower(): c["id"] for c in cats}
+        assign_cat = next((c["id"] for c in cats if "assign" in c["name"].lower() or "quiz" in c["name"].lower()), None)
+        lab_cat = next((c["id"] for c in cats if "lab" in c["name"].lower()), None)
+        mid_cat = next((c["id"] for c in cats if "mid" in c["name"].lower()), None)
+        end_cat = next((c["id"] for c in cats if "end" in c["name"].lower()), None)
+        first_regular = next((c["id"] for c in cats if not c["is_attendance"]), cats[0]["id"] if cats else None)
+
+        for cw in unassigned:
+            title_l = cw["title"].lower()
+            target_id = first_regular
+            if "mid" in title_l and mid_cat:
+                target_id = mid_cat
+            elif "end" in title_l and end_cat:
+                target_id = end_cat
+            elif ("lab" in title_l or cw["type"] == "exam") and lab_cat:
+                target_id = lab_cat
+            elif assign_cat:
+                target_id = assign_cat
+
+            if target_id:
+                conn.execute("UPDATE coursework SET category_id = ? WHERE id = ?", (target_id, cw["id"]))
+        conn.commit()
+
+    if close_at_end:
+        conn.close()
+    return cats
+
+
+def score_to_letter_grade(score):
+    if score is None:
+        return "N/A"
+    if score >= 90.0:
+        return "A"
+    elif score >= 85.0:
+        return "A-"
+    elif score >= 80.0:
+        return "B+"
+    elif score >= 75.0:
+        return "B"
+    elif score >= 70.0:
+        return "B-"
+    elif score >= 65.0:
+        return "C+"
+    elif score >= 60.0:
+        return "C"
+    elif score >= 50.0:
+        return "D"
+    else:
+        return "F"
+
+
+def parse_spreadsheet_file(file_storage):
+    """
+    Robustly parses uploaded spreadsheets:
+      - .csv, .tsv, .txt
+      - Excel .xlsx (via openpyxl if installed, or native zipfile + ElementTree fallback)
+    Returns: list of list of string values.
+    """
+    filename = (file_storage.filename or "").lower()
+    raw_bytes = file_storage.read()
+
+    # 1. Attempt XLSX
+    if filename.endswith(".xlsx") or raw_bytes[:4] == b"PK\x03\x04":
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
+            ws = wb.active
+            rows = []
+            for row in ws.iter_rows(values_only=True):
+                if any(v is not None and str(v).strip() != "" for v in row):
+                    rows.append([str(v).strip() if v is not None else "" for v in row])
+            if rows:
+                return rows
+        except Exception:
+            pass
+
+        # Native zipfile + XML fallback for .xlsx (no external libraries needed)
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(raw_bytes))
+            shared_strings = []
+            if "xl/sharedStrings.xml" in zf.namelist():
+                tree = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+                ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+                for si in tree.findall(f"{ns}si"):
+                    parts = [t.text for t in si.iter(f"{ns}t") if t.text]
+                    shared_strings.append("".join(parts))
+
+            sheet_name = next((n for n in zf.namelist() if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")), None)
+            if sheet_name:
+                tree = ET.fromstring(zf.read(sheet_name))
+                ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+                rows = []
+                for row_el in tree.iter(f"{ns}row"):
+                    row_cells = []
+                    for c_el in row_el.iter(f"{ns}c"):
+                        t_attr = c_el.get("t")
+                        v_el = c_el.find(f"{ns}v")
+                        val = ""
+                        if v_el is not None and v_el.text:
+                            raw = v_el.text
+                            if t_attr == "s" and raw.isdigit() and int(raw) < len(shared_strings):
+                                val = shared_strings[int(raw)]
+                            elif t_attr == "b":
+                                val = "1" if raw == "1" else "0"
+                            else:
+                                val = raw
+                        elif t_attr == "inlineStr":
+                            t_el = c_el.find(f"{ns}is/{ns}t")
+                            if t_el is not None and t_el.text:
+                                val = t_el.text
+                        row_cells.append(val.strip())
+                    if any(row_cells):
+                        rows.append(row_cells)
+                if rows:
+                    return rows
+        except Exception:
+            pass
+
+    # 2. Text / CSV / TSV
+    for enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
+        try:
+            text = raw_bytes.decode(enc)
+            first_line = text.split("\n")[0] if "\n" in text else text
+            delimiter = "\t" if ("\t" in first_line and "," not in first_line) else (";" if (";" in first_line and "," not in first_line) else ",")
+            reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+            rows = []
+            for r in reader:
+                if any(c.strip() for c in r):
+                    rows.append([c.strip() for c in r])
+            if rows:
+                return rows
+        except UnicodeDecodeError:
+            continue
+
+    return []
+
+
+def calculate_course_grades(course_id, student_id=None, conn=None):
+    """
+    Computes Canvas-style weighted grading out of 100 for all enrolled students
+    or a specific student in a course.
+    """
+    close_at_end = False
+    if conn is None:
+        conn = get_db()
+        close_at_end = True
+
+    course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+    categories = ensure_course_grading_categories(course_id, conn)
+
+    coursework_list = conn.execute("""
+        SELECT cw.*, cgc.name as category_name
+        FROM coursework cw
+        LEFT JOIN course_grading_categories cgc ON cw.category_id = cgc.id
+        WHERE cw.course_id = ? AND cw.type != 'material'
+        ORDER BY cw.created_at ASC
+    """, (course_id,)).fetchall()
+
+    if student_id:
+        students = conn.execute("""
+            SELECT u.id, u.display_name, u.roll_number, u.email
+            FROM course_enrollments ce
+            JOIN users u ON ce.user_id = u.id
+            WHERE ce.course_id = ? AND ce.role = 'student' AND u.id = ?
+        """, (course_id, student_id)).fetchall()
+    else:
+        students = conn.execute("""
+            SELECT u.id, u.display_name, u.roll_number, u.email
+            FROM course_enrollments ce
+            JOIN users u ON ce.user_id = u.id
+            WHERE ce.course_id = ? AND ce.role = 'student'
+            ORDER BY u.roll_number ASC
+        """, (course_id,)).fetchall()
+
+    # Submissions
+    sub_query = """
+        SELECT s.* FROM submissions s
+        JOIN coursework cw ON s.coursework_id = cw.id
+        WHERE cw.course_id = ?
+    """
+    if student_id:
+        sub_query += " AND s.student_id = ?"
+        submissions_raw = conn.execute(sub_query, (course_id, student_id)).fetchall()
+    else:
+        submissions_raw = conn.execute(sub_query, (course_id,)).fetchall()
+
+    sub_map = {(r["student_id"], r["coursework_id"]): r for r in submissions_raw}
+
+    # Attendance stats for course
+    logged_dates = conn.execute("""
+        SELECT COUNT(DISTINCT attendance_date) FROM attendance_logs WHERE course_id = ?
+    """, (course_id,)).fetchone()[0] or 0
+    created_sessions = conn.execute("""
+        SELECT COUNT(*) FROM attendance_sessions WHERE course_id = ?
+    """, (course_id,)).fetchone()[0] or 0
+    total_attendance_sessions = max(logged_dates, created_sessions)
+
+    # Calculate for each student
+    students_summary = []
+    total_scheme_weight = sum(float(c["weight"]) for c in categories)
+    if total_scheme_weight <= 0:
+        total_scheme_weight = 100.0
+
+    for s in students:
+        s_id = s["id"]
+        # Student attendance
+        present_count = conn.execute("""
+            SELECT COUNT(DISTINCT attendance_date) FROM attendance_logs
+            WHERE course_id = ? AND student_id = ? AND status = 'PRESENT'
+        """, (course_id, s_id)).fetchone()[0] or 0
+
+        if total_attendance_sessions > 0:
+            att_pct = round(min(100.0, (present_count / total_attendance_sessions) * 100.0), 1)
+        else:
+            att_pct = 100.0
+
+        cat_scores = {}
+        cw_scores = {}
+        weighted_points_earned = 0.0
+        active_weights_sum = 0.0
+
+        for cat in categories:
+            cat_id = cat["id"]
+            weight = float(cat["weight"])
+            is_att = bool(cat["is_attendance"])
+
+            if is_att:
+                cat_earned_pct = att_pct
+                cat_weighted_pts = round(cat_earned_pct * (weight / 100.0), 2)
+                cat_scores[cat_id] = {
+                    "id": cat_id,
+                    "name": cat["name"],
+                    "weight": weight,
+                    "earned_points": present_count,
+                    "max_points": total_attendance_sessions,
+                    "percentage": cat_earned_pct,
+                    "weighted_points": cat_weighted_pts,
+                    "is_attendance": True
+                }
+                weighted_points_earned += cat_weighted_pts
+                active_weights_sum += weight
+            else:
+                cws = [cw for cw in coursework_list if cw["category_id"] == cat_id]
+                cat_earned = 0.0
+                cat_max = 0.0
+                has_graded = False
+
+                for cw in cws:
+                    cw_id = cw["id"]
+                    sub = sub_map.get((s_id, cw_id))
+                    grade = sub["grade"] if (sub and sub["grade"] is not None) else None
+                    if grade is not None:
+                        cat_earned += float(grade)
+                        cat_max += float(cw["points"] or 100)
+                        has_graded = True
+                    cw_scores[cw_id] = {
+                        "submission": sub,
+                        "grade": grade,
+                        "max_points": cw["points"] or 100,
+                        "percentage": round((float(grade) / (cw["points"] or 100)) * 100.0, 1) if grade is not None else None,
+                        "status": sub["status"] if sub else "missing"
+                    }
+
+                if cat_max > 0:
+                    cat_pct = round((cat_earned / cat_max) * 100.0, 1)
+                    cat_weighted_pts = round(cat_pct * (weight / 100.0), 2)
+                    cat_scores[cat_id] = {
+                        "id": cat_id,
+                        "name": cat["name"],
+                        "weight": weight,
+                        "earned_points": round(cat_earned, 2),
+                        "max_points": round(cat_max, 2),
+                        "percentage": cat_pct,
+                        "weighted_points": cat_weighted_pts,
+                        "is_attendance": False
+                    }
+                    weighted_points_earned += cat_weighted_pts
+                    active_weights_sum += weight
+                else:
+                    cat_scores[cat_id] = {
+                        "id": cat_id,
+                        "name": cat["name"],
+                        "weight": weight,
+                        "earned_points": 0.0,
+                        "max_points": 0.0,
+                        "percentage": None,
+                        "weighted_points": 0.0,
+                        "is_attendance": False
+                    }
+
+        running_grade_100 = round((weighted_points_earned / active_weights_sum) * 100.0, 2) if active_weights_sum > 0 else 0.0
+        final_grade_100 = round(weighted_points_earned, 2)
+
+        # Custom formula evaluation if specified
+        if course and course["grading_formula"]:
+            try:
+                formula_str = course["grading_formula"].strip()
+                var_dict = {}
+                for cat in categories:
+                    v_name = re.sub(r'[^a-zA-Z0-9]', '', cat["name"])
+                    if cat["is_attendance"]:
+                        var_dict["Attendance"] = att_pct
+                    if v_name:
+                        var_dict[v_name] = cat_scores[cat["id"]]["percentage"] or 0.0
+                safe_dict = {"__builtins__": {}}
+                safe_dict.update(var_dict)
+                formula_val = eval(formula_str, safe_dict)
+                final_grade_100 = round(float(formula_val), 2)
+            except Exception:
+                pass
+
+        letter_grade = score_to_letter_grade(final_grade_100)
+
+        students_summary.append({
+            "id": s["id"],
+            "display_name": s["display_name"],
+            "roll_number": s["roll_number"],
+            "email": s["email"],
+            "attendance": {
+                "present_count": present_count,
+                "total_sessions": total_attendance_sessions,
+                "percentage": att_pct,
+                "weighted_points": cat_scores.get(next((c["id"] for c in categories if c["is_attendance"]), None), {}).get("weighted_points", 0.0)
+            },
+            "cat_scores": cat_scores,
+            "cw_scores": cw_scores,
+            "final_grade": final_grade_100,
+            "running_grade": running_grade_100,
+            "letter_grade": letter_grade
+        })
+
+    if close_at_end:
+        conn.close()
+
+    return {
+        "categories": categories,
+        "coursework_list": coursework_list,
+        "students": students_summary,
+        "sub_map": sub_map,
+        "total_attendance_sessions": total_attendance_sessions,
+        "total_scheme_weight": total_scheme_weight,
+        "course": course
+    }
+
 
 @app.route("/courses/<int:course_id>/grades")
-@teacher_required
+@login_required
 def course_grades(course_id):
+    course = get_course_or_404(course_id)
+    user = get_current_user()
+    conn = get_db()
+
+    # Check authorization
+    is_teacher_or_admin = (user["role"] in ("teacher", "admin"))
+    if not is_teacher_or_admin:
+        co_teacher = conn.execute("""
+            SELECT 1 FROM course_enrollments
+            WHERE course_id = ? AND user_id = ? AND role IN ('teacher', 'ta', 'co-teacher')
+        """, (course_id, user["id"])).fetchone()
+        if co_teacher:
+            is_teacher_or_admin = True
+
+    if not is_teacher_or_admin:
+        enr = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, user["id"])).fetchone()
+        if not enr:
+            conn.close()
+            flash("You must be enrolled in this course to view grades.", "warning")
+            return redirect(url_for("dashboard"))
+
+    conn.close()
+
+    if not is_teacher_or_admin:
+        # Student View: Canvas-style personal scorecard
+        grade_data = calculate_course_grades(course_id, student_id=user["id"])
+        student_record = grade_data["students"][0] if grade_data["students"] else None
+        return render_template(
+            "course_grades.html",
+            course=course,
+            is_student=True,
+            student=student_record,
+            categories=grade_data["categories"],
+            coursework_list=grade_data["coursework_list"],
+            total_attendance_sessions=grade_data["total_attendance_sessions"],
+            active_tab="grades",
+            is_teacher_or_admin=False
+        )
+
+    # Teacher / Admin View: Canvas-style Gradebook Matrix
+    grade_data = calculate_course_grades(course_id)
+    return render_template(
+        "course_grades.html",
+        course=course,
+        is_student=False,
+        students=grade_data["students"],
+        categories=grade_data["categories"],
+        coursework_list=grade_data["coursework_list"],
+        sub_map=grade_data["sub_map"],
+        total_attendance_sessions=grade_data["total_attendance_sessions"],
+        total_scheme_weight=grade_data["total_scheme_weight"],
+        active_tab="grades",
+        is_teacher_or_admin=True
+    )
+
+
+@app.route("/courses/<int:course_id>/grades/categories", methods=["POST"])
+@teacher_required
+def save_grading_categories(course_id):
     course = get_course_or_404(course_id)
     conn = get_db()
 
-    coursework_list = conn.execute("""
-        SELECT id, title, type, points, due_date
-        FROM coursework
-        WHERE course_id = ? AND type != 'material'
-        ORDER BY created_at ASC
+    cat_ids = request.form.getlist("cat_id")
+    weights = request.form.getlist("weight")
+    names = request.form.getlist("name")
+
+    for cid, w, n in zip(cat_ids, weights, names):
+        if cid and cid.isdigit():
+            try:
+                w_val = max(0.0, float(w))
+            except ValueError:
+                w_val = 0.0
+            conn.execute("""
+                UPDATE course_grading_categories
+                SET name = ?, weight = ?
+                WHERE id = ? AND course_id = ?
+            """, (n.strip(), w_val, int(cid), course_id))
+
+    new_name = request.form.get("new_category_name", "").strip()
+    new_weight = request.form.get("new_category_weight", "").strip()
+    new_is_att = 1 if request.form.get("new_is_attendance") == "1" else 0
+
+    if new_name:
+        try:
+            nw_val = max(0.0, float(new_weight)) if new_weight else 10.0
+        except ValueError:
+            nw_val = 10.0
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("""
+            INSERT INTO course_grading_categories (course_id, name, weight, is_attendance, drop_lowest, created_at)
+            VALUES (?, ?, ?, ?, 0, ?)
+        """, (course_id, new_name, nw_val, new_is_att, now_str))
+
+    conn.commit()
+    conn.close()
+    flash("Course grading scheme and category weights saved successfully.", "success")
+    return redirect(url_for("course_grades", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/grades/categories/delete/<int:category_id>", methods=["POST"])
+@teacher_required
+def delete_grading_category(course_id, category_id):
+    course = get_course_or_404(course_id)
+    conn = get_db()
+    conn.execute("UPDATE coursework SET category_id = NULL WHERE category_id = ? AND course_id = ?", (category_id, course_id))
+    conn.execute("DELETE FROM course_grading_categories WHERE id = ? AND course_id = ?", (category_id, course_id))
+    conn.commit()
+    conn.close()
+    flash("Grading category deleted.", "info")
+    return redirect(url_for("course_grades", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/category", methods=["POST"])
+@teacher_required
+def set_coursework_category(course_id, coursework_id):
+    category_id = request.form.get("category_id")
+    cat_val = int(category_id) if category_id and category_id.isdigit() else None
+    conn = get_db()
+    conn.execute("UPDATE coursework SET category_id = ? WHERE id = ? AND course_id = ?", (cat_val, coursework_id, course_id))
+    conn.commit()
+    conn.close()
+    flash("Coursework category updated.", "success")
+    return redirect(request.referrer or url_for("course_grades", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/grades/formula", methods=["POST"])
+@teacher_required
+def save_grading_formula(course_id):
+    formula = request.form.get("grading_formula", "").strip()
+    conn = get_db()
+    conn.execute("UPDATE courses SET grading_formula = ? WHERE id = ?", (formula if formula else None, course_id))
+    conn.commit()
+    conn.close()
+    if formula:
+        flash("Custom grading calculation formula saved.", "success")
+    else:
+        flash("Reverted to standard weighted category calculation.", "info")
+    return redirect(url_for("course_grades", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/grades/template")
+@teacher_required
+def export_grades_template(course_id):
+    course = get_course_or_404(course_id)
+    conn = get_db()
+
+    cw_list = conn.execute("""
+        SELECT id, title, points FROM coursework WHERE course_id = ? AND type != 'material' ORDER BY created_at ASC
     """, (course_id,)).fetchall()
 
     students = conn.execute("""
-        SELECT u.id, u.display_name, u.roll_number, u.email
+        SELECT u.roll_number, u.display_name, u.email
         FROM course_enrollments ce
         JOIN users u ON ce.user_id = u.id
         WHERE ce.course_id = ? AND ce.role = 'student'
         ORDER BY u.roll_number ASC
     """, (course_id,)).fetchall()
+    conn.close()
 
-    submissions_raw = conn.execute("""
-        SELECT s.student_id, s.coursework_id, s.grade, s.status, s.is_late, s.id as submission_id
-        FROM submissions s
-        JOIN coursework cw ON s.coursework_id = cw.id
-        WHERE cw.course_id = ?
+    output = io.StringIO()
+    output.write("\ufeff")  # UTF-8 BOM for Microsoft Excel compatibility
+    header = ["Roll Number", "Student Name", "Email"]
+    for cw in cw_list:
+        header.append(f"{cw['title']} (Max {cw['points']})")
+    output.write(",".join([f'"{h}"' for h in header]) + "\n")
+
+    for s in students:
+        row = [s["roll_number"] or "", s["display_name"], s["email"] or ""]
+        for cw in cw_list:
+            row.append("")  # Empty cell for instructor grade input
+        output.write(",".join([f'"{c}"' for c in row]) + "\n")
+
+    clean_code = re.sub(r'[^a-zA-Z0-9_-]', '_', course["code"])
+    filename = f"{clean_code}_grades_template_{datetime.now().strftime('%Y%m%d')}.csv"
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@app.route("/courses/<int:course_id>/grades/import", methods=["POST"])
+@teacher_required
+def import_grades(course_id):
+    course = get_course_or_404(course_id)
+    file = request.files.get("grades_file")
+    if not file or not file.filename:
+        flash("Please choose a CSV, TSV, or Excel (.xlsx) file to upload.", "danger")
+        return redirect(url_for("course_grades", course_id=course_id))
+
+    rows = parse_spreadsheet_file(file)
+    if not rows or len(rows) < 2:
+        flash("The uploaded file contains no data rows or could not be parsed.", "danger")
+        return redirect(url_for("course_grades", course_id=course_id))
+
+    conn = get_db()
+    cw_list = conn.execute("""
+        SELECT id, title, points FROM coursework WHERE course_id = ? AND type != 'material'
     """, (course_id,)).fetchall()
 
-    sub_map = {}
-    for r in submissions_raw:
-        sub_map[(r["student_id"], r["coursework_id"])] = r
+    if not cw_list:
+        conn.close()
+        flash("No active coursework exists in this course to grade.", "warning")
+        return redirect(url_for("course_grades", course_id=course_id))
 
+    headers = [h.strip() for h in rows[0]]
+    id_col_idx = -1
+    cw_col_map = {}  # col_idx -> coursework dict
+
+    for idx, h in enumerate(headers):
+        h_clean = h.lower()
+        if any(key in h_clean for key in ("roll", "roll number", "student id", "id", "username", "email")):
+            if id_col_idx == -1:
+                id_col_idx = idx
+
+        # Normalize header: strip "(max ...)", "(points ...)"
+        norm_h = re.sub(r'\(max[^)]*\)', '', h, flags=re.IGNORECASE).strip().lower()
+        for cw in cw_list:
+            cw_norm = cw["title"].strip().lower()
+            if cw_norm in norm_h or norm_h in cw_norm:
+                cw_col_map[idx] = cw
+                break
+
+    if id_col_idx == -1:
+        id_col_idx = 0
+
+    if not cw_col_map:
+        conn.close()
+        flash("Could not match any column headers to coursework in this course. Please verify column titles or use the downloadable template.", "danger")
+        return redirect(url_for("course_grades", course_id=course_id))
+
+    updated_grades_count = 0
+    matched_students = set()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    for r_idx in range(1, len(rows)):
+        row = rows[r_idx]
+        if id_col_idx >= len(row):
+            continue
+        ident = row[id_col_idx].strip()
+        if not ident:
+            continue
+
+        st = conn.execute("""
+            SELECT u.id, u.roll_number, u.display_name
+            FROM course_enrollments ce
+            JOIN users u ON ce.user_id = u.id
+            WHERE ce.course_id = ? AND ce.role = 'student'
+              AND (UPPER(u.roll_number) = ? OR LOWER(u.username) = ? OR (u.email != '' AND LOWER(u.email) = ?))
+        """, (course_id, ident.upper(), ident.lower(), ident.lower())).fetchone()
+
+        if not st:
+            continue
+
+        matched_students.add(st["id"])
+
+        for col_idx, cw in cw_col_map.items():
+            if col_idx < len(row):
+                val_raw = row[col_idx].strip()
+                if not val_raw or val_raw.upper() in ("MISSING", "N/A", "-"):
+                    continue
+                val_clean = re.sub(r'[^0-9.]', '', val_raw)
+                try:
+                    score = float(val_clean)
+                except ValueError:
+                    continue
+
+                existing = conn.execute("""
+                    SELECT id FROM submissions WHERE coursework_id = ? AND student_id = ?
+                """, (cw["id"], st["id"])).fetchone()
+
+                if existing:
+                    conn.execute("""
+                        UPDATE submissions SET
+                            grade = ?, status = 'graded', graded_by = ?, graded_at = ?
+                        WHERE id = ?
+                    """, (score, session.get("user_id"), now_str, existing["id"]))
+                else:
+                    receipt_tok = f"IMP-{secrets.token_hex(12).upper()}"
+                    conn.execute("""
+                        INSERT INTO submissions (
+                            coursework_id, student_id, roll_number, student_name,
+                            original_filename, stored_filename, file_path, file_size,
+                            sha256, submitted_at, grade, status, graded_by, graded_at, receipt_token
+                        ) VALUES (?, ?, ?, ?, ?, ?, '', 0, ?, ?, ?, 'graded', ?, ?, ?)
+                    """, (
+                        cw["id"], st["id"], st["roll_number"] or ident, st["display_name"],
+                        "grade_import.csv", "grade_import.csv",
+                        hashlib.sha256(f"IMPORT:{st['id']}:{cw['id']}:{score}".encode()).hexdigest(),
+                        now_str, score, session.get("user_id"), now_str, receipt_tok
+                    ))
+                updated_grades_count += 1
+
+    conn.commit()
     conn.close()
-    return render_template(
-        "course_grades.html",
-        course=course,
-        coursework_list=coursework_list,
-        students=students,
-        sub_map=sub_map,
-        active_tab="grades"
-    )
+
+    flash(f"Bulk Grade Import Successful: Updated {updated_grades_count} grade(s) across {len(cw_col_map)} assessment(s) for {len(matched_students)} student(s).", "success")
+    return redirect(url_for("course_grades", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/grades/quick-update", methods=["POST"])
+@teacher_required
+def quick_grade_update(course_id):
+    student_id = request.form.get("student_id")
+    coursework_id = request.form.get("coursework_id")
+    grade_val = request.form.get("grade", "").strip()
+    feedback = request.form.get("feedback", "").strip()
+
+    if not student_id or not coursework_id:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"success": False, "error": "Missing student or coursework ID"}), 400
+        flash("Missing parameters.", "danger")
+        return redirect(url_for("course_grades", course_id=course_id))
+
+    try:
+        grade = float(grade_val) if grade_val else None
+    except ValueError:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"success": False, "error": "Invalid grade number"}), 400
+        flash("Invalid grade number.", "danger")
+        return redirect(url_for("course_grades", course_id=course_id))
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+
+    existing = conn.execute("""
+        SELECT id FROM submissions WHERE coursework_id = ? AND student_id = ?
+    """, (coursework_id, student_id)).fetchone()
+
+    if existing:
+        conn.execute("""
+            UPDATE submissions SET
+                grade = ?, feedback = ?, graded_by = ?, graded_at = ?, status = 'graded'
+            WHERE id = ?
+        """, (grade, feedback, session.get("user_id"), now_str, existing["id"]))
+    else:
+        st = conn.execute("SELECT roll_number, display_name FROM users WHERE id = ?", (student_id,)).fetchone()
+        receipt_tok = f"QUICK-{secrets.token_hex(12).upper()}"
+        conn.execute("""
+            INSERT INTO submissions (
+                coursework_id, student_id, roll_number, student_name,
+                original_filename, stored_filename, file_path, file_size,
+                sha256, submitted_at, grade, feedback, status, graded_by, graded_at, receipt_token
+            ) VALUES (?, ?, ?, ?, 'manual_grade.txt', 'manual_grade.txt', '', 0, ?, ?, ?, ?, 'graded', ?, ?, ?)
+        """, (
+            coursework_id, student_id, st["roll_number"] or "", st["display_name"],
+            hashlib.sha256(f"MANUAL:{student_id}:{coursework_id}:{grade}".encode()).hexdigest(),
+            now_str, grade, feedback, session.get("user_id"), now_str, receipt_tok
+        ))
+
+    conn.commit()
+    conn.close()
+
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+        return jsonify({"success": True, "grade": grade, "feedback": feedback})
+
+    flash("Grade saved successfully.", "success")
+    return redirect(url_for("course_grades", course_id=course_id))
 
 
 @app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/grade/<int:submission_id>", methods=["POST"])
@@ -1787,51 +2680,49 @@ def grade_submission(course_id, coursework_id, submission_id):
 @teacher_required
 def export_grades_csv(course_id):
     course = get_course_or_404(course_id)
-    conn = get_db()
-
-    cw_list = conn.execute("""
-        SELECT id, title, points FROM coursework WHERE course_id = ? AND type != 'material' ORDER BY created_at ASC
-    """, (course_id,)).fetchall()
-
-    students = conn.execute("""
-        SELECT u.id, u.roll_number, u.display_name, u.email
-        FROM course_enrollments ce
-        JOIN users u ON ce.user_id = u.id
-        WHERE ce.course_id = ? AND ce.role = 'student'
-        ORDER BY u.roll_number ASC
-    """, (course_id,)).fetchall()
-
-    sub_raw = conn.execute("""
-        SELECT s.student_id, s.coursework_id, s.grade, s.status, s.is_late
-        FROM submissions s
-        JOIN coursework cw ON s.coursework_id = cw.id
-        WHERE cw.course_id = ?
-    """, (course_id,)).fetchall()
-    conn.close()
-
-    sub_map = {(r["student_id"], r["coursework_id"]): r for r in sub_raw}
+    grade_data = calculate_course_grades(course_id)
 
     output = io.StringIO()
+    output.write("\ufeff")  # UTF-8 BOM
     header = ["Roll Number", "Student Name", "Email"]
-    for cw in cw_list:
+
+    for cw in grade_data["coursework_list"]:
         header.append(f"{cw['title']} (Max {cw['points']})")
+
+    # Category subtotals
+    for cat in grade_data["categories"]:
+        header.append(f"{cat['name']} ({cat['weight']}%)")
+
+    header.extend(["Final Weighted Score (100)", "Letter Grade"])
     output.write(",".join([f'"{h}"' for h in header]) + "\n")
 
-    for s in students:
+    for s in grade_data["students"]:
         row = [s["roll_number"] or "", s["display_name"], s["email"] or ""]
-        for cw in cw_list:
-            sub = sub_map.get((s["id"], cw["id"]))
-            if sub and sub["grade"] is not None:
-                row.append(str(sub["grade"]))
-            elif sub:
+        # Coursework scores
+        for cw in grade_data["coursework_list"]:
+            sc = s["cw_scores"].get(cw["id"])
+            if sc and sc["grade"] is not None:
+                row.append(str(sc["grade"]))
+            elif sc and sc["status"] == "turned_in":
                 row.append("Turned In")
             else:
                 row.append("Missing")
+
+        # Category scores
+        for cat in grade_data["categories"]:
+            cat_info = s["cat_scores"].get(cat["id"])
+            if cat_info and cat_info["percentage"] is not None:
+                row.append(f"{cat_info['percentage']}% ({cat_info['weighted_points']} pts)")
+            else:
+                row.append("-")
+
+        row.append(f"{s['final_grade']} / 100")
+        row.append(s["letter_grade"])
         output.write(",".join([f'"{c}"' for c in row]) + "\n")
 
     output.seek(0)
     clean_code = re.sub(r'[^a-zA-Z0-9_-]', '_', course["code"])
-    filename = f"{clean_code}_gradebook_{datetime.now().strftime('%Y%m%d')}.csv"
+    filename = f"{clean_code}_gradebook_export_{datetime.now().strftime('%Y%m%d')}.csv"
 
     return Response(
         output.getvalue(),
@@ -1989,6 +2880,15 @@ def locker_preview(file_id):
     fpath = Path(f["file_path"])
     ext = fpath.suffix.lower()
 
+    if ext == ".pdf":
+        return jsonify({
+            "type": "pdf",
+            "filename": f["original_filename"],
+            "size": format_file_size(f["file_size"]),
+            "url": url_for("locker_view", file_id=file_id),
+            "download_url": url_for("locker_download", file_id=file_id)
+        })
+
     text_extensions = {".c", ".cpp", ".h", ".hpp", ".cu", ".cuh", ".py", ".sh", ".txt", ".md", ".json", ".sql", ".html", ".css", ".js"}
     if ext in text_extensions or f["file_size"] < 100 * 1024:
         try:
@@ -2009,6 +2909,20 @@ def locker_preview(file_id):
         "size": format_file_size(f["file_size"]),
         "message": "Binary preview not available for this file type. Please download to view."
     })
+
+
+@app.route("/locker/view/<int:file_id>")
+@login_required
+def locker_view(file_id):
+    conn = get_db()
+    f = conn.execute("SELECT * FROM student_locker_files WHERE id = ? AND user_id = ?", (file_id, session["user_id"])).fetchone()
+    conn.close()
+    if not f or not os.path.exists(f["file_path"]):
+        abort(404, "File not found")
+
+    ext = Path(f["original_filename"]).suffix.lower()
+    mimetype = "application/pdf" if ext == ".pdf" else None
+    return send_file(f["file_path"], mimetype=mimetype, as_attachment=False, download_name=f["original_filename"])
 
 
 @app.route("/locker/delete/<int:file_id>", methods=["POST"])
@@ -2055,35 +2969,79 @@ def locker_download_all():
     return send_file(mem_zip, mimetype="application/zip", as_attachment=True, download_name=filename)
 
 
-# --- File Downloads ---
+# --- File Downloads & In-App Viewers ---
 
+@app.route("/view/attachment/<int:att_id>")
 @app.route("/download/attachment/<int:att_id>")
 @login_required
 def download_attachment(att_id):
     conn = get_db()
     att = conn.execute("SELECT * FROM coursework_attachments WHERE id = ?", (att_id,)).fetchone()
+    file_path = None
+    original_filename = None
+
+    if att and os.path.exists(att["file_path"]):
+        file_path = att["file_path"]
+        original_filename = att["original_filename"]
+    else:
+        ann = conn.execute("SELECT * FROM announcements WHERE id = ?", (att_id,)).fetchone()
+        if ann and ann["attachment_path"] and os.path.exists(ann["attachment_path"]):
+            file_path = ann["attachment_path"]
+            original_filename = ann["attachment_name"]
+
     conn.close()
-    if not att or not os.path.exists(att["file_path"]):
+    if not file_path:
         abort(404, "Attachment not found")
-    return send_file(att["file_path"], as_attachment=True, download_name=att["original_filename"])
+
+    is_inline = request.path.startswith("/view/") or request.args.get("view") == "1" or request.args.get("inline") == "1"
+    ext = Path(original_filename).suffix.lower()
+    mimetype = "application/pdf" if ext == ".pdf" else None
+
+    return send_file(
+        file_path,
+        mimetype=mimetype,
+        as_attachment=not is_inline,
+        download_name=original_filename
+    )
 
 
+@app.route("/view/submission/<int:sub_id>")
 @app.route("/download/submission/<int:sub_id>")
 @login_required
 def download_submission(sub_id):
     conn = get_db()
     sub = conn.execute("SELECT * FROM submissions WHERE id = ?", (sub_id,)).fetchone()
-    conn.close()
     if not sub or not os.path.exists(sub["file_path"]):
+        conn.close()
         abort(404, "Submission file not found")
 
-    if session.get("role") not in ("teacher", "admin") and sub["student_id"] != session["user_id"]:
+    is_authorized = False
+    if session.get("role") in ("teacher", "admin") or sub["student_id"] == session["user_id"]:
+        is_authorized = True
+    else:
+        cw = conn.execute("SELECT course_id FROM coursework WHERE id = ?", (sub["coursework_id"],)).fetchone()
+        if cw:
+            enr = conn.execute("SELECT role FROM course_enrollments WHERE course_id = ? AND user_id = ? AND role = 'ta'", (cw["course_id"], session["user_id"])).fetchone()
+            if enr:
+                is_authorized = True
+
+    conn.close()
+    if not is_authorized:
         abort(403, "Unauthorized access to submission")
 
-    return send_file(sub["file_path"], as_attachment=True, download_name=sub["original_filename"])
+    is_inline = request.path.startswith("/view/") or request.args.get("view") == "1" or request.args.get("inline") == "1"
+    ext = Path(sub["original_filename"]).suffix.lower()
+    mimetype = "application/pdf" if ext == ".pdf" else None
+
+    return send_file(
+        sub["file_path"],
+        mimetype=mimetype,
+        as_attachment=not is_inline,
+        download_name=sub["original_filename"]
+    )
 
 
-# --- Admin Panel ---
+# --- Admin & Faculty User Management ---
 
 @app.route("/admin/users")
 @admin_required
@@ -2101,19 +3059,53 @@ def admin_users():
 
 
 @app.route("/admin/users/<int:user_id>/role", methods=["POST"])
-@admin_required
+@teacher_required
 def admin_change_role(user_id):
-    new_role = request.form.get("role", "student")
+    curr_user = get_current_user()
+    new_role = request.form.get("role", "student").strip().lower()
+    target_redirect = request.referrer or (url_for("admin_users") if curr_user["role"] == "admin" else url_for("dashboard"))
     if new_role not in ("student", "teacher", "admin"):
         flash("Invalid role.", "danger")
-        return redirect(url_for("admin_users"))
+        return redirect(target_redirect)
+
+    if new_role == "admin" and curr_user["role"] != "admin":
+        flash("Only an administrator can assign the Administrator role.", "danger")
+        return redirect(target_redirect)
 
     conn = get_db()
     conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, user_id))
     conn.commit()
     conn.close()
     flash("User role updated successfully.", "success")
-    return redirect(url_for("admin_users"))
+    return redirect(target_redirect)
+
+
+@app.route("/teacher/students/<int:user_id>/role", methods=["POST"])
+@teacher_required
+def teacher_change_student_role(user_id):
+    curr_user = get_current_user()
+    new_role = request.form.get("role", "student").strip().lower()
+    target_redirect = request.referrer or url_for("dashboard")
+    if new_role not in ("student", "teacher"):
+        flash("Teachers can only set Student or Teacher roles.", "danger")
+        return redirect(target_redirect)
+
+    conn = get_db()
+    target_user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not target_user:
+        conn.close()
+        abort(404)
+
+    if target_user["role"] == "admin":
+        conn.close()
+        flash("Cannot change the role of an Administrator.", "danger")
+        return redirect(target_redirect)
+
+    conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, user_id))
+    conn.commit()
+    conn.close()
+    flash(f"Updated {target_user['display_name']}'s role to {new_role.capitalize()}.", "success")
+    return redirect(target_redirect)
 
 
 @app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])

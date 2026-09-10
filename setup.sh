@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Lab Exam File Submission Portal - Automated Server Setup Script
+# Hoodle: Accelerated Classroom & Lab Learning Management System (LMS)
+# Automated Server Setup & Fresh Installation Script
 # Developed by Kishan Tamboli (PhD)
 # Accelerated Computing Research Lab (ACCL), Indian Institute of Technology Bhilai
 # ==============================================================================
-# This script performs a complete installation on a brand new Ubuntu/Debian server:
-#   1. Installs all required OS packages (python3, pip, venv, sqlite3, nginx, ufw, etc.)
+# This script performs a complete automated installation on Ubuntu/Debian:
+#   1. Installs all required OS packages (python3, pip, venv, sqlite3, nginx, curl, etc.)
 #   2. Prompts for configuration parameters (with intelligent defaults)
-#   3. Sets up Python virtual environment and installs Flask / Werkzeug
-#   4. Configures systemd service (auto-restart on crash and enable on boot)
-#   5. Configures Nginx reverse proxy block with 250 MB file upload limit
-#   6. Initializes SQLite database tables with administrator accounts
-#   7. Verifies health and displays access links & credentials
+#   3. Sets up Python virtual environment and installs all dependencies
+#   4. Initializes database tables, default admin, faculty, and student accounts
+#   5. Configures isolated storage directories (lockers, submissions, attachments, exports)
+#   6. Configures systemd service (accl-lms.service) with Gunicorn multi-threaded workers
+#   7. Configures Nginx reverse proxy with HTTPS camera streaming support and 500M body limit
+#   8. Runs full test suite to verify 100% green deployment health
+#   9. Verifies endpoints and displays credentials and access links
 # ==============================================================================
 
 set -e
@@ -27,8 +30,8 @@ NC='\033[0m' # No Color
 
 echo -e "${CYAN}${BOLD}"
 echo "================================================================================"
-echo "    LAB EXAM SUBMISSION PORTAL - AUTOMATED SERVER SETUP"
-echo "    Developed by Kishan Tamboli (PhD)"
+echo "    HOODLE LMS - AUTOMATED SERVER SETUP & INSTALLATION"
+echo "    Accelerated Classroom & Lab Learning Management System"
 echo "    Accelerated Computing Research Lab (ACCL), IIT Bhilai"
 echo "================================================================================"
 echo -e "${NC}"
@@ -89,25 +92,26 @@ prompt_param() {
 TARGET_DIR="${TARGET_DIR:-$SCRIPT_DIR}"
 prompt_param TARGET_DIR "Installation directory path" "$TARGET_DIR"
 prompt_param SERVICE_USER "System user to run the service" "$CURRENT_USER"
-prompt_param PORT "Internal application port" "8090"
+prompt_param PORT "Internal application port" "8095"
 prompt_param SERVER_IP "Server Hostname / IP address" "$DEFAULT_IP"
-prompt_param ROUTE_PREFIX "Nginx URL prefix path (e.g. /lab_exam/ or /)" "/lab_exam/"
-prompt_param ADMIN_PASS "Initial Admin Password (username: admin)" "admin@accl"
+prompt_param ROUTE_PREFIX "Nginx URL prefix path (e.g. /lms/ or /)" "/lms/"
 
-SUBMISSIONS_DIR="$TARGET_DIR/submissions"
 VENV_DIR="$TARGET_DIR/venv"
-DB_PATH="$TARGET_DIR/submissions.db"
-SECRET_KEY=$(head -c 32 /dev/urandom | xxd -p 2>/dev/null || echo "accl_lab_exam_portal_key_$(date +%s)")
+STORAGE_DIR="$TARGET_DIR/storage"
+LOCKERS_DIR="$STORAGE_DIR/lockers"
+SUBMISSIONS_DIR="$STORAGE_DIR/submissions"
+ATTACHMENTS_DIR="$STORAGE_DIR/attachments"
+EXPORTS_DIR="$STORAGE_DIR/exports"
+DB_PATH="$TARGET_DIR/accl_lms.db"
 
 echo ""
 echo -e "${GREEN}Configuration Summary:${NC}"
 echo "  - Install Path:      $TARGET_DIR"
 echo "  - Service User:      $SERVICE_USER"
 echo "  - Service Port:      $PORT"
-echo "  - Submissions Dir:   $SUBMISSIONS_DIR"
+echo "  - Storage Dir:       $STORAGE_DIR"
 echo "  - Server IP:         $SERVER_IP"
 echo "  - Nginx URL Route:   http://${SERVER_IP}${ROUTE_PREFIX}"
-echo "  - Admin Account:     admin / $ADMIN_PASS"
 echo ""
 
 if [ "$NON_INTERACTIVE" != true ]; then
@@ -119,129 +123,108 @@ if [ "$NON_INTERACTIVE" != true ]; then
 fi
 
 echo ""
-echo -e "${YELLOW}Step 2: Installing Required System Packages (APT)${NC}"
+echo -e "${YELLOW}Step 2: Installing System Packages & Build Tools${NC}"
 echo "----------------------------------------------------"
-$SUDO apt-get update -y
-$SUDO apt-get install -y \
+$SUDO apt-get update -qq
+$SUDO apt-get install -y -qq \
     python3 \
     python3-pip \
     python3-venv \
+    python3-dev \
+    build-essential \
     sqlite3 \
     nginx \
     curl \
-    rsync \
     git \
-    ufw \
-    xxd
+    rsync \
+    ufw >/dev/null
 
-echo -e "${GREEN}✓ System packages installed successfully.${NC}"
+echo -e "${GREEN}✓ System dependencies installed successfully.${NC}"
 
 echo ""
-echo -e "${YELLOW}Step 3: Creating Directory Structure & Setting Permissions${NC}"
+echo -e "${YELLOW}Step 3: Setting Up Storage Directories & Permissions${NC}"
 echo "----------------------------------------------------"
-$SUDO mkdir -p "$TARGET_DIR"
-$SUDO mkdir -p "$SUBMISSIONS_DIR"
-$SUDO mkdir -p "$TARGET_DIR/static/uploads"
-$SUDO mkdir -p "$TARGET_DIR/static/images"
-$SUDO mkdir -p "$TARGET_DIR/templates"
-
-# If current directory is different from TARGET_DIR, copy application files
-if [ "$SCRIPT_DIR" != "$TARGET_DIR" ]; then
-    echo "Copying portal files into $TARGET_DIR..."
-    $SUDO cp -ru "$SCRIPT_DIR/app.py" "$TARGET_DIR/"
-    $SUDO cp -ru "$SCRIPT_DIR/requirements.txt" "$TARGET_DIR/" 2>/dev/null || true
-    $SUDO cp -ru "$SCRIPT_DIR/static" "$TARGET_DIR/"
-    $SUDO cp -ru "$SCRIPT_DIR/templates" "$TARGET_DIR/"
-fi
-
-# Ensure correct ownership
+mkdir -p "$LOCKERS_DIR" "$SUBMISSIONS_DIR" "$ATTACHMENTS_DIR" "$EXPORTS_DIR"
 $SUDO chown -R "$SERVICE_USER":"$SERVICE_USER" "$TARGET_DIR"
-echo -e "${GREEN}✓ Directory structure created and ownership configured for '$SERVICE_USER'.${NC}"
+$SUDO chmod -R 775 "$STORAGE_DIR"
+echo -e "${GREEN}✓ Storage directories created with proper read/write permissions.${NC}"
 
 echo ""
 echo -e "${YELLOW}Step 4: Setting Up Python Virtual Environment${NC}"
 echo "----------------------------------------------------"
 if [ ! -d "$VENV_DIR" ]; then
-    $SUDO -u "$SERVICE_USER" python3 -m venv "$VENV_DIR"
+    python3 -m venv "$VENV_DIR"
+    echo -e "${GREEN}✓ Created Python virtualenv at $VENV_DIR${NC}"
 fi
 
-$SUDO -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --upgrade pip
-$SUDO -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install Flask>=3.0.0 Werkzeug>=3.0.0
-echo -e "${GREEN}✓ Python virtual environment created with Flask & Werkzeug installed.${NC}"
+source "$VENV_DIR/bin/activate"
+pip install --upgrade pip -q
+pip install -r "$TARGET_DIR/requirements.txt" -q
+echo -e "${GREEN}✓ Installed Python dependencies (Flask, Werkzeug, openpyxl, qrcode, gunicorn).${NC}"
 
 echo ""
-echo -e "${YELLOW}Step 5: Initializing Database & Administrator Account${NC}"
+echo -e "${YELLOW}Step 5: Initializing Database & Pre-Seeded Accounts${NC}"
 echo "----------------------------------------------------"
-export SUBMISSION_DIR="$SUBMISSIONS_DIR"
-export DB_PATH="$DB_PATH"
-export PORT="$PORT"
-export HOST="0.0.0.0"
-export SECRET_KEY="$SECRET_KEY"
-
-$SUDO -u "$SERVICE_USER" "$VENV_DIR/bin/python3" -c "
-from app import init_db, get_db
-from werkzeug.security import generate_password_hash
-init_db()
-conn = get_db()
-cursor = conn.cursor()
-pwd_hash = generate_password_hash('$ADMIN_PASS')
-cursor.execute(\"UPDATE users SET password_hash = ? WHERE username = 'admin'\", (pwd_hash,))
-conn.commit()
-conn.close()
-print('✓ Database initialized with admin password.')
-"
-echo -e "${GREEN}✓ Database schema migration & admin seed completed.${NC}"
+cd "$TARGET_DIR"
+python3 -c "import app; app.init_db(); print('✓ Database schema and initial accounts verified.')"
 
 echo ""
-echo -e "${YELLOW}Step 6: Configuring Systemd Service (lab-exam.service)${NC}"
+echo -e "${YELLOW}Step 6: Running Verification Test Suite${NC}"
 echo "----------------------------------------------------"
-SERVICE_FILE="/etc/systemd/system/lab-exam.service"
+python3 -m unittest -v test_lms.py
+echo -e "${GREEN}✓ All automated tests passed successfully.${NC}"
+
+echo ""
+echo -e "${YELLOW}Step 7: Configuring Systemd Service (accl-lms.service)${NC}"
+echo "----------------------------------------------------"
+SERVICE_FILE="/etc/systemd/system/accl-lms.service"
 $SUDO bash -c "cat << EOF > $SERVICE_FILE
 [Unit]
-Description=Lab Exam File Submission Portal
+Description=ACCL Learning Management System & Classroom Portal (Hoodle)
 After=network.target
 
 [Service]
-Type=simple
 User=$SERVICE_USER
+Group=$SERVICE_USER
 WorkingDirectory=$TARGET_DIR
-ExecStart=$VENV_DIR/bin/python3 $TARGET_DIR/app.py
+Environment=\"PATH=$VENV_DIR/bin:/usr/local/bin:/usr/bin:/bin\"
+ExecStart=$VENV_DIR/bin/gunicorn --workers 16 --threads 4 --worker-class gthread --bind 0.0.0.0:$PORT --timeout 120 --keep-alive 5 --max-requests 2000 --max-requests-jitter 200 app:app
 Restart=always
 RestartSec=3
-Environment=PORT=$PORT
-Environment=HOST=0.0.0.0
-Environment=SUBMISSION_DIR=$SUBMISSIONS_DIR
-Environment=DB_PATH=$DB_PATH
-Environment=SECRET_KEY=$SECRET_KEY
+KillMode=mixed
+TimeoutStopSec=30
+LimitNOFILE=65535
 
 [Install]
 WantedBy=multi-user.target
 EOF"
 
 $SUDO systemctl daemon-reload
-$SUDO systemctl enable lab-exam.service
-$SUDO systemctl restart lab-exam.service
-echo -e "${GREEN}✓ Systemd service configured, enabled on boot, and started.${NC}"
+$SUDO systemctl enable accl-lms.service
+$SUDO systemctl restart accl-lms.service
+echo -e "${GREEN}✓ Systemd service accl-lms.service configured, enabled, and started.${NC}"
 
 echo ""
-echo -e "${YELLOW}Step 7: Configuring Nginx Reverse Proxy${NC}"
+echo -e "${YELLOW}Step 8: Configuring Nginx Reverse Proxy & Camera Streaming Headers${NC}"
 echo "----------------------------------------------------"
-# Create Nginx proxy location snippet
-NGINX_SNIPPET="/etc/nginx/snippets/lab-exam.conf"
+CLEAN_PREFIX="${ROUTE_PREFIX%/}"
+NGINX_SNIPPET="/etc/nginx/snippets/accl-lms.conf"
 $SUDO mkdir -p /etc/nginx/snippets
 
-CLEAN_PREFIX="${ROUTE_PREFIX%/}"
-if [ -z "$CLEAN_PREFIX" ] || [ "$CLEAN_PREFIX" = "/" ]; then
+if [ -z "$CLEAN_PREFIX" ]; then
     NGINX_BLOCK="
     location / {
         proxy_pass http://127.0.0.1:$PORT/;
         proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \"upgrade\";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        client_max_body_size 250M;
-        proxy_read_timeout 120s;
+        client_max_body_size 500M;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
     }
     "
 else
@@ -253,27 +236,28 @@ else
     location $CLEAN_PREFIX/ {
         proxy_pass http://127.0.0.1:$PORT/;
         proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \"upgrade\";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        client_max_body_size 250M;
-        proxy_read_timeout 120s;
+        client_max_body_size 500M;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
     }
     "
 fi
 
 $SUDO bash -c "cat << EOF > $NGINX_SNIPPET
-# Accelerated Computing Research Lab (ACCL) Lab Exam Portal
+# ACCL Hoodle LMS Reverse Proxy Configuration
 $NGINX_BLOCK
 EOF"
 
-# Check if default site exists
 DEFAULT_SITE="/etc/nginx/sites-available/default"
 if [ -f "$DEFAULT_SITE" ]; then
-    if ! grep -q "lab-exam.conf" "$DEFAULT_SITE"; then
-        # Insert snippet include before closing brace of server block
-        $SUDO sed -i "/server_name/a \    include /etc/nginx/snippets/lab-exam.conf;" "$DEFAULT_SITE"
+    if ! grep -q "accl-lms.conf" "$DEFAULT_SITE"; then
+        $SUDO sed -i "/server_name/a \    include /etc/nginx/snippets/accl-lms.conf;" "$DEFAULT_SITE"
     fi
 fi
 
@@ -281,18 +265,7 @@ if $SUDO nginx -t >/dev/null 2>&1; then
     $SUDO systemctl reload nginx
     echo -e "${GREEN}✓ Nginx configuration tested and reloaded successfully.${NC}"
 else
-    echo -e "${YELLOW}[!] Nginx test had warnings or conflicts. Check $NGINX_SNIPPET and /etc/nginx/sites-enabled/default.${NC}"
-fi
-
-echo ""
-echo -e "${YELLOW}Step 8: Configuring Firewall (UFW)${NC}"
-echo "----------------------------------------------------"
-if command -v ufw >/dev/null 2>&1; then
-    $SUDO ufw allow 'Nginx Full' >/dev/null 2>&1 || true
-    $SUDO ufw allow 80/tcp >/dev/null 2>&1 || true
-    $SUDO ufw allow 443/tcp >/dev/null 2>&1 || true
-    $SUDO ufw allow 22/tcp >/dev/null 2>&1 || true
-    echo -e "${GREEN}✓ Firewall rules updated for HTTP, HTTPS, and SSH.${NC}"
+    echo -e "${YELLOW}[!] Nginx test had warnings or conflicts. Check $NGINX_SNIPPET.${NC}"
 fi
 
 echo ""
@@ -317,23 +290,24 @@ fi
 echo ""
 echo -e "${CYAN}${BOLD}"
 echo "================================================================================"
-echo "    INSTALLATION COMPLETED SUCCESSFULLY! "
+echo "    HOODLE LMS INSTALLATION COMPLETED SUCCESSFULLY! "
 echo "================================================================================"
 echo -e "${NC}"
 echo -e "Access URLs:"
-echo -e "  - ${BOLD}Instructor & Admin Login:${NC} http://${SERVER_IP}${ROUTE_PREFIX}login"
-echo -e "  - ${BOLD}Direct App (Port):${NC}        http://${SERVER_IP}:${PORT}/login"
+echo -e "  - ${BOLD}HTTPS Portal (Recommended for Camera Scanner):${NC} https://${SERVER_IP}${ROUTE_PREFIX}login"
+echo -e "  - ${BOLD}HTTP Portal:${NC}                                   http://${SERVER_IP}${ROUTE_PREFIX}login"
+echo -e "  - ${BOLD}Direct App (Port $PORT):${NC}                       http://${SERVER_IP}:${PORT}/login"
 echo ""
-echo -e "Default Admin Credentials:"
-echo -e "  - ${BOLD}Username:${NC} admin"
-echo -e "  - ${BOLD}Password:${NC} $ADMIN_PASS"
-echo -e "  ${YELLOW}(Please change your password immediately after logging in!)${NC}"
+echo -e "Pre-Seeded Default Accounts:"
+echo -e "  - ${BOLD}Administrator:${NC} username: ${CYAN}admin${NC}     | password: ${CYAN}admin@accl${NC}"
+echo -e "  - ${BOLD}Faculty / Teacher:${NC} username: ${CYAN}kishan${NC} | password: ${CYAN}password123${NC}"
+echo -e "  - ${BOLD}Student Account:${NC}   username: ${CYAN}student1${NC} | password: ${CYAN}student123${NC} (Roll: B26DS001)"
 echo ""
 echo -e "Useful Commands:"
-echo -e "  - Check Service:  ${CYAN}sudo systemctl status lab-exam.service${NC}"
-echo -e "  - Restart App:    ${CYAN}sudo systemctl restart lab-exam.service${NC}"
-echo -e "  - View Logs:      ${CYAN}journalctl -u lab-exam.service -f${NC}"
-echo -e "  - Reload Nginx:   ${CYAN}sudo systemctl reload nginx${NC}"
+echo -e "  - Check Service:  ${CYAN}sudo systemctl status accl-lms.service${NC}"
+echo -e "  - Restart App:    ${CYAN}sudo systemctl restart accl-lms.service${NC}"
+echo -e "  - View Logs:      ${CYAN}sudo journalctl -u accl-lms.service -f${NC}"
+echo -e "  - Run Unit Tests: ${CYAN}python3 -m unittest -v test_lms.py${NC}"
 echo ""
 echo -e "${CYAN}Developed by Kishan Tamboli (PhD) • Accelerated Computing Research Lab (ACCL), IIT Bhilai${NC}"
 echo "================================================================================"

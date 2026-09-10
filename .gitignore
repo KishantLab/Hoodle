@@ -1,5 +1,36 @@
+# Python Bytecode
 __pycache__/
-*.pyc
-submissions/
+*.py[cod]
+*$py.class
+
+# Databases & Local Data
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
+accl_lms.db
+
+# Storage Directories & Uploads
+storage/
+submissions/
+*.zip
+*.tar.gz
+
+# Environment & Virtual Environments
+venv/
+.venv/
+env/
+.env
+
+# Logs & Testing
+*.log
 .pytest_cache/
+.coverage
+htmlcov/
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

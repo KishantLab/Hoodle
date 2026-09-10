@@ -9,6 +9,8 @@ import tempfile
 import unittest
 import io
 import zipfile
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import app
@@ -428,7 +430,415 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertEqual(token_res.status_code, 200)
         self.assertIn("token", token_res.get_json())
 
+    def test_exam_lockdown_auto_expire_and_locked_submission(self):
+        """Test that exam lockdown automatically lifts when end_time passes, and submissions cannot be modified after end_time."""
+        self.login("kishan", "password123")
+        conn = app.get_db()
+        course = conn.execute("SELECT id FROM courses LIMIT 1").fetchone()
+
+        now = datetime.now()
+        start_str = (now - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
+        end_str = (now + timedelta(seconds=2)).strftime("%Y-%m-%d %H:%M:%S")
+
+        conn.execute("""
+            INSERT INTO coursework (course_id, type, title, description, points, start_time, end_time, allowed_types, allow_multiple, allow_late, is_exam_mode, created_by, created_at)
+            VALUES (?, 'exam', 'Quick Expiring Exam', 'Testing auto expiration', 100, ?, ?, 'zip', 1, 0, 1, 1, ?)
+        """, (course["id"], start_str, end_str, start_str))
+        exam_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute("UPDATE courses SET active_exam_id = ? WHERE id = ?", (exam_id, course["id"]))
+        conn.commit()
+        conn.close()
+
+        # Student logs in
+        self.logout()
+        self.login("student1", "student123")
+
+        # 1. While exam is ongoing, lockdown is active
+        conn = app.get_db()
+        st_user = conn.execute("SELECT id FROM users WHERE username = 'student1'").fetchone()
+        conn.close()
+        lockdown = app.get_active_exam_lockdown_for_student(st_user["id"])
+        self.assertIsNotNone(lockdown)
+        self.assertEqual(lockdown["coursework_id"], exam_id)
+
+        # 2. Student submits a solution while active
+        mem_zip = io.BytesIO()
+        with zipfile.ZipFile(mem_zip, mode="w") as zf:
+            zf.writestr("solution.c", "int main(){ return 0; }")
+        mem_zip.seek(0)
+        submit_res = self.client.post(f"/courses/{course['id']}/exam/{exam_id}/submit", data={
+            "exam_file": (mem_zip, "B26DS001_sol.zip"),
+            "lab_name": "Lab 1"
+        }, content_type="multipart/form-data", follow_redirects=True)
+        self.assertIn(b"Official Digital Submission Receipt", submit_res.data)
+
+        # 3. Wait until exam expires
+        time.sleep(3)
+
+        # Lockdown must now be automatically disabled in DB and return None
+        lockdown_after = app.get_active_exam_lockdown_for_student(st_user["id"])
+        self.assertIsNone(lockdown_after)
+
+        # DB must have is_exam_mode=0 and active_exam_id=NULL
+        conn = app.get_db()
+        cw_row = conn.execute("SELECT is_exam_mode FROM coursework WHERE id = ?", (exam_id,)).fetchone()
+        c_row = conn.execute("SELECT active_exam_id FROM courses WHERE id = ?", (course["id"],)).fetchone()
+        conn.close()
+        self.assertEqual(cw_row["is_exam_mode"], 0)
+        self.assertIsNone(c_row["active_exam_id"])
+
+        # 4. Attempt to modify submission after exam ended - must be strictly rejected
+        mem_zip2 = io.BytesIO()
+        with zipfile.ZipFile(mem_zip2, mode="w") as zf:
+            zf.writestr("solution_modified.c", "int main(){ return 1; }")
+        mem_zip2.seek(0)
+        late_submit_res = self.client.post(f"/courses/{course['id']}/exam/{exam_id}/submit", data={
+            "exam_file": (mem_zip2, "B26DS001_sol2.zip"),
+            "lab_name": "Lab 1"
+        }, content_type="multipart/form-data", follow_redirects=True)
+        self.assertIn(b"The exam deadline has passed. Modifying or re-submitting after the exam has ended is strictly locked", late_submit_res.data)
+
+    def test_role_management_and_coteacher_workflow(self):
+        """Test user role modification by admin/teacher, default student roles, and co-teacher workflows."""
+        # 1. New user registration defaults to student
+        self.client.post("/register", data={
+            "full_name": "Test User Alpha",
+            "roll_number": "B26CS777",
+            "email": "b26cs777@iitbhilai.ac.in",
+            "password": "password123",
+            "confirm_password": "password123",
+            "role": "student"
+        })
+        conn = app.get_db()
+        user_alpha = conn.execute("SELECT * FROM users WHERE username = 'b26cs777'").fetchone()
+        conn.close()
+        self.assertIsNotNone(user_alpha)
+        self.assertEqual(user_alpha["role"], "student")
+
+        # 2. Student cannot access /admin/users
+        self.login("b26cs777", "password123")
+        res_stud = self.client.get("/admin/users", follow_redirects=True)
+        self.assertIn(b"Administrator privileges required", res_stud.data)
+        self.logout()
+
+        # 3. User directory is shown ONLY for admin; professor does NOT see or access it
+        self.login("kishan", "password123")
+        res_users = self.client.get("/admin/users", follow_redirects=True)
+        self.assertIn(b"Administrator privileges required", res_users.data)
+
+        # Professor navbar does NOT contain User Directory
+        dash_res = self.client.get("/dashboard")
+        self.assertNotIn(b"User Directory", dash_res.data)
+
+        # BUT the professor CAN change the role of registered students
+        # Teacher promotes registered student to teacher
+        res_promote = self.client.post(f"/teacher/students/{user_alpha['id']}/role", data={"role": "teacher"}, follow_redirects=True)
+        self.assertIn(b"Updated", res_promote.data)
+
+        conn = app.get_db()
+        user_alpha = conn.execute("SELECT * FROM users WHERE id = ?", (user_alpha["id"],)).fetchone()
+        conn.close()
+        self.assertEqual(user_alpha["role"], "teacher")
+
+        # Teacher demotes teacher back to student
+        res_demote = self.client.post(f"/teacher/students/{user_alpha['id']}/role", data={"role": "student"}, follow_redirects=True)
+        self.assertIn(b"Updated", res_demote.data)
+
+        conn = app.get_db()
+        user_alpha = conn.execute("SELECT * FROM users WHERE id = ?", (user_alpha["id"],)).fetchone()
+        conn.close()
+        self.assertEqual(user_alpha["role"], "student")
+
+        # Teacher promotes student to teacher again
+        res_promote2 = self.client.post(f"/teacher/students/{user_alpha['id']}/role", data={"role": "teacher"}, follow_redirects=True)
+        self.assertIn(b"Updated", res_promote2.data)
+
+        conn = app.get_db()
+        user_alpha = conn.execute("SELECT * FROM users WHERE id = ?", (user_alpha["id"],)).fetchone()
+        conn.close()
+        self.assertEqual(user_alpha["role"], "teacher")
+
+        # Teacher cannot promote someone to admin (only Superadmin can)
+        res_promote_admin = self.client.post(f"/admin/users/{user_alpha['id']}/role", data={"role": "admin"}, follow_redirects=True)
+        self.assertIn(b"Only an administrator can assign the Administrator role", res_promote_admin.data)
+        self.logout()
+
+        # 4. Student joining class with class code defaults to student even if attempting to request 'ta'
+        conn = app.get_db()
+        course = conn.execute("SELECT * FROM courses WHERE code = 'CSL100'").fetchone()
+        conn.close()
+
+        self.client.post("/register", data={
+            "full_name": "Test User Beta",
+            "roll_number": "B26CS888",
+            "email": "b26cs888@iitbhilai.ac.in",
+            "password": "password123",
+            "confirm_password": "password123",
+            "role": "student"
+        })
+        self.login("b26cs888", "password123")
+        join_res = self.client.post("/courses/join", data={
+            "join_code": course["join_code"],
+            "enrollment_role": "ta"  # Student attempts to join as TA
+        }, follow_redirects=True)
+        self.assertIn(b"as Student", join_res.data)
+
+        conn = app.get_db()
+        beta_user = conn.execute("SELECT id FROM users WHERE username = 'b26cs888'").fetchone()
+        beta_enr = conn.execute("SELECT role FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course["id"], beta_user["id"])).fetchone()
+        conn.close()
+        self.assertEqual(beta_enr["role"], "student")
+        self.logout()
+
+        # 5. Teacher (user_alpha) joining class can choose to join as Co-Teacher ('ta')
+        self.login("b26cs777", "password123")
+        join_res2 = self.client.post("/courses/join", data={
+            "join_code": course["join_code"],
+            "enrollment_role": "ta"
+        }, follow_redirects=True)
+        self.assertIn(b"as Co-Teacher", join_res2.data)
+
+        conn = app.get_db()
+        alpha_enr = conn.execute("SELECT role FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course["id"], user_alpha["id"])).fetchone()
+        conn.close()
+        self.assertEqual(alpha_enr["role"], "ta")
+        self.logout()
+
+        # 6. Primary teacher manages roles within course people roster
+        self.login("kishan", "password123")
+
+        # Promote beta student to Co-Teacher
+        res_toggle = self.client.post(f"/courses/{course['id']}/people/{beta_user['id']}/role", data={"role": "ta"}, follow_redirects=True)
+        self.assertIn(b"Updated Test User Beta&#39;s role in CSL100 to Co-Teacher", res_toggle.data)
+
+        conn = app.get_db()
+        beta_enr2 = conn.execute("SELECT role FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course["id"], beta_user["id"])).fetchone()
+        conn.close()
+        self.assertEqual(beta_enr2["role"], "ta")
+
+        # Demote beta back to Student
+        res_toggle2 = self.client.post(f"/courses/{course['id']}/people/{beta_user['id']}/role", data={"role": "student"}, follow_redirects=True)
+        self.assertIn(b"Updated Test User Beta&#39;s role in CSL100 to Student", res_toggle2.data)
+
+        conn = app.get_db()
+        beta_enr3 = conn.execute("SELECT role FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course["id"], beta_user["id"])).fetchone()
+        conn.close()
+        self.assertEqual(beta_enr3["role"], "student")
+
+        # Add Co-Teacher by identifier
+        res_add_ct = self.client.post(f"/courses/{course['id']}/people/add-coteacher", data={
+            "identifier": "B26CS888"
+        }, follow_redirects=True)
+        self.assertIn(b"is now configured as Co-Teacher", res_add_ct.data)
+
+        conn = app.get_db()
+        beta_enr4 = conn.execute("SELECT role FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course["id"], beta_user["id"])).fetchone()
+        conn.close()
+        self.assertEqual(beta_enr4["role"], "ta")
+
+        # Cannot demote primary teacher
+        res_demote_primary = self.client.post(f"/courses/{course['id']}/people/{course['teacher_id']}/role", data={"role": "student"}, follow_redirects=True)
+        self.assertIn(b"The primary course instructor cannot be demoted to student", res_demote_primary.data)
+
+        # Cannot remove primary teacher
+        res_remove_primary = self.client.post(f"/courses/{course['id']}/people/remove/{course['teacher_id']}", follow_redirects=True)
+        self.assertIn(b"Cannot remove the primary course instructor", res_remove_primary.data)
+
+    def test_canvas_weighted_grading_and_bulk_import(self):
+        """Test Canvas-inspired weighted grading out of 100, bulk grade import, class code privacy, and student scorecards."""
+        conn = app.get_db()
+        course = conn.execute("SELECT * FROM courses WHERE code = 'CSL100'").fetchone()
+        student = conn.execute("SELECT * FROM users WHERE username = 'student1'").fetchone()
+        cw = conn.execute("SELECT * FROM coursework WHERE course_id = ? AND type = 'assignment' LIMIT 1", (course["id"],)).fetchone()
+        conn.close()
+
+        # 1. Privacy Checks: Student cannot see class code or turned-in counts
+        self.login("student1", "student123")
+        stream_res = self.client.get(f"/courses/{course['id']}/stream")
+        # Class invitation card must not be shown to student
+        self.assertNotIn(b"stream-code-box", stream_res.data)
+        self.assertNotIn(b"Share this code with students", stream_res.data)
+
+        people_res = self.client.get(f"/courses/{course['id']}/people")
+        self.assertNotIn(b"Class Invitation Code", people_res.data)
+        # Turned In column must not be shown in people roster
+        self.assertNotIn(b"<th>Turned In</th>", people_res.data)
+        self.assertNotIn(b"badge-turned-in", people_res.data)
+        self.logout()
+
+        # 2. Instructor can see Class Code
+        self.login("kishan", "password123")
+        inst_people = self.client.get(f"/courses/{course['id']}/people")
+        self.assertIn(b"Class Invitation Code", inst_people.data)
+        self.assertIn(course["join_code"].encode(), inst_people.data)
+
+        # 3. Canvas Weighted Grade Scheme & Default Categories
+        grades_res = self.client.get(f"/courses/{course['id']}/grades")
+        self.assertEqual(grades_res.status_code, 200)
+        self.assertIn(b"Course Gradebook Matrix & Assessment Weights", grades_res.data)
+        self.assertIn(b"Assignments &amp; Quizzes", grades_res.data)
+        self.assertIn(b"Attendance", grades_res.data)
+        self.assertIn(b"100.0%", grades_res.data)
+
+        # Update category weights (e.g. End Sem 20%, Mid Sem 20%, Lab 10%, Assignments 45%, Attendance 5%)
+        conn = app.get_db()
+        cats = conn.execute("SELECT id, name, weight FROM course_grading_categories WHERE course_id = ? ORDER BY id ASC", (course["id"],)).fetchall()
+        conn.close()
+
+        cat_ids = [str(c["id"]) for c in cats]
+        cat_names = [c["name"] for c in cats]
+        cat_weights = ["40.0", "15.0", "20.0", "20.0", "5.0"]  # Sum = 100.0
+        data = {
+            "cat_id": cat_ids,
+            "name": cat_names,
+            "weight": cat_weights
+        }
+        res_weights = self.client.post(f"/courses/{course['id']}/grades/categories", data=data, follow_redirects=True)
+        self.assertIn(b"Course grading scheme and category weights saved successfully", res_weights.data)
+
+        # 4. Download pre-filled grading template (CSV)
+        tpl_res = self.client.get(f"/courses/{course['id']}/grades/template")
+        self.assertEqual(tpl_res.status_code, 200)
+        self.assertEqual(tpl_res.mimetype, "text/csv")
+        self.assertIn(b"Roll Number", tpl_res.data)
+        self.assertIn(student["roll_number"].encode(), tpl_res.data)
+
+        # 5. Bulk Grade Import from CSV
+        csv_content = (
+            f'Roll Number,Student Name,Email,"{cw["title"]}"\n'
+            f'{student["roll_number"]},{student["display_name"]},{student["email"]},88.5\n'
+        ).encode("utf-8")
+
+        import_res = self.client.post(f"/courses/{course['id']}/grades/import", data={
+            "grades_file": (io.BytesIO(csv_content), "csl100_grades.csv")
+        }, content_type="multipart/form-data", follow_redirects=True)
+        self.assertIn(b"Bulk Grade Import Successful", import_res.data)
+
+        # Verify grade saved in database
+        conn = app.get_db()
+        sub_row = conn.execute("SELECT grade, status FROM submissions WHERE coursework_id = ? AND student_id = ?", (cw["id"], student["id"])).fetchone()
+        conn.close()
+        self.assertIsNotNone(sub_row)
+        self.assertEqual(sub_row["grade"], 88.5)
+        self.assertEqual(sub_row["status"], "graded")
+
+        # 6. Quick Grade Update via SpeedGrader endpoint
+        quick_res = self.client.post(f"/courses/{course['id']}/grades/quick-update", data={
+            "student_id": student["id"],
+            "coursework_id": cw["id"],
+            "grade": "94.0",
+            "feedback": "Outstanding pointer implementation!"
+        }, headers={"X-Requested-With": "XMLHttpRequest"})
+        self.assertEqual(quick_res.status_code, 200)
+        self.assertTrue(quick_res.get_json()["success"])
+
+        conn = app.get_db()
+        sub_updated = conn.execute("SELECT grade, feedback FROM submissions WHERE coursework_id = ? AND student_id = ?", (cw["id"], student["id"])).fetchone()
+        conn.close()
+        self.assertEqual(sub_updated["grade"], 94.0)
+        self.assertEqual(sub_updated["feedback"], "Outstanding pointer implementation!")
+
+        # 7. Student Personal Scorecard View (Weighted Evaluation, No Canvas Standard)
+        self.logout()
+        self.login("student1", "student123")
+        student_grades = self.client.get(f"/courses/{course['id']}/grades")
+        self.assertEqual(student_grades.status_code, 200)
+        self.assertIn(b"Student Grade Report \xe2\x80\xa2 Weighted Evaluation", student_grades.data)
+        self.assertNotIn(b"Canvas Standard", student_grades.data)
+        self.assertIn(b"Weighted Total (Out of 100)", student_grades.data)
+        self.assertIn(b"Assessment Weighting Scheme", student_grades.data)
+        self.assertIn(b"Outstanding pointer implementation!", student_grades.data)
+
+    def test_in_app_pdf_opener_and_inline_routes(self):
+        """Test In-App PDF Opener inline delivery routes for attachments, submissions, and locker files."""
+        self.login("kishan", "password123")
+        conn = app.get_db()
+        teacher = conn.execute("SELECT id FROM users WHERE username = 'kishan'").fetchone()
+        course = conn.execute("SELECT id FROM courses WHERE teacher_id = ?", (teacher["id"],)).fetchone()
+        student = conn.execute("SELECT id, username, roll_number, display_name FROM users WHERE username = 'student1'").fetchone()
+
+        # Create dummy PDF file
+        pdf_bytes = b"%PDF-1.4 1 0 obj << /Type /Catalog >> endobj xref 0 1 0000000000 65535 f trailer << /Root 1 0 R >> %%EOF"
+
+        # 1. Coursework Attachment
+        cw_res = conn.execute("""
+            INSERT INTO coursework (course_id, created_by, title, description, points, type, created_at)
+            VALUES (?, ?, 'Lab 4 PDF Brief', 'Follow instructions in attached PDF', 50, 'assignment', datetime('now'))
+        """, (course["id"], teacher["id"]))
+        cw_id = cw_res.lastrowid
+
+        att_path = os.path.join(str(app.ATTACHMENTS_DIR), f"test_brief_{cw_id}.pdf")
+        with open(att_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        att_res = conn.execute("""
+            INSERT INTO coursework_attachments (coursework_id, original_filename, stored_filename, file_path, file_size, uploaded_at)
+            VALUES (?, 'Lab4_Instructions.pdf', ?, ?, ?, datetime('now'))
+        """, (cw_id, f"test_brief_{cw_id}.pdf", att_path, len(pdf_bytes)))
+        att_id = att_res.lastrowid
+
+        # 2. Student PDF Submission
+        sub_path = os.path.join(str(app.SUBMISSIONS_DIR), f"test_sub_{cw_id}.pdf")
+        with open(sub_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        sub_res = conn.execute("""
+            INSERT INTO submissions (coursework_id, student_id, roll_number, student_name, original_filename, stored_filename, file_path, file_size, sha256, receipt_token, submitted_at)
+            VALUES (?, ?, ?, ?, 'Student_Solution.pdf', ?, ?, ?, 'dummyhash', 'receipt_pdf_123', datetime('now'))
+        """, (cw_id, student["id"], student["roll_number"], student["display_name"], f"test_sub_{cw_id}.pdf", sub_path, len(pdf_bytes)))
+        sub_id = sub_res.lastrowid
+
+        # 3. Student Locker PDF
+        locker_path = os.path.join(str(app.LOCKERS_DIR), f"test_locker_{student['id']}.pdf")
+        with open(locker_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        lock_res = conn.execute("""
+            INSERT INTO student_locker_files (user_id, original_filename, stored_filename, file_path, file_size, mime_type, uploaded_at)
+            VALUES (?, 'Research_Paper.pdf', ?, ?, ?, 'application/pdf', datetime('now'))
+        """, (student["id"], f"test_locker_{student['id']}.pdf", locker_path, len(pdf_bytes)))
+        lock_id = lock_res.lastrowid
+        conn.commit()
+        conn.close()
+
+        # Teacher tests inline viewing of attachment
+        res_att = self.client.get(f"/view/attachment/{att_id}")
+        self.assertEqual(res_att.status_code, 200)
+        self.assertEqual(res_att.content_type, "application/pdf")
+        self.assertIn("inline", res_att.headers.get("Content-Disposition", ""))
+
+        # Teacher tests inline viewing of student submission
+        res_sub_teacher = self.client.get(f"/view/submission/{sub_id}")
+        self.assertEqual(res_sub_teacher.status_code, 200)
+        self.assertEqual(res_sub_teacher.content_type, "application/pdf")
+        self.assertIn("inline", res_sub_teacher.headers.get("Content-Disposition", ""))
+
+        # Switch to student
+        self.logout()
+        self.login("student1", "student123")
+
+        # Student tests inline viewing of their own submission
+        res_sub_student = self.client.get(f"/view/submission/{sub_id}")
+        self.assertEqual(res_sub_student.status_code, 200)
+        self.assertEqual(res_sub_student.content_type, "application/pdf")
+
+        # Student tests inline viewing of locker file
+        res_lock_view = self.client.get(f"/locker/view/{lock_id}")
+        self.assertEqual(res_lock_view.status_code, 200)
+        self.assertEqual(res_lock_view.content_type, "application/pdf")
+        self.assertIn("inline", res_lock_view.headers.get("Content-Disposition", ""))
+
+        # Student tests locker_preview API returning type 'pdf'
+        res_lock_prev = self.client.get(f"/locker/preview/{lock_id}")
+        self.assertEqual(res_lock_prev.status_code, 200)
+        prev_data = res_lock_prev.get_json()
+        self.assertEqual(prev_data["type"], "pdf")
+        self.assertEqual(prev_data["filename"], "Research_Paper.pdf")
+        self.assertIn(f"/locker/view/{lock_id}", prev_data["url"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
 

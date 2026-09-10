@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ course.code }} People - ACCLLMS{% endblock %}
+{% block title %}{{ course.code }} People - Hoodle{% endblock %}
 
 {% block content %}
 <!-- Google Classroom Course Header Banner -->
@@ -9,11 +9,13 @@
   <div class="course-subtitle">{{ course.section or 'Section A' }}</div>
   <div class="course-meta">
     <span>👨‍🏫 {{ course.teacher_name }}</span>
-    <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')">
-      <span>Class Code:</span>
-      <strong>{{ course.join_code }}</strong>
-      <span>📋</span>
-    </div>
+    {% if is_teacher_or_admin %}
+      <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')">
+        <span>Class Code:</span>
+        <strong>{{ course.join_code }}</strong>
+        <span>📋</span>
+      </div>
+    {% endif %}
   </div>
 </div>
 
@@ -31,59 +33,92 @@
   <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="course-tab">
     📅 Attendance
   </a>
-  {% if current_user.role in ('teacher', 'admin') %}
-    <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
-      📊 Grades
-    </a>
-  {% endif %}
+  <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
+    📊 Grades
+  </a>
 </nav>
 
 <div style="max-width: 900px; margin: 0 auto;">
-  <!-- Class Code Card -->
-  <div class="card" style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem; margin-bottom: 2rem;">
-    <div>
-      <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
-        Class Invitation Code
+  {% if is_teacher_or_admin %}
+    <!-- Class Code Card (Instructors Only) -->
+    <div class="card" style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem; margin-bottom: 2rem;">
+      <div>
+        <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+          Class Invitation Code
+        </div>
+        <div style="font-size: 1.5rem; font-weight: 800; color: var(--primary); font-family: monospace; letter-spacing: 0.08em; margin-top: 0.2rem;">
+          {{ course.join_code }}
+        </div>
       </div>
-      <div style="font-size: 1.5rem; font-weight: 800; color: var(--primary); font-family: monospace; letter-spacing: 0.08em; margin-top: 0.2rem;">
-        {{ course.join_code }}
-      </div>
-    </div>
 
-    <div style="display: flex; gap: 0.5rem;">
-      <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('{{ course.join_code }}', this, 'Copied!')">
-        📋 Copy Code
-      </button>
-      {% if current_user.role in ('teacher', 'admin') %}
+      <div style="display: flex; gap: 0.5rem;">
+        <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('{{ course.join_code }}', this, 'Copied!')">
+          📋 Copy Code
+        </button>
         <form action="{{ url_for('reset_join_code', course_id=course.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Generate a new class code? Existing enrolled students will not be affected.');">
           <button type="submit" class="btn btn-secondary btn-sm" title="Generate new code">
             🔄 Reset Code
           </button>
         </form>
-      {% endif %}
+      </div>
     </div>
-  </div>
+  {% endif %}
 
-  <!-- Teachers Section -->
+  <!-- Teachers & Co-Teachers Section -->
   <div class="card" style="margin-bottom: 2rem;">
-    <div class="card-header">
-      <h2 class="card-title" style="font-size: 1.25rem; color: #1e3a8a;">Instructors & Faculty</h2>
-      <span style="font-size: 0.85rem; color: var(--text-muted);">{{ teachers | length }} Instructor(s)</span>
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+      <div>
+        <h2 class="card-title" style="font-size: 1.25rem; color: #1e3a8a;">Instructors & Co-Teachers</h2>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">{{ teachers | length }} Instructor(s) & Co-Teacher(s)</span>
+      </div>
+      {% if is_teacher_or_admin %}
+        <button onclick="openModal('addCoTeacherModal')" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 0.4rem;">
+          <span>➕</span>
+          <span>Add Co-Teacher</span>
+        </button>
+      {% endif %}
     </div>
 
     <div style="display: flex; flex-direction: column; gap: 0.75rem;">
       {% for t in teachers %}
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 0.5rem;">
           <div style="display: flex; align-items: center; gap: 0.85rem;">
             <div style="width: 38px; height: 38px; border-radius: 50%; background: #dcfce7; color: #15803d; display: flex; align-items: center; justify-content: center; font-weight: 700;">
               {{ t.display_name[0] | upper }}
             </div>
             <div>
-              <div style="font-weight: 700; font-size: 0.95rem;">{{ t.display_name }}</div>
-              <div style="font-size: 0.8rem; color: var(--text-muted);">{{ t.email }}</div>
+              <div style="font-weight: 700; font-size: 0.95rem;">
+                {{ t.display_name }}
+                {% if t.roll_number %}<span style="font-size: 0.8rem; color: var(--text-muted); font-weight: normal; font-family: monospace;">({{ t.roll_number }})</span>{% endif %}
+              </div>
+              <div style="font-size: 0.8rem; color: var(--text-muted);">{{ t.email or '-' }}</div>
             </div>
           </div>
-          <span class="role-badge role-teacher">{{ t.role }}</span>
+
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            {% if t.id == course.teacher_id %}
+              <span class="role-badge role-teacher">Lead Instructor</span>
+            {% else %}
+              <span class="role-badge" style="background: #e0e7ff; color: #3730a3; font-weight: 700;">Co-Teacher / TA</span>
+            {% endif %}
+
+            {% if is_teacher_or_admin and t.id != course.teacher_id %}
+              <!-- Demote Co-Teacher to Student -->
+              <form action="{{ url_for('change_course_person_role', course_id=course.id, target_user_id=t.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Change {{ t.display_name }}\'s role to Student in this class?');">
+                <input type="hidden" name="role" value="student">
+                <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 0.75rem; padding: 0.25rem 0.55rem;" title="Make Student">
+                  Make Student
+                </button>
+              </form>
+
+              <!-- Remove Co-Teacher -->
+              <form action="{{ url_for('remove_student', course_id=course.id, target_user_id=t.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove {{ t.display_name }} from this course?');">
+                <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger); font-size: 0.75rem; padding: 0.25rem 0.55rem;" title="Remove from course">
+                  Remove
+                </button>
+              </form>
+            {% endif %}
+          </div>
         </div>
       {% endfor %}
     </div>
@@ -105,9 +140,8 @@
               <th>Student Name</th>
               <th>Email</th>
               <th>Enrolled Date</th>
-              <th>Turned In</th>
-              {% if current_user.role in ('teacher', 'admin') %}
-                <th>Actions</th>
+              {% if is_teacher_or_admin %}
+                <th>Role / Actions</th>
               {% endif %}
             </tr>
           </thead>
@@ -116,18 +150,27 @@
               <tr>
                 <td style="font-family: monospace; font-weight: 700; color: #1e3a8a;">{{ s.roll_number or '-' }}</td>
                 <td style="font-weight: 600;">{{ s.display_name }}</td>
-                <td style="color: var(--text-muted); font-size: 0.85rem;">{{ s.email }}</td>
+                <td style="color: var(--text-muted); font-size: 0.85rem;">{{ s.email or '-' }}</td>
                 <td style="color: var(--text-muted); font-size: 0.85rem;">{{ s.enrolled_at | format_dt }}</td>
-                <td>
-                  <span class="badge badge-turned-in">{{ s.submissions_count }} submissions</span>
-                </td>
-                {% if current_user.role in ('teacher', 'admin') %}
+                {% if is_teacher_or_admin %}
                   <td>
-                    <form action="{{ url_for('remove_student', course_id=course.id, target_user_id=s.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove {{ s.display_name }} from course roster?');">
-                      <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger);" title="Remove Student">
-                        Remove
-                      </button>
-                    </form>
+                    <div style="display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap;">
+                      <!-- Quick Role Switcher Form -->
+                      <form action="{{ url_for('change_course_person_role', course_id=course.id, target_user_id=s.id) }}" method="POST" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                        <select name="role" class="form-control" style="font-size: 0.78rem; padding: 0.2rem 0.4rem; height: auto; font-weight: 600; min-width: 125px;" onchange="if(confirm('Change role for {{ s.display_name }}?')) this.form.submit();">
+                          <option value="student" selected>👨‍🎓 Student</option>
+                          <option value="ta">⭐ Co-Teacher</option>
+                          <option value="teacher">🎓 Teacher / Faculty</option>
+                        </select>
+                      </form>
+
+                      <!-- Remove Student -->
+                      <form action="{{ url_for('remove_student', course_id=course.id, target_user_id=s.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove {{ s.display_name }} from course roster?');">
+                        <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger); font-size: 0.75rem; padding: 0.2rem 0.45rem;" title="Remove Student">
+                          🗑️
+                        </button>
+                      </form>
+                    </div>
                   </td>
                 {% endif %}
               </tr>
@@ -142,6 +185,54 @@
         <p style="font-size: 0.82rem; margin-top: 0.25rem;">Share Class Code <strong>{{ course.join_code }}</strong> with students to enroll.</p>
       </div>
     {% endif %}
+  </div>
+</div>
+
+<!-- Modal: Add Co-Teacher / Manage Student Roles (Teachers & Admins) -->
+<div id="addCoTeacherModal" class="modal-backdrop">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 style="font-size: 1.15rem; font-weight: 700;">Add Person & Configure Role in {{ course.code }}</h3>
+      <button class="modal-close" onclick="closeModal('addCoTeacherModal')">&times;</button>
+    </div>
+    <form action="{{ url_for('add_co_teacher', course_id=course.id) }}" method="POST">
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.45;">
+        Select any registered student or colleague to configure their role or join this class. Professors can assign Student, Co-Teacher, or Faculty privileges.
+      </p>
+
+      {% if available_users %}
+        <div class="form-group">
+          <label class="form-label" for="select_coteacher">Choose from Registered Users</label>
+          <select id="select_coteacher" name="user_id" class="form-control" style="font-size: 0.9rem;">
+            <option value="">-- Select a registered user --</option>
+            {% for u in available_users %}
+              <option value="{{ u.id }}">
+                {{ u.display_name }} ({% if u.roll_number %}{{ u.roll_number }} • {% endif %}{{ u.role|title }}{% if u.course_role %} • enrolled as {{ u.course_role }}{% endif %})
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      {% endif %}
+
+      <div class="form-group">
+        <label class="form-label" for="identifier_input">Or Enter Roll Number / Username / Email</label>
+        <input type="text" id="identifier_input" name="identifier" class="form-control" placeholder="e.g. B26DS002 or faculty@iitbhilai.ac.in">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="role_select">Assign Role</label>
+        <select id="role_select" name="role" class="form-control" style="font-size: 0.9rem; font-weight: 600;">
+          <option value="ta" selected>⭐ Co-Teacher / TA (Teaching privileges in this course)</option>
+          <option value="teacher">🎓 Teacher / Faculty (System-wide faculty role & Co-Teacher)</option>
+          <option value="student">👨‍🎓 Student (Enroll as Student)</option>
+        </select>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('addCoTeacherModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Role & Add</button>
+      </div>
+    </form>
   </div>
 </div>
 {% endblock %}

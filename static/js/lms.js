@@ -35,24 +35,83 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  // In-App PDF Viewer
+  window.openPdfViewer = function(url, title, downloadUrl) {
+    const modal = document.getElementById("pdfViewerModal");
+    const frame = document.getElementById("pdfViewerFrame");
+    const titleEl = document.getElementById("pdfViewerTitle");
+    const newTabBtn = document.getElementById("pdfViewerNewTab");
+    const downloadBtn = document.getElementById("pdfViewerDownload");
+
+    if (!modal || !frame) return;
+
+    if (titleEl) titleEl.innerText = title || "Document Viewer";
+    if (newTabBtn) newTabBtn.href = url;
+    if (downloadBtn) {
+      downloadBtn.href = downloadUrl || url;
+      downloadBtn.setAttribute("download", title || "document.pdf");
+    }
+
+    frame.src = url;
+    modal.style.display = "flex";
+    document.body.style.overflow = "hidden";
+  };
+
+  window.closePdfViewer = function() {
+    const modal = document.getElementById("pdfViewerModal");
+    const frame = document.getElementById("pdfViewerFrame");
+    if (modal) modal.style.display = "none";
+    if (frame) frame.src = "about:blank";
+    document.body.style.overflow = "";
+    const modalContent = modal ? modal.querySelector(".pdf-modal-content") : null;
+    if (modalContent) modalContent.classList.remove("pdf-fullscreen");
+    const fsBtn = document.getElementById("pdfViewerFullscreenBtn");
+    if (fsBtn) fsBtn.innerText = "⛶ Fullscreen";
+  };
+
+  window.togglePdfFullscreen = function() {
+    const modal = document.getElementById("pdfViewerModal");
+    if (!modal) return;
+    const modalContent = modal.querySelector(".pdf-modal-content");
+    const fsBtn = document.getElementById("pdfViewerFullscreenBtn");
+    if (modalContent) {
+      modalContent.classList.toggle("pdf-fullscreen");
+      if (fsBtn) {
+        fsBtn.innerText = modalContent.classList.contains("pdf-fullscreen") ? "⛶ Exit Fullscreen" : "⛶ Fullscreen";
+      }
+    }
+  };
+
+  // Close PDF on Escape key
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") {
+      const modal = document.getElementById("pdfViewerModal");
+      if (modal && modal.style.display === "flex") {
+        closePdfViewer();
+      }
+    }
+  });
+
   // Preview file from student locker
   window.previewLockerFile = function(fileId) {
     const modal = document.getElementById("filePreviewModal");
     const titleEl = document.getElementById("previewModalTitle");
     const bodyEl = document.getElementById("previewModalBody");
 
-    if (!modal || !titleEl || !bodyEl) return;
-
-    titleEl.innerText = "Loading preview...";
-    bodyEl.innerHTML = "<p style='text-align:center; padding: 2rem;'>Fetching file preview...</p>";
-    modal.style.display = "flex";
-
     const basePrefix = window.location.pathname.startsWith("/lms") ? "/lms" : "";
 
     fetch(`${basePrefix}/locker/preview/${fileId}`)
       .then(res => res.json())
       .then(data => {
+        if (data.type === "pdf") {
+          window.openPdfViewer(data.url, data.filename, data.download_url);
+          return;
+        }
+
+        if (!modal || !titleEl || !bodyEl) return;
         titleEl.innerText = data.filename + " (" + data.size + ")";
+        modal.style.display = "flex";
+
         if (data.type === "text") {
           bodyEl.innerHTML = `<pre style="background:#0f172a; color:#f8fafc; padding:1rem; border-radius:8px; max-height:450px; overflow:auto; font-family:monospace; font-size:0.88rem;"><code>${escapeHtml(data.content)}</code></pre>`;
         } else {
@@ -63,7 +122,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       })
       .catch(err => {
-        bodyEl.innerHTML = `<p style='color:#dc2626; padding:1rem;'>Failed to load preview: ${err}</p>`;
+        if (bodyEl && modal) {
+          modal.style.display = "flex";
+          bodyEl.innerHTML = `<p style='color:#dc2626; padding:1rem;'>Failed to load preview: ${err}</p>`;
+        }
       });
   };
 

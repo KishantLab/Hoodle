@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ course.code }} Stream - ACCLLMS{% endblock %}
+{% block title %}{{ course.code }} Stream - Hoodle{% endblock %}
 
 {% block content %}
 <!-- Google Classroom Course Header Banner -->
@@ -9,11 +9,13 @@
   <div class="course-subtitle">{{ course.section or 'Section A' }}</div>
   <div class="course-meta">
     <span>👨‍🏫 {{ course.teacher_name }}</span>
-    <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')" title="Click to copy class code">
-      <span>Class Code:</span>
-      <strong>{{ course.join_code }}</strong>
-      <span>📋</span>
-    </div>
+    {% if is_teacher_or_admin %}
+      <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')" title="Click to copy class code">
+        <span>Class Code:</span>
+        <strong>{{ course.join_code }}</strong>
+        <span>📋</span>
+      </div>
+    {% endif %}
   </div>
 </div>
 
@@ -31,26 +33,26 @@
   <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="course-tab">
     📅 Attendance
   </a>
-  {% if current_user.role in ('teacher', 'admin') %}
-    <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
-      📊 Grades
-    </a>
-  {% endif %}
+  <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
+    📊 Grades
+  </a>
 </nav>
 
 <div class="stream-layout-grid">
   <!-- Left Column: Course Quick Info Sidebar -->
   <aside class="stream-sidebar">
-    <div class="card stream-info-card">
-      <div class="stream-card-label">Class Code</div>
-      <div class="stream-code-box" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')" title="Click to copy class code">
-        <span>{{ course.join_code }}</span>
-        <span style="font-size: 0.85rem; opacity: 0.75;">📋</span>
+    {% if is_teacher_or_admin %}
+      <div class="card stream-info-card">
+        <div class="stream-card-label">Class Code</div>
+        <div class="stream-code-box" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')" title="Click to copy class code">
+          <span>{{ course.join_code }}</span>
+          <span style="font-size: 0.85rem; opacity: 0.75;">📋</span>
+        </div>
+        <p class="stream-card-hint">
+          Share this code with students to allow them to self-enroll.
+        </p>
       </div>
-      <p class="stream-card-hint">
-        Share this code with students to allow them to self-enroll.
-      </p>
-    </div>
+    {% endif %}
 
     <div class="card stream-info-card">
       <div class="stream-card-label">Course Description</div>
@@ -143,9 +145,16 @@
                     <div class="attachment-size">({{ ann.attachment_size | filesize }})</div>
                   </div>
                 </div>
-                <a href="{{ url_for('download_attachment', att_id=ann.id) }}" class="btn btn-secondary btn-sm download-btn">
-                  Download
-                </a>
+                <div style="display: flex; gap: 0.35rem; align-items: center;">
+                  {% if ann.attachment_name.lower().endswith('.pdf') %}
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="openPdfViewer('{{ url_for('download_attachment', att_id=ann.id, view=1) }}', '{{ ann.attachment_name | escape }}', '{{ url_for('download_attachment', att_id=ann.id) }}')" style="color: #b91c1c; font-weight: 700;">
+                      📖 View PDF
+                    </button>
+                  {% endif %}
+                  <a href="{{ url_for('download_attachment', att_id=ann.id) }}" class="btn btn-secondary btn-sm download-btn">
+                    Download
+                  </a>
+                </div>
               </div>
             {% endif %}
 
