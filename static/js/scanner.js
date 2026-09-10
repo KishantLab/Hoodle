@@ -165,10 +165,19 @@ function onQrCodeSuccess(decodedText, decodedResult) {
 
   stopCameraScanner();
 
-  if (decodedText.startsWith("http://") || decodedText.startsWith("https://") || decodedText.startsWith("/")) {
+  const prefix = window.location.pathname.startsWith("/lms") ? "/lms" : "";
+
+  if (decodedText.startsWith("http://") || decodedText.startsWith("https://")) {
     window.location.href = decodedText;
+  } else if (decodedText.startsWith("/")) {
+    let target = decodedText;
+    if (prefix && !target.startsWith(prefix)) {
+      target = prefix + target;
+    }
+    window.location.href = target;
   } else if (decodedText.includes("attend/")) {
-    window.location.href = "/" + decodedText.replace(/^\/+/, "");
+    const cleanPath = decodedText.replace(/^\/+/, "");
+    window.location.href = (prefix ? prefix + "/" : "/") + cleanPath;
   } else {
     alert("Scanned text: " + decodedText + "\nPlease scan the official ACCLLMS projector code.");
   }

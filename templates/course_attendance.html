@@ -31,7 +31,7 @@
   <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="course-tab active">
     📅 Attendance
   </a>
-  {% if current_user.role in ('teacher', 'admin') %}
+  {% if is_course_teacher or current_user.role in ('teacher', 'admin') %}
     <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
       📊 Grades
     </a>
@@ -40,7 +40,7 @@
 
 <div class="container-responsive" style="max-width: 1100px; margin: 0 auto; padding-bottom: 3rem;">
 
-  {% if current_user.role == 'student' %}
+  {% if not is_course_teacher %}
     <!-- ========================================== -->
     <!-- STUDENT VIEW: PERSONAL ATTENDANCE SUMMARY -->
     <!-- ========================================== -->
@@ -64,11 +64,11 @@
           </button>
 
           <div style="text-align: right;">
-            <div style="font-size: 2.2rem; font-weight: 900; line-height: 1; font-family: monospace; color: {% if attendance_pct >= 75.0 %}var(--success){% else %}var(--danger){% endif %};">
-              {{ attendance_pct }}%
+            <div style="font-size: 2.2rem; font-weight: 900; line-height: 1; font-family: monospace; color: {% if (attendance_pct|default(0.0)) >= 75.0 %}var(--success){% else %}var(--danger){% endif %};">
+              {{ attendance_pct|default(0.0) }}%
             </div>
             <div style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; margin-top: 0.35rem;">
-              {% if attendance_pct >= 75.0 %}
+              {% if (attendance_pct|default(0.0)) >= 75.0 %}
                 <span class="badge" style="background: var(--success-bg); color: var(--success);">Satisfactory (≥ 75%)</span>
               {% else %}
                 <span class="badge" style="background: var(--danger-bg); color: var(--danger);">Shortage (< 75%)</span>
@@ -80,11 +80,11 @@
 
       <!-- Attendance Percentage Progress Bar -->
       <div style="background: var(--border); border-radius: 9999px; height: 12px; overflow: hidden; margin-bottom: 1rem; position: relative;">
-        <div style="background: {% if attendance_pct >= 75.0 %}var(--success){% else %}var(--danger){% endif %}; height: 100%; width: {{ [attendance_pct, 100]|min }}%; border-radius: 9999px; transition: width 0.6s ease;"></div>
+        <div style="background: {% if (attendance_pct|default(0.0)) >= 75.0 %}var(--success){% else %}var(--danger){% endif %}; height: 100%; width: {{ [(attendance_pct|default(0.0)), 100]|min }}%; border-radius: 9999px; transition: width 0.6s ease;"></div>
       </div>
 
       <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-muted); flex-wrap: wrap; gap: 0.5rem;">
-        <span>Attended <strong>{{ attended_count }}</strong> of <strong>{{ total_sessions }}</strong> conducted sessions</span>
+        <span>Attended <strong>{{ attended_count|default(0) }}</strong> of <strong>{{ total_sessions|default(0) }}</strong> conducted sessions</span>
         <span>Requirement: 75% minimum</span>
       </div>
     </div>
@@ -508,8 +508,14 @@
     
     modal.style.display = "flex";
 
-    fetch(`/api/courses/{{ course.id }}/attendance/student/${studentId}`)
-      .then(r => r.json())
+    const detailUrl = "{{ url_for('api_student_attendance_detail', course_id=course.id, student_id=999999) }}".replace('999999', studentId);
+    fetch(detailUrl)
+      .then(r => {
+        if (!r.ok) {
+          throw new Error(`Server returned HTTP ${r.status}`);
+        }
+        return r.json();
+      })
       .then(data => {
         if (data.error) {
           document.getElementById("modalStudentLogsBody").innerHTML = `<tr><td colspan="4" style="text-align: center; color: red; padding: 1.5rem;">${data.error}</td></tr>`;

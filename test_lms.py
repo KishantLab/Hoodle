@@ -381,6 +381,53 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn("logs", detail_data)
         self.assertIn("attended_count", detail_data)
 
+    def test_coteacher_attendance_log_access(self):
+        """Test that a co-teacher / TA can open attendance management page and query student logs without errors."""
+        conn = app.get_db()
+        course = conn.execute("SELECT id FROM courses LIMIT 1").fetchone()
+        
+        # Create a user with role='student' who is added as a 'ta' / 'co-teacher' in course_enrollments
+        conn.execute("""
+            INSERT INTO users (username, display_name, email, password_hash, role, created_at)
+            VALUES ('coteacher_sam', 'Sam Wilson', 'sam@iitbhilai.ac.in', 'dummy', 'student', datetime('now'))
+        """)
+        sam_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute("""
+            INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at)
+            VALUES (?, ?, 'ta', datetime('now'))
+        """, (course["id"], sam_id))
+        st_user = conn.execute("SELECT id FROM users WHERE username = 'student1'").fetchone()
+        conn.commit()
+        conn.close()
+
+        # Login as coteacher_sam
+        self.login("coteacher_sam", "password123")
+        
+        # Override session to simulate coteacher_sam
+        with self.client.session_transaction() as sess:
+            sess["user_id"] = sam_id
+            sess["username"] = "coteacher_sam"
+            sess["role"] = "student"
+
+        # 1. Co-teacher opens /courses/<id>/attendance - should render teacher roster view (HTTP 200), not throw 500 UndefinedError
+        res = self.client.get(f"/courses/{course['id']}/attendance")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Class Attendance Management", res.data)
+        self.assertIn(b"Launch QR Projector", res.data)
+
+        # 2. Co-teacher queries student attendance detail API
+        detail_res = self.client.get(f"/api/courses/{course['id']}/attendance/student/{st_user['id']}")
+        self.assertEqual(detail_res.status_code, 200)
+        detail_json = detail_res.get_json()
+        self.assertIn("student", detail_json)
+        self.assertIn("logs", detail_json)
+        self.assertIn("attendance_pct", detail_json)
+
+        # 3. Co-teacher can fetch dynamic token for projector
+        token_res = self.client.get(f"/api/attendance/token/{course['id']}?type=Lecture")
+        self.assertEqual(token_res.status_code, 200)
+        self.assertIn("token", token_res.get_json())
+
 
 if __name__ == "__main__":
     unittest.main()

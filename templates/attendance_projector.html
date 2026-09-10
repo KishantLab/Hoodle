@@ -438,13 +438,13 @@
     // Fetch new token & update QR image smoothly
     function fetchNewToken() {
       isFetchingToken = true;
-      fetch("/api/attendance/token/" + courseId + "?type=" + encodeURIComponent(currentSessionType))
+      fetch("{{ url_for('api_attendance_token', course_id=course.id) }}?type=" + encodeURIComponent(currentSessionType))
         .then(r => r.json())
         .then(data => {
           if (data && data.token) {
             secondsLeft = data.seconds_remaining || ROTATION_SECONDS;
             const img = document.getElementById("qrImage");
-            img.src = "/api/attendance/qr/" + courseId + "?type=" + encodeURIComponent(currentSessionType) + "&token=" + data.token + "&_ts=" + Date.now();
+            img.src = "{{ url_for('attendance_qr_svg', course_id=course.id) }}?type=" + encodeURIComponent(currentSessionType) + "&token=" + data.token + "&_ts=" + Date.now();
             
             // Visual refresh indicator pulse
             const frame = document.getElementById("qrFrame");
@@ -461,7 +461,7 @@
 
     // Live poller for attendee counts & list every 1 second (1000ms)
     function pollAttendees() {
-      fetch("/api/attendance/live-poll/" + courseId + "?type=" + encodeURIComponent(currentSessionType))
+      fetch("{{ url_for('api_attendance_live_poll', course_id=course.id) }}?type=" + encodeURIComponent(currentSessionType))
         .then(r => r.json())
         .then(data => {
           if (data) {

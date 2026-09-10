@@ -2544,6 +2544,7 @@ def course_attendance(course_id):
         return render_template(
             "course_attendance.html",
             course=course,
+            is_course_teacher=False,
             my_logs=my_logs,
             total_sessions=total_sessions,
             attended_count=attended_count,
@@ -2586,11 +2587,13 @@ def course_attendance(course_id):
         return render_template(
             "course_attendance.html",
             course=course,
+            is_course_teacher=True,
             students=enrolled_students,
             total_sessions=total_sessions,
             today_count=today_count,
             recent_logs=recent_logs,
             today_str=today_str,
+            attendance_pct=0.0,
             active_tab="attendance"
         )
 

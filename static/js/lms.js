@@ -47,7 +47,9 @@ document.addEventListener("DOMContentLoaded", () => {
     bodyEl.innerHTML = "<p style='text-align:center; padding: 2rem;'>Fetching file preview...</p>";
     modal.style.display = "flex";
 
-    fetch(`/locker/preview/${fileId}`)
+    const basePrefix = window.location.pathname.startsWith("/lms") ? "/lms" : "";
+
+    fetch(`${basePrefix}/locker/preview/${fileId}`)
       .then(res => res.json())
       .then(data => {
         titleEl.innerText = data.filename + " (" + data.size + ")";
@@ -56,7 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
           bodyEl.innerHTML = `<div style="text-align:center; padding:2rem; color:#64748b;">
             <p style="font-size:1.1rem; margin-bottom:1rem;">📄 ${data.message}</p>
-            <a href="/locker/download/${fileId}" class="btn btn-primary btn-sm">Download File</a>
+            <a href="${basePrefix}/locker/download/${fileId}" class="btn btn-primary btn-sm">Download File</a>
           </div>`;
         }
       })
