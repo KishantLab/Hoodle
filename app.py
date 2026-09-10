@@ -67,7 +67,7 @@ def nl2br_filter(s):
 SUBMISSIONS_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 
-RESERVED_ROUTES = {"login", "logout", "admin", "static", "api", "exam", "favicon.ico"}
+RESERVED_ROUTES = {"login", "logout", "admin", "static", "api", "exam", "favicon.ico", "set-password"}
 
 
 def get_db():
@@ -78,7 +78,7 @@ def get_db():
 
 
 def init_db():
-    """Initialize SQLite database tables and default admin user."""
+    """Initialize SQLite database tables and seed admin user."""
     conn = get_db()
     cursor = conn.cursor()
 
@@ -90,9 +90,16 @@ def init_db():
             password_hash TEXT NOT NULL,
             display_name TEXT NOT NULL,
             role TEXT DEFAULT 'teacher',
+            must_change_password INTEGER DEFAULT 0,
             created_at TEXT NOT NULL
         )
     """)
+
+    # Check and add 'must_change_password' column to users if not present
+    cursor.execute("PRAGMA table_info(users)")
+    user_cols = [row["name"] for row in cursor.fetchall()]
+    if "must_change_password" not in user_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
 
     # 2. Course Exams table
     cursor.execute("""
@@ -150,15 +157,28 @@ def init_db():
     if "lab_name" not in sub_cols:
         cursor.execute("ALTER TABLE submissions ADD COLUMN lab_name TEXT DEFAULT 'Lab 1'")
 
-    # Seed default admin: kishan / password123
-    cursor.execute("SELECT id FROM users WHERE username = ?", ("kishan",))
-    if not cursor.fetchone():
-        pwd_hash = generate_password_hash("password123")
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Ensure admin account: username 'admin', password 'admin@accl', role 'admin'
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("SELECT id FROM users WHERE LOWER(username) = 'admin'")
+    admin_user = cursor.fetchone()
+    if not admin_user:
+        pwd_hash = generate_password_hash("admin@accl")
         cursor.execute("""
-            INSERT INTO users (username, password_hash, display_name, role, created_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, ("kishan", pwd_hash, "Prof. Kishan", "admin", now_str))
+            INSERT INTO users (username, password_hash, display_name, role, must_change_password, created_at)
+            VALUES ('admin', ?, 'Administrator', 'admin', 0, ?)
+        """, (pwd_hash, now_str))
+    else:
+        cursor.execute("UPDATE users SET role = 'admin' WHERE id = ?", (admin_user["id"],))
+
+    # Also ensure kishan account
+    cursor.execute("SELECT id FROM users WHERE LOWER(username) = 'kishan'")
+    kishan_user = cursor.fetchone()
+    if not kishan_user:
+        pwd_hash = generate_password_hash("password123")
+        cursor.execute("""
+            INSERT INTO users (username, password_hash, display_name, role, must_change_password, created_at)
+            VALUES ('kishan', ?, 'Prof. Kishan', 'teacher', 0, ?)
+        """, (pwd_hash, now_str))
 
     conn.commit()
     conn.close()
@@ -222,6 +242,8 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         if not session.get("logged_in"):
             return redirect(url_for("login", next=request.path))
+        if session.get("must_change_password") and request.endpoint not in ("set_password", "logout"):
+            return redirect(url_for("set_password"))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -503,7 +525,7 @@ def submit_exam_file(identifier=None, slug=None):
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    """Teacher Login page."""
+    """Teacher/Admin Login page."""
     if session.get("logged_in"):
         return redirect(url_for("admin_dashboard"))
 
@@ -524,6 +546,11 @@ def login():
             session["username"] = user["username"]
             session["display_name"] = user["display_name"]
             session["role"] = user["role"]
+            session["must_change_password"] = bool(user["must_change_password"])
+
+            if session["must_change_password"]:
+                return redirect(url_for("set_password"))
+
             next_page = request.args.get("next")
             if next_page and not next_page.startswith("//"):
                 return redirect(next_page)
@@ -539,6 +566,39 @@ def logout():
     """Clear session and log out."""
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/set-password", methods=["GET", "POST"])
+def set_password():
+    """Force password change after admin reset."""
+    if not session.get("logged_in"):
+        return redirect(url_for("login"))
+
+    error = None
+    if request.method == "POST":
+        new_password = request.form.get("new_password", "").strip()
+        confirm_password = request.form.get("confirm_password", "").strip()
+
+        if not new_password or len(new_password) < 6:
+            error = "Password must be at least 6 characters long."
+        elif new_password != confirm_password:
+            error = "Passwords do not match."
+        else:
+            new_hash = generate_password_hash(new_password)
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE users SET password_hash = ?, must_change_password = 0
+                WHERE id = ?
+            """, (new_hash, session["user_id"]))
+            conn.commit()
+            conn.close()
+
+            session["must_change_password"] = False
+            flash("New password set successfully! Welcome to your dashboard.", "success")
+            return redirect(url_for("admin_dashboard"))
+
+    return render_template("set_password.html", error=error)
 
 
 @app.route("/admin/teachers/add", methods=["POST"])
@@ -574,8 +634,8 @@ def add_teacher():
     pwd_hash = generate_password_hash(password)
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute("""
-        INSERT INTO users (username, password_hash, display_name, role, created_at)
-        VALUES (?, ?, ?, 'teacher', ?)
+        INSERT INTO users (username, password_hash, display_name, role, must_change_password, created_at)
+        VALUES (?, ?, ?, 'teacher', 0, ?)
     """, (clean_username, pwd_hash, display_name, now_str))
     conn.commit()
     conn.close()
@@ -584,10 +644,85 @@ def add_teacher():
     return redirect(url_for("admin_dashboard"))
 
 
+@app.route("/admin/users/<int:target_user_id>/password", methods=["POST"])
+@login_required
+def admin_set_user_password(target_user_id):
+    """
+    Admin changes password of any user or triggers password reset.
+    """
+    if session.get("role") != "admin":
+        flash("Permission denied. Only administrators can change other users' passwords.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    new_password = request.form.get("new_password", "").strip()
+    require_reset = 1 if request.form.get("require_reset") == "1" else 0
+
+    if not new_password or len(new_password) < 6:
+        flash("New password must be at least 6 characters.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT username FROM users WHERE id = ?", (target_user_id,))
+    target_user = cursor.fetchone()
+
+    if not target_user:
+        conn.close()
+        flash("User not found.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    new_hash = generate_password_hash(new_password)
+    cursor.execute("""
+        UPDATE users SET password_hash = ?, must_change_password = ?
+        WHERE id = ?
+    """, (new_hash, require_reset, target_user_id))
+    conn.commit()
+    conn.close()
+
+    msg = f"Password for '{target_user['username']}' updated successfully!"
+    if require_reset:
+        msg += " (User will be prompted to set a new password upon next login)"
+    flash(msg, "success")
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/users/<int:target_user_id>/delete", methods=["POST"])
+@login_required
+def admin_delete_user(target_user_id):
+    """
+    Admin deletes a teacher account.
+    """
+    if session.get("role") != "admin":
+        flash("Permission denied. Only administrators can delete users.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if target_user_id == session.get("user_id"):
+        flash("You cannot delete your own logged-in administrator account.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT username FROM users WHERE id = ?", (target_user_id,))
+    target_user = cursor.fetchone()
+
+    if not target_user:
+        conn.close()
+        flash("User not found.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    # Delete user
+    cursor.execute("DELETE FROM users WHERE id = ?", (target_user_id,))
+    conn.commit()
+    conn.close()
+
+    flash(f"Teacher account '{target_user['username']}' was permanently deleted.", "success")
+    return redirect(url_for("admin_dashboard"))
+
+
 @app.route("/admin/change-password", methods=["POST"])
 @login_required
 def change_password():
-    """Change teacher's password."""
+    """Change current user's password."""
     old_password = request.form.get("old_password", "")
     new_password = request.form.get("new_password", "")
     confirm_password = request.form.get("confirm_password", "")
@@ -611,7 +746,7 @@ def change_password():
         return redirect(url_for("admin_dashboard"))
 
     new_hash = generate_password_hash(new_password)
-    cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, session["user_id"]))
+    cursor.execute("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", (new_hash, session["user_id"]))
     conn.commit()
     conn.close()
 
@@ -658,7 +793,12 @@ def admin_dashboard():
     # Teachers list for admin management modal
     teachers = []
     if is_admin:
-        cursor.execute("SELECT id, username, display_name, role, created_at FROM users ORDER BY id ASC")
+        cursor.execute("""
+            SELECT id, username, display_name, role, must_change_password, created_at,
+                   (SELECT COUNT(*) FROM exams WHERE created_by_user_id = users.id) AS courses_count
+            FROM users 
+            ORDER BY id ASC
+        """)
         teachers = [dict(row) for row in cursor.fetchall()]
 
     # Check if a specific course/exam is selected
@@ -668,7 +808,6 @@ def admin_dashboard():
     lab_counts = {}
 
     if selected_slug:
-        # Lookup exam
         for ex in exams:
             if ex["slug"] == selected_slug or ex["course_code"].lower() == selected_slug.lower():
                 selected_exam = ex
@@ -788,7 +927,6 @@ def toggle_exam_status(exam_id):
     exam = cursor.fetchone()
 
     if exam:
-        # Check permissions
         if session.get("role") != "admin" and exam["created_by_user_id"] != session.get("user_id"):
             conn.close()
             flash("Permission denied. You can only modify your own courses.", "error")
@@ -821,7 +959,6 @@ def delete_exam(exam_id):
         flash("Exam not found.", "error")
         return redirect(url_for("admin_dashboard"))
 
-    # Permission check: must be owner or admin
     if session.get("role") != "admin" and exam["created_by_user_id"] != session.get("user_id"):
         conn.close()
         flash("Permission denied. You can only delete courses that you created.", "error")
@@ -868,7 +1005,6 @@ def download_exam_all(exam_id):
         conn.close()
         abort(404, description="Exam not found.")
 
-    # Confidentiality check
     if session.get("role") != "admin" and exam["created_by_user_id"] != session.get("user_id"):
         conn.close()
         abort(403, description="Access denied. You can only download submissions from your own exams.")
@@ -922,7 +1058,6 @@ def download_single_file(sub_id):
     if not sub:
         abort(404, description="Submission file not found.")
 
-    # Confidentiality check
     if session.get("role") != "admin" and sub["created_by_user_id"] != session.get("user_id"):
         abort(403, description="Access denied.")
 

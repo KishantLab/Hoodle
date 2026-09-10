@@ -653,14 +653,15 @@
             </div>
 
             <!-- Existing Teachers List -->
-            <h4 style="font-size: 0.9rem; color: #475569; margin-bottom: 0.5rem;">Registered Instructors ({{ teachers|length }})</h4>
-            <div style="max-height: 180px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <h4 style="font-size: 0.95rem; color: #1e293b; margin-bottom: 0.5rem;">Registered Teachers ({{ teachers|length }})</h4>
+            <div style="max-height: 240px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
                 <table style="font-size: 0.85rem;">
                     <thead>
                         <tr>
-                            <th>Name</th>
+                            <th>Teacher</th>
                             <th>Username</th>
                             <th>Role</th>
+                            <th style="text-align: right;">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -668,12 +669,62 @@
                         <tr>
                             <td><strong>{{ t.display_name }}</strong></td>
                             <td><code>{{ t.username }}</code></td>
-                            <td><span style="font-size: 0.75rem; color: #64748b;">{{ t.role }}</span></td>
+                            <td>
+                                <span style="font-size: 0.75rem; background: {% if t.role == 'admin' %}#e0e7ff; color: #3730a3;{% else %}#f1f5f9; color: #475569;{% endif %} padding: 0.15rem 0.4rem; border-radius: 4px;">
+                                    {{ t.role }}
+                                </span>
+                            </td>
+                            <td style="text-align: right;">
+                                <div style="display: inline-flex; gap: 0.35rem; align-items: center;">
+                                    <button type="button" class="btn-sm btn-outline" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" onclick="openAdminUserPwdModal('{{ t.id }}', '{{ t.username }}')" title="Change or Reset Password">
+                                        🔑 Reset Pwd
+                                    </button>
+                                    {% if t.username != username %}
+                                    <form method="POST" action="admin/users/{{ t.id }}/delete" style="display: inline; margin: 0;" onsubmit="return confirm('Are you sure you want to permanently delete teacher account '{{ t.username }}'?');">
+                                        <button type="submit" class="btn-sm btn-danger" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" title="Delete teacher account">
+                                            🗑
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
+        </div>
+    </div>
+    <!-- Modal: Admin Set User Password -->
+    <div class="modal" id="adminUserPwdModal">
+        <div class="modal-card" style="max-width: 440px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <h2 style="font-size: 1.3rem; color: #0f172a; margin: 0;">Reset Teacher Password</h2>
+                <button type="button" onclick="closeModal('adminUserPwdModal')" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">✕</button>
+            </div>
+
+            <p style="font-size: 0.9rem; color: #475569; margin-bottom: 1.25rem;">
+                Setting password for: <strong id="targetTeacherUsername" style="color: #1e40af;"></strong>
+            </p>
+
+            <form method="POST" id="adminUserPwdForm" action="">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="targetNewPassword"><span class="label-title">New Password (min 6 chars) *</span></label>
+                    <input type="password" id="targetNewPassword" name="new_password" minlength="6" required style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--radius-md);">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: normal; font-size: 0.85rem; cursor: pointer;">
+                        <input type="checkbox" name="require_reset" value="1" checked style="width: auto;">
+                        <span>Require teacher to set their own new password upon next login</span>
+                    </label>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn-sm btn-outline" onclick="closeModal('adminUserPwdModal')">Cancel</button>
+                    <button type="submit" class="btn-submit" style="width: auto; padding: 0.7rem 1.4rem;">Update Password</button>
+                </div>
+            </form>
         </div>
     </div>
     {% endif %}
@@ -712,6 +763,13 @@
 
     <script>
         let currentLabFilter = 'ALL';
+
+        function openAdminUserPwdModal(userId, username) {
+            document.getElementById('targetTeacherUsername').textContent = username;
+            document.getElementById('adminUserPwdForm').action = 'admin/users/' + userId + '/password';
+            document.getElementById('targetNewPassword').value = '';
+            openModal('adminUserPwdModal');
+        }
 
         function openModal(id) {
             const m = document.getElementById(id);
