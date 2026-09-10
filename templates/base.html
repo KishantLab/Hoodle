@@ -30,6 +30,10 @@
           <a href="{{ url_for('locker') }}" class="nav-item {% if '/locker' in request.path %}active{% endif %}">
             🔒 My Private Locker
           </a>
+          <button type="button" class="btn btn-primary btn-sm scanner-nav-btn" onclick="openAttendanceScanner()" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:700; margin-left:0.25rem;">
+            <span>📷</span>
+            <span>Scan Attendance</span>
+          </button>
         {% endif %}
 
         {% if current_user.role == 'admin' %}
@@ -99,12 +103,55 @@
     </div>
   </div>
 
+  <!-- In-Portal Attendance Camera QR Scanner Modal -->
+  <div id="qrScannerModal" class="modal-backdrop" style="display:none; align-items:center; justify-content:center; z-index:9999;">
+    <div class="modal-content scanner-modal-card">
+      <div class="modal-header" style="margin-bottom: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="font-size: 1.25rem;">📷</span>
+          <h3 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Scan Attendance QR</h3>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <button type="button" id="switchCameraBtn" class="btn btn-secondary btn-sm" onclick="switchCamera()" style="display:none; padding: 0.25rem 0.6rem; font-size: 0.78rem;">
+            🔄 Flip Camera
+          </button>
+          <button type="button" class="modal-close" onclick="closeAttendanceScanner()">&times;</button>
+        </div>
+      </div>
+
+      <!-- Camera Viewfinder with Scanner Frame -->
+      <div class="scanner-viewfinder-wrap">
+        <div id="qrReader" style="width: 100%; border-radius: 12px; overflow: hidden; background: #000;"></div>
+        <div class="scanner-laser-line"></div>
+      </div>
+
+      <div id="scannerStatus" style="text-align: center; font-size: 0.85rem; color: var(--text-muted); margin-top: 0.85rem; min-height: 24px;">
+        Starting camera...
+      </div>
+
+      <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 0.75rem;">
+        <span style="font-size: 0.75rem; color: var(--text-light);">Point camera at the projector screen</span>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeAttendanceScanner()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Floating Action Button (FAB) for Students -->
+  {% if current_user and current_user.role == 'student' %}
+    <button type="button" class="scanner-fab" onclick="openAttendanceScanner()" title="Scan Attendance QR">
+      <span>📷</span>
+      <span class="fab-text">Scan QR</span>
+    </button>
+  {% endif %}
+
   <footer style="margin-top:auto; padding:1.5rem; text-align:center; font-size:0.8rem; color:var(--text-muted); border-top:1px solid var(--border); background:white;">
     <p>ACCLLMS • Accelerated Computing Research Lab (ACCL) • Indian Institute of Technology Bhilai (IIT Bhilai)</p>
     <p style="font-size:0.75rem; margin-top:0.3rem;">Developed by Kishan Tamboli (PhD) • Local Enterprise Deployment</p>
   </footer>
 
   <script src="{{ url_for('static', filename='js/lms.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/html5-qrcode.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/scanner.js') }}"></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

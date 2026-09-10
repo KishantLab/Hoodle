@@ -2236,7 +2236,7 @@ def api_attendance_live_poll(course_id):
         SELECT roll_number, student_name, marked_at, method
         FROM attendance_logs
         WHERE course_id = ? AND session_type = ? AND attendance_date = ?
-        ORDER BY id DESC LIMIT 8
+        ORDER BY id DESC LIMIT 12
     """, (course_id, session_type, today_str)).fetchall()
     
     total_count = conn.execute("""
@@ -2245,10 +2245,65 @@ def api_attendance_live_poll(course_id):
     """, (course_id, session_type, today_str)).fetchone()["cnt"]
     conn.close()
     
+    recent_list = []
+    for r in attendees:
+        marked_at = r["marked_at"] or ""
+        time_part = marked_at.split(" ")[-1] if " " in marked_at else marked_at
+        recent_list.append({
+            "roll_number": r["roll_number"] or "STUDENT",
+            "student_name": r["student_name"] or "Student",
+            "name": r["student_name"] or "Student",
+            "marked_at": marked_at,
+            "marked_time": time_part,
+            "time": time_part,
+            "method": r["method"] or "QR_SCAN"
+        })
+    
     return jsonify({
         "total_count": total_count,
         "attendee_count": total_count,
-        "recent": [dict(r) for r in attendees]
+        "recent": recent_list
+    })
+
+
+@app.route("/api/courses/<int:course_id>/attendance/student/<int:student_id>")
+@teacher_required
+def api_student_attendance_detail(course_id, student_id):
+    """Returns detailed attendance history for an individual student in a course."""
+    conn = get_db()
+    student = conn.execute("SELECT id, roll_number, display_name, email FROM users WHERE id = ?", (student_id,)).fetchone()
+    if not student:
+        conn.close()
+        return jsonify({"error": "Student not found"}), 404
+        
+    logs = conn.execute("""
+        SELECT id, session_type, attendance_date, marked_at, method, ip_address, status
+        FROM attendance_logs
+        WHERE course_id = ? AND student_id = ?
+        ORDER BY attendance_date DESC, marked_at DESC
+    """, (course_id, student_id)).fetchall()
+    
+    sessions_row = conn.execute("""
+        SELECT COUNT(DISTINCT attendance_date || '_' || session_type) as total_sessions
+        FROM attendance_logs WHERE course_id = ?
+    """, (course_id,)).fetchone()
+    total_sessions = sessions_row["total_sessions"] or 0
+    attended_count = len(logs)
+    pct = round((attended_count / total_sessions * 100), 1) if total_sessions > 0 else 100.0
+    
+    conn.close()
+    return jsonify({
+        "student": {
+            "id": student["id"],
+            "roll_number": student["roll_number"] or "",
+            "display_name": student["display_name"],
+            "email": student["email"] or ""
+        },
+        "total_sessions": total_sessions,
+        "attended_count": attended_count,
+        "attendance_pct": pct,
+        "status": "Satisfactory (>=75%)" if pct >= 75.0 else "Shortage (<75%)",
+        "logs": [dict(l) for l in logs]
     })
 
 

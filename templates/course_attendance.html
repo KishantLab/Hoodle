@@ -38,17 +38,17 @@
   {% endif %}
 </nav>
 
-<div style="max-width: 1100px; margin: 0 auto; padding-bottom: 3rem;">
+<div class="container-responsive" style="max-width: 1100px; margin: 0 auto; padding-bottom: 3rem;">
 
   {% if current_user.role == 'student' %}
     <!-- ========================================== -->
     <!-- STUDENT VIEW: PERSONAL ATTENDANCE SUMMARY -->
     <!-- ========================================== -->
     
-    <div class="card" style="padding: 2rem; margin-bottom: 2rem;">
+    <div class="card" style="padding: 1.75rem; margin-bottom: 1.75rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
         <div>
-          <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.25rem;">
+          <h2 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.25rem;">
             My Attendance Record
           </h2>
           <div style="font-size: 0.88rem; color: var(--text-muted);">
@@ -56,26 +56,34 @@
           </div>
         </div>
 
-        <div style="text-align: right;">
-          <div style="font-size: 2.5rem; font-weight: 900; line-height: 1; font-family: monospace; color: {% if attendance_pct >= 75.0 %}var(--success){% else %}var(--danger){% endif %};">
-            {{ attendance_pct }}%
-          </div>
-          <div style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; margin-top: 0.35rem;">
-            {% if attendance_pct >= 75.0 %}
-              <span class="badge" style="background: var(--success-bg); color: var(--success);">Satisfactory (≥ 75%)</span>
-            {% else %}
-              <span class="badge" style="background: var(--danger-bg); color: var(--danger);">Shortage Warning (< 75%)</span>
-            {% endif %}
+        <div style="display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;">
+          <!-- Camera Scanner Launch Button -->
+          <button type="button" class="btn btn-primary" onclick="openAttendanceScanner()" style="display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 700; padding: 0.65rem 1.25rem;">
+            <span>📷</span>
+            <span>Scan Attendance QR</span>
+          </button>
+
+          <div style="text-align: right;">
+            <div style="font-size: 2.2rem; font-weight: 900; line-height: 1; font-family: monospace; color: {% if attendance_pct >= 75.0 %}var(--success){% else %}var(--danger){% endif %};">
+              {{ attendance_pct }}%
+            </div>
+            <div style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; margin-top: 0.35rem;">
+              {% if attendance_pct >= 75.0 %}
+                <span class="badge" style="background: var(--success-bg); color: var(--success);">Satisfactory (≥ 75%)</span>
+              {% else %}
+                <span class="badge" style="background: var(--danger-bg); color: var(--danger);">Shortage (< 75%)</span>
+              {% endif %}
+            </div>
           </div>
         </div>
       </div>
 
       <!-- Attendance Percentage Progress Bar -->
-      <div style="background: var(--border); border-radius: 9999px; height: 14px; overflow: hidden; margin-bottom: 1rem; position: relative;">
+      <div style="background: var(--border); border-radius: 9999px; height: 12px; overflow: hidden; margin-bottom: 1rem; position: relative;">
         <div style="background: {% if attendance_pct >= 75.0 %}var(--success){% else %}var(--danger){% endif %}; height: 100%; width: {{ [attendance_pct, 100]|min }}%; border-radius: 9999px; transition: width 0.6s ease;"></div>
       </div>
 
-      <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-muted);">
+      <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-muted); flex-wrap: wrap; gap: 0.5rem;">
         <span>Attended <strong>{{ attended_count }}</strong> of <strong>{{ total_sessions }}</strong> conducted sessions</span>
         <span>Requirement: 75% minimum</span>
       </div>
@@ -83,15 +91,15 @@
 
     <!-- Personal Log History Table -->
     <div class="card" style="padding: 1.5rem;">
-      <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">Attendance History</h3>
+      <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">My Attendance History</h3>
       
       {% if my_logs %}
-        <div style="overflow-x: auto;">
-          <table class="table" style="width: 100%; text-align: left; border-collapse: collapse;">
+        <div class="table-responsive">
+          <table class="table lms-table" style="width: 100%; text-align: left; border-collapse: collapse;">
             <thead>
               <tr style="border-bottom: 2px solid var(--border); font-size: 0.82rem; color: var(--text-muted); text-transform: uppercase;">
                 <th style="padding: 0.75rem;">Date</th>
-                <th style="padding: 0.75rem;">Session Type</th>
+                <th style="padding: 0.75rem;">Session</th>
                 <th style="padding: 0.75rem;">Status</th>
                 <th style="padding: 0.75rem;">Method</th>
                 <th style="padding: 0.75rem;">Recorded At</th>
@@ -126,7 +134,11 @@
         <div style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
           <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📅</div>
           <div style="font-weight: 600;">No attendance records found yet</div>
-          <div style="font-size: 0.85rem; margin-top: 0.25rem;">When the instructor displays the QR projector in class, scan it to log your attendance.</div>
+          <div style="font-size: 0.85rem; margin-top: 0.5rem;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="openAttendanceScanner()">
+              📷 Open Camera Scanner
+            </button>
+          </div>
         </div>
       {% endif %}
     </div>
@@ -139,20 +151,20 @@
     <!-- Action Bar & Stats Overview -->
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
       <div>
-        <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.25rem;">
+        <h2 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.25rem;">
           Class Attendance Management
         </h2>
-        <div style="font-size: 0.88rem; color: var(--text-muted);">
-          Real-time dynamic anti-proxy tracking, roster analytics, and manual overrides.
+        <div style="font-size: 0.85rem; color: var(--text-muted);">
+          Real-time anti-proxy tracking, multi-criteria filters, and student drilldown.
         </div>
       </div>
 
-      <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-        <a href="{{ url_for('attendance_projector', course_id=course.id) }}" target="_blank" class="btn btn-primary" style="display: flex; align-items: center; gap: 0.5rem; font-weight: 700;">
+      <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+        <a href="{{ url_for('attendance_projector', course_id=course.id) }}" target="_blank" class="btn btn-primary" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700;">
           <span>📽️</span>
           <span>Launch QR Projector</span>
         </a>
-        <a href="{{ url_for('attendance_export_csv', course_id=course.id) }}" class="btn btn-secondary" style="display: flex; align-items: center; gap: 0.5rem;">
+        <a href="{{ url_for('attendance_export_csv', course_id=course.id) }}" class="btn btn-secondary" style="display: flex; align-items: center; gap: 0.4rem;">
           <span>📥</span>
           <span>Export CSV</span>
         </a>
@@ -160,48 +172,77 @@
     </div>
 
     <!-- Metric Stat Cards -->
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; margin-bottom: 2rem;">
-      <div class="card" style="padding: 1.25rem;">
-        <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+      <div class="card" style="padding: 1.15rem;">
+        <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
           Conducted Sessions
         </div>
-        <div style="font-size: 2rem; font-weight: 900; color: var(--primary); font-family: monospace; margin-top: 0.35rem;">
+        <div style="font-size: 1.85rem; font-weight: 900; color: var(--primary); font-family: monospace; margin-top: 0.25rem;">
           {{ total_sessions }}
         </div>
-        <div style="font-size: 0.78rem; color: var(--text-light); margin-top: 0.2rem;">Total distinct class dates</div>
+        <div style="font-size: 0.75rem; color: var(--text-light); margin-top: 0.2rem;">Total distinct class dates</div>
       </div>
 
-      <div class="card" style="padding: 1.25rem;">
-        <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+      <div class="card" style="padding: 1.15rem;">
+        <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
           Today's Attendance
         </div>
-        <div style="font-size: 2rem; font-weight: 900; color: var(--success); font-family: monospace; margin-top: 0.35rem;">
+        <div style="font-size: 1.85rem; font-weight: 900; color: var(--success); font-family: monospace; margin-top: 0.25rem;">
           {{ today_count }}
         </div>
-        <div style="font-size: 0.78rem; color: var(--text-light); margin-top: 0.2rem;">Scans recorded on {{ today_str }}</div>
+        <div style="font-size: 0.75rem; color: var(--text-light); margin-top: 0.2rem;">Scans on {{ today_str }}</div>
       </div>
 
-      <div class="card" style="padding: 1.25rem;">
-        <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+      <div class="card" style="padding: 1.15rem;">
+        <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
           Enrolled Students
         </div>
-        <div style="font-size: 2rem; font-weight: 900; color: var(--text-main); font-family: monospace; margin-top: 0.35rem;">
+        <div style="font-size: 1.85rem; font-weight: 900; color: var(--text-main); font-family: monospace; margin-top: 0.25rem;">
           {{ students|length }}
         </div>
-        <div style="font-size: 0.78rem; color: var(--text-light); margin-top: 0.2rem;">Active students in roster</div>
+        <div style="font-size: 0.75rem; color: var(--text-light); margin-top: 0.2rem;">Total active students</div>
       </div>
     </div>
 
-    <!-- Student Attendance Roster Matrix -->
+    <!-- Student Attendance Roster Matrix with Interactive Filters -->
     <div class="card" style="padding: 1.5rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
-        <h3 style="font-size: 1.15rem; font-weight: 700;">Enrolled Students Attendance</h3>
-        
-        <input type="text" id="rosterSearch" placeholder="🔍 Search roll number or name..." onkeyup="filterRoster()" style="padding: 0.45rem 0.85rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.88rem; width: 260px;">
+        <div>
+          <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.2rem;">Student Attendance Roster</h3>
+          <span style="font-size: 0.8rem; color: var(--text-muted);" id="filterCountBadge">
+            Showing {{ students|length }} of {{ students|length }} students
+          </span>
+        </div>
+
+        <!-- Filter Controls Toolbar -->
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+          <!-- Search box -->
+          <input type="text" id="rosterSearch" placeholder="🔍 Search roll / name..." onkeyup="applyRosterFilters()" style="padding: 0.45rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; width: 180px;">
+
+          <!-- Status filter dropdown -->
+          <select id="statusFilter" onchange="applyRosterFilters()" style="padding: 0.45rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; background: white;">
+            <option value="ALL">All Statuses</option>
+            <option value="SATISFACTORY">Satisfactory (≥ 75%)</option>
+            <option value="SHORTAGE">Shortage Warning (< 75%)</option>
+          </select>
+
+          <!-- Specific Student filter dropdown -->
+          <select id="studentSelectFilter" onchange="onStudentSelectChange(this.value)" style="padding: 0.45rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; background: white; max-width: 180px;">
+            <option value="">All Students</option>
+            {% for s in students %}
+              <option value="{{ s.id }}">{{ s.roll_number or s.username }} - {{ s.display_name }}</option>
+            {% endfor %}
+          </select>
+
+          <button class="btn btn-secondary btn-sm" onclick="resetRosterFilters()" title="Reset all filters">
+            ✕ Reset
+          </button>
+        </div>
       </div>
 
-      <div style="overflow-x: auto;">
-        <table class="table" id="rosterTable" style="width: 100%; text-align: left; border-collapse: collapse;">
+      <!-- Roster Table with Clickable Rows for Drilldown -->
+      <div class="table-responsive">
+        <table class="table lms-table" id="rosterTable" style="width: 100%; text-align: left; border-collapse: collapse;">
           <thead>
             <tr style="border-bottom: 2px solid var(--border); font-size: 0.82rem; color: var(--text-muted); text-transform: uppercase;">
               <th style="padding: 0.75rem;">Roll Number</th>
@@ -209,12 +250,20 @@
               <th style="padding: 0.75rem;">Attended</th>
               <th style="padding: 0.75rem;">Percentage</th>
               <th style="padding: 0.75rem;">Status</th>
+              <th style="padding: 0.75rem; text-align: right;">Action</th>
             </tr>
           </thead>
           <tbody>
             {% for s in students %}
               {% set pct = ((s.attended_count / total_sessions * 100)|round(1)) if total_sessions > 0 else 100.0 %}
-              <tr class="roster-row" style="border-bottom: 1px solid var(--border); font-size: 0.9rem;">
+              {% set is_shortage = pct < 75.0 %}
+              <tr class="roster-row" 
+                  data-student-id="{{ s.id }}" 
+                  data-roll="{{ (s.roll_number or '')|lower }}" 
+                  data-name="{{ s.display_name|lower }}" 
+                  data-status="{% if is_shortage %}SHORTAGE{% else %}SATISFACTORY{% endif %}"
+                  style="border-bottom: 1px solid var(--border); font-size: 0.9rem; cursor: pointer;"
+                  onclick="openStudentDetailModal({{ s.id }}, '{{ s.roll_number or '' }}', '{{ s.display_name|escape }}')">
                 <td style="padding: 0.75rem; font-family: monospace; font-weight: 700; color: var(--primary);">
                   {{ s.roll_number or '—' }}
                 </td>
@@ -228,24 +277,29 @@
                 <td style="padding: 0.75rem;">
                   <div style="display: flex; align-items: center; gap: 0.6rem;">
                     <div style="width: 70px; background: var(--border); height: 8px; border-radius: 9999px; overflow: hidden;">
-                      <div style="background: {% if pct >= 75.0 %}var(--success){% else %}var(--danger){% endif %}; height: 100%; width: {{ [pct, 100]|min }}%;"></div>
+                      <div style="background: {% if not is_shortage %}var(--success){% else %}var(--danger){% endif %}; height: 100%; width: {{ [pct, 100]|min }}%;"></div>
                     </div>
-                    <span style="font-family: monospace; font-weight: 700; color: {% if pct >= 75.0 %}var(--success){% else %}var(--danger){% endif %};">
+                    <span style="font-family: monospace; font-weight: 700; color: {% if not is_shortage %}var(--success){% else %}var(--danger){% endif %};">
                       {{ pct }}%
                     </span>
                   </div>
                 </td>
                 <td style="padding: 0.75rem;">
-                  {% if pct >= 75.0 %}
+                  {% if not is_shortage %}
                     <span class="badge" style="background: var(--success-bg); color: var(--success); font-weight: 700; font-size: 0.75rem;">Satisfactory</span>
                   {% else %}
                     <span class="badge" style="background: var(--danger-bg); color: var(--danger); font-weight: 700; font-size: 0.75rem;">Shortage (<75%)</span>
                   {% endif %}
                 </td>
+                <td style="padding: 0.75rem; text-align: right;" onclick="event.stopPropagation()">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="openStudentDetailModal({{ s.id }}, '{{ s.roll_number or '' }}', '{{ s.display_name|escape }}')" style="font-size: 0.78rem;">
+                    🔍 View History
+                  </button>
+                </td>
               </tr>
             {% else %}
               <tr>
-                <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">
                   No students currently enrolled.
                 </td>
               </tr>
@@ -302,8 +356,8 @@
       <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 1rem;">Recent Attendance Logs (Last 50)</h3>
       
       {% if recent_logs %}
-        <div style="overflow-x: auto;">
-          <table class="table" style="width: 100%; text-align: left; border-collapse: collapse;">
+        <div class="table-responsive">
+          <table class="table lms-table" style="width: 100%; text-align: left; border-collapse: collapse;">
             <thead>
               <tr style="border-bottom: 2px solid var(--border); font-size: 0.82rem; color: var(--text-muted); text-transform: uppercase;">
                 <th style="padding: 0.65rem;">Time</th>
@@ -355,15 +409,148 @@
 
 </div>
 
+<!-- Individual Student Drilldown History Modal -->
+<div id="studentDetailModal" class="modal-backdrop">
+  <div class="modal-content" style="max-width: 650px;">
+    <div class="modal-header">
+      <div>
+        <h3 id="modalStudentName" style="font-size: 1.15rem; font-weight: 700;">Student Attendance History</h3>
+        <div id="modalStudentMeta" style="font-size: 0.85rem; color: var(--text-muted);"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('studentDetailModal')">&times;</button>
+    </div>
+
+    <div id="modalStudentStats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-bottom: 1.25rem;">
+      <!-- Stats populated via JS -->
+    </div>
+
+    <div style="max-height: 360px; overflow-y: auto;" class="table-responsive">
+      <table class="table lms-table" style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+        <thead>
+          <tr style="border-bottom: 2px solid var(--border); font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase;">
+            <th style="padding: 0.6rem;">Date</th>
+            <th style="padding: 0.6rem;">Session</th>
+            <th style="padding: 0.6rem;">Method</th>
+            <th style="padding: 0.6rem;">Time</th>
+          </tr>
+        </thead>
+        <tbody id="modalStudentLogsBody">
+          <tr><td colspan="4" style="text-align: center; padding: 2rem;">Loading attendance logs...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('studentDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
-  function filterRoster() {
-    const input = document.getElementById("rosterSearch");
-    const filter = input.value.toLowerCase();
-    const rows = document.getElementsByClassName("roster-row");
-    for (let i = 0; i < rows.length; i++) {
-      const text = rows[i].textContent || rows[i].innerText;
-      rows[i].style.display = text.toLowerCase().indexOf(filter) > -1 ? "" : "none";
+  // Roster Multi-Criteria Filtering
+  function applyRosterFilters() {
+    const searchVal = document.getElementById("rosterSearch").value.toLowerCase().trim();
+    const statusVal = document.getElementById("statusFilter").value;
+    const selectedStudentId = document.getElementById("studentSelectFilter").value;
+
+    const rows = document.querySelectorAll(".roster-row");
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+      const roll = row.getAttribute("data-roll") || "";
+      const name = row.getAttribute("data-name") || "";
+      const status = row.getAttribute("data-status") || "";
+      const studentId = row.getAttribute("data-student-id") || "";
+
+      let matchesSearch = !searchVal || roll.includes(searchVal) || name.includes(searchVal);
+      let matchesStatus = statusVal === "ALL" || status === statusVal;
+      let matchesStudent = !selectedStudentId || studentId === selectedStudentId;
+
+      if (matchesSearch && matchesStatus && matchesStudent) {
+        row.style.display = "";
+        visibleCount++;
+      } else {
+        row.style.display = "none";
+      }
+    });
+
+    const countBadge = document.getElementById("filterCountBadge");
+    if (countBadge) {
+      countBadge.textContent = `Showing ${visibleCount} of ${rows.length} students`;
     }
+  }
+
+  function onStudentSelectChange(studentId) {
+    applyRosterFilters();
+    if (studentId) {
+      const row = document.querySelector(`.roster-row[data-student-id="${studentId}"]`);
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }
+
+  function resetRosterFilters() {
+    document.getElementById("rosterSearch").value = "";
+    document.getElementById("statusFilter").value = "ALL";
+    document.getElementById("studentSelectFilter").value = "";
+    applyRosterFilters();
+  }
+
+  // Student Drilldown Modal
+  function openStudentDetailModal(studentId, rollNumber, studentName) {
+    const modal = document.getElementById("studentDetailModal");
+    document.getElementById("modalStudentName").textContent = studentName;
+    document.getElementById("modalStudentMeta").textContent = `Roll: ${rollNumber || 'N/A'}`;
+    document.getElementById("modalStudentLogsBody").innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 2rem;">Loading logs...</td></tr>`;
+    
+    modal.style.display = "flex";
+
+    fetch(`/api/courses/{{ course.id }}/attendance/student/${studentId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          document.getElementById("modalStudentLogsBody").innerHTML = `<tr><td colspan="4" style="text-align: center; color: red; padding: 1.5rem;">${data.error}</td></tr>`;
+          return;
+        }
+
+        // Populate stats cards
+        const statsEl = document.getElementById("modalStudentStats");
+        const isShortage = data.attendance_pct < 75.0;
+        statsEl.innerHTML = `
+          <div style="background: var(--bg-app); padding: 0.75rem; border-radius: var(--radius-sm); text-align: center;">
+            <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Attended</div>
+            <div style="font-size: 1.3rem; font-weight: 800; font-family: monospace;">${data.attended_count} / ${data.total_sessions}</div>
+          </div>
+          <div style="background: var(--bg-app); padding: 0.75rem; border-radius: var(--radius-sm); text-align: center;">
+            <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Percentage</div>
+            <div style="font-size: 1.3rem; font-weight: 800; font-family: monospace; color: ${isShortage ? 'var(--danger)' : 'var(--success)'};">${data.attendance_pct}%</div>
+          </div>
+          <div style="background: var(--bg-app); padding: 0.75rem; border-radius: var(--radius-sm); text-align: center;">
+            <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Status</div>
+            <div style="font-size: 0.85rem; font-weight: 700; margin-top: 0.35rem; color: ${isShortage ? 'var(--danger)' : 'var(--success)'};">${data.status}</div>
+          </div>
+        `;
+
+        // Populate logs table
+        const tbody = document.getElementById("modalStudentLogsBody");
+        if (data.logs && data.logs.length > 0) {
+          tbody.innerHTML = data.logs.map(log => `
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 0.6rem; font-weight: 600;">${log.attendance_date}</td>
+              <td style="padding: 0.6rem;"><span class="badge" style="background: var(--primary-light); color: var(--primary); font-size: 0.75rem;">${log.session_type}</span></td>
+              <td style="padding: 0.6rem; font-size: 0.8rem; color: var(--text-muted);">${log.method === 'QR_SCAN' ? '📷 QR Scan' : '✍️ Manual'}</td>
+              <td style="padding: 0.6rem; font-family: monospace; font-size: 0.78rem;">${log.marked_at}</td>
+            </tr>
+          `).join('');
+        } else {
+          tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 2rem;">No attendance records found for this student.</td></tr>`;
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        document.getElementById("modalStudentLogsBody").innerHTML = `<tr><td colspan="4" style="text-align: center; color: red; padding: 1.5rem;">Failed to load attendance logs.</td></tr>`;
+      });
   }
 </script>
 {% endblock %}

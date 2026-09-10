@@ -371,6 +371,16 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn(b"Attendance Percentage", csv_res.data)
         self.assertIn(b"B26DS001", csv_res.data)
 
+        # 5. Teacher inspects student detail API
+        conn = app.get_db()
+        st_user = conn.execute("SELECT id FROM users WHERE username = 'student1'").fetchone()
+        conn.close()
+        detail_res = self.client.get(f"/api/courses/{course['id']}/attendance/student/{st_user['id']}")
+        self.assertEqual(detail_res.status_code, 200)
+        detail_data = detail_res.get_json()
+        self.assertIn("logs", detail_data)
+        self.assertIn("attended_count", detail_data)
+
 
 if __name__ == "__main__":
     unittest.main()
