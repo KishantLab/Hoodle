@@ -258,6 +258,120 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn(b"student1", res.data)
         self.assertIn(b"kishan", res.data)
 
+    def test_dynamic_token_rotation(self):
+        """Test cryptographic token generation and time-window validation."""
+        course_id = 1
+        session_type = "Lecture"
+        token_now = app.get_dynamic_attendance_token(course_id, session_type)
+        self.assertIsInstance(token_now, str)
+        self.assertEqual(len(token_now), 8)
+
+        # Token should validate for current block
+        self.assertTrue(app.validate_dynamic_attendance_token(course_id, session_type, token_now))
+
+        # Invalid token should fail
+        self.assertFalse(app.validate_dynamic_attendance_token(course_id, session_type, "INVALID8"))
+
+    def test_attendance_projector_and_apis(self):
+        """Test teacher projector screen, QR SVG generation, and live polling API."""
+        self.login("kishan", "password123")
+        conn = app.get_db()
+        course = conn.execute("SELECT id FROM courses LIMIT 1").fetchone()
+        conn.close()
+
+        # 1. Projector view
+        res = self.client.get(f"/courses/{course['id']}/attendance/projector")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"SCAN TO RECORD ATTENDANCE", res.data)
+        self.assertIn(b"secondsRemaining", res.data)
+
+        # 2. Token API
+        tok_res = self.client.get(f"/api/attendance/token/{course['id']}?type=Lecture")
+        self.assertEqual(tok_res.status_code, 200)
+        tok_data = tok_res.get_json()
+        self.assertIn("token", tok_data)
+        self.assertIn("seconds_remaining", tok_data)
+
+        # 3. QR SVG API
+        qr_res = self.client.get(f"/api/attendance/qr/{course['id']}?type=Lecture&token={tok_data['token']}")
+        self.assertEqual(qr_res.status_code, 200)
+        self.assertEqual(qr_res.mimetype, "image/svg+xml")
+        self.assertIn(b"<svg", qr_res.data)
+
+        # 4. Live poll API
+        poll_res = self.client.get(f"/api/attendance/live-poll/{course['id']}?type=Lecture")
+        self.assertEqual(poll_res.status_code, 200)
+        poll_data = poll_res.get_json()
+        self.assertIn("attendee_count", poll_data)
+
+    def test_student_attendance_flow_and_duplicate_prevention(self):
+        """Test student scanning QR code, confirmation, and duplicate prevention."""
+        conn = app.get_db()
+        course = conn.execute("SELECT id FROM courses LIMIT 1").fetchone()
+        conn.close()
+
+        token = app.get_dynamic_attendance_token(course["id"], "Lecture")
+
+        self.login("student1", "student123")
+
+        # 1. Student lands on scan page
+        scan_res = self.client.get(f"/attend/{course['id']}?type=Lecture&token={token}")
+        self.assertEqual(scan_res.status_code, 200)
+        self.assertIn(b"Confirm Attendance", scan_res.data)
+
+        # 2. Student submits attendance
+        sub_res = self.client.post(f"/attend/{course['id']}/submit", data={
+            "token": token,
+            "session_type": "Lecture"
+        }, follow_redirects=True)
+        self.assertEqual(sub_res.status_code, 200)
+        self.assertIn(b"Attendance Recorded!", sub_res.data)
+
+        # 3. Verify logged in DB
+        conn = app.get_db()
+        log = conn.execute("""
+            SELECT * FROM attendance_logs WHERE course_id = ? AND student_name LIKE '%Aarav%'
+        """, (course["id"],)).fetchone()
+        conn.close()
+        self.assertIsNotNone(log)
+        self.assertEqual(log["method"], "QR_SCAN")
+
+        # 4. Duplicate scan attempt should show already logged
+        dup_res = self.client.get(f"/attend/{course['id']}?type=Lecture&token={token}")
+        self.assertEqual(dup_res.status_code, 200)
+        self.assertIn(b"Attendance Already Recorded", dup_res.data)
+
+        # 5. Student checks personal attendance tab
+        att_tab_res = self.client.get(f"/courses/{course['id']}/attendance")
+        self.assertEqual(att_tab_res.status_code, 200)
+        self.assertIn(b"My Attendance Record", att_tab_res.data)
+        self.assertIn(b"100.0%", att_tab_res.data)
+
+    def test_bulk_manual_attendance_and_csv_export(self):
+        """Test teacher bulk manual attendance marking and CSV export."""
+        self.login("kishan", "password123")
+        conn = app.get_db()
+        course = conn.execute("SELECT id FROM courses LIMIT 1").fetchone()
+        conn.close()
+
+        # Bulk mark for student1 (B26DS001)
+        res = self.client.post(f"/courses/{course['id']}/attendance/manual-bulk", data={
+            "session_type": "Lab",
+            "custom_date": "2026-09-01",
+            "manual_identifiers": "B26DS001, unknown_student"
+        }, follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"1 marked successfully", res.data)
+
+        # Export CSV
+        csv_res = self.client.get(f"/courses/{course['id']}/attendance/export-csv")
+        self.assertEqual(csv_res.status_code, 200)
+        self.assertEqual(csv_res.mimetype, "text/csv")
+        self.assertIn(b"Roll Number", csv_res.data)
+        self.assertIn(b"Attendance Percentage", csv_res.data)
+        self.assertIn(b"B26DS001", csv_res.data)
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Attendance Projector - {{ course.code }} - ACCLLMS</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/lms.css') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/accl_logo.png') }}">
+  <style>
+    body {
+      background: #0f172a;
+      color: #f8fafc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      margin: 0;
+      overflow-x: hidden;
+      font-family: var(--font-sans);
+    }
+    .projector-navbar {
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid #334155;
+      padding: 0.85rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .projector-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .projector-meta {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .projector-main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 2rem;
+      padding: 2rem;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+      align-items: center;
+    }
+    @media (max-width: 1024px) {
+      .projector-main {
+        grid-template-columns: 1fr;
+      }
+    }
+    .qr-card {
+      background: #1e293b;
+      border: 2px solid #334155;
+      border-radius: var(--radius-xl);
+      padding: 2.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+      position: relative;
+    }
+    .qr-frame {
+      background: #ffffff;
+      padding: 1.25rem;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 0 35px rgba(56, 189, 248, 0.25);
+      display: inline-block;
+      margin: 1.5rem 0;
+      transition: transform 0.3s ease;
+    }
+    .qr-frame img {
+      width: 320px;
+      height: 320px;
+      display: block;
+      image-rendering: pixelated;
+    }
+    .timer-ring-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid #334155;
+      padding: 0.6rem 1.25rem;
+      border-radius: 9999px;
+      margin-top: 0.5rem;
+    }
+    .timer-val {
+      font-family: monospace;
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #38bdf8;
+      min-width: 36px;
+    }
+    .status-panel {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: var(--radius-xl);
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      max-height: 620px;
+    }
+    .metric-box {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    .metric-num {
+      font-size: 3.2rem;
+      font-weight: 900;
+      color: #4ade80;
+      line-height: 1;
+      font-family: monospace;
+    }
+    .metric-label {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.4rem;
+    }
+    .live-feed-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #cbd5e1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.85rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #334155;
+    }
+    .live-feed-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .live-feed-item {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: var(--radius-sm);
+      padding: 0.6rem 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      animation: fadeIn 0.4s ease-out;
+    }
+    .live-roll {
+      font-weight: 700;
+      color: #f8fafc;
+      font-size: 0.9rem;
+      font-family: monospace;
+    }
+    .live-name {
+      font-size: 0.78rem;
+      color: #94a3b8;
+    }
+    .live-time {
+      font-size: 0.75rem;
+      color: #4ade80;
+      font-family: monospace;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      background: #4ade80;
+      border-radius: 50%;
+      display: inline-block;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(74, 222, 128, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <header class="projector-navbar">
+    <div class="projector-title">
+      <span>📽️</span>
+      <span>{{ course.code }}: {{ course.title }}</span>
+      <span style="font-size: 0.85rem; color: #94a3b8; font-weight: 500;">({{ course.section or 'Section A' }})</span>
+    </div>
+
+    <div class="projector-meta">
+      <div style="display: flex; align-items: center; gap: 0.5rem; background: #0f172a; padding: 0.35rem 0.75rem; border-radius: 6px; border: 1px solid #334155;">
+        <span style="font-size: 0.8rem; color: #94a3b8;">Session:</span>
+        <select id="sessionTypeSelect" onchange="changeSessionType(this.value)" style="background: transparent; color: #38bdf8; border: none; font-weight: 700; font-size: 0.9rem; cursor: pointer; outline: none;">
+          <option value="Lecture" {% if session_type == 'Lecture' %}selected{% endif %} style="background: #1e293b; color: white;">Lecture</option>
+          <option value="Lab" {% if session_type == 'Lab' %}selected{% endif %} style="background: #1e293b; color: white;">Lab</option>
+          <option value="Tutorial" {% if session_type == 'Tutorial' %}selected{% endif %} style="background: #1e293b; color: white;">Tutorial</option>
+        </select>
+      </div>
+
+      <button onclick="toggleFullscreen()" class="btn btn-secondary btn-sm" style="background: #334155; color: white; border: none;">
+        ⛶ Fullscreen
+      </button>
+
+      <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="btn btn-secondary btn-sm" style="background: #334155; color: white; border: none;">
+        ← Back to Course
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Projector View -->
+  <main class="projector-main">
+    
+    <!-- Left Column: Rotating Anti-Proxy QR Code -->
+    <div class="qr-card">
+      <div style="display: flex; align-items: center; gap: 0.5rem; color: #38bdf8; font-weight: 700; font-size: 1.1rem;">
+        <span class="pulse-dot"></span>
+        <span>SCAN TO RECORD ATTENDANCE</span>
+      </div>
+      
+      <p style="color: #94a3b8; font-size: 0.9rem; margin-top: 0.4rem; max-width: 480px;">
+        Open your smartphone camera or QR scanner. You must be logged into ACCLLMS with your student account.
+      </p>
+
+      <div class="qr-frame" id="qrFrame">
+        <img id="qrImage" src="{{ url_for('attendance_qr_svg', course_id=course.id) }}?type={{ session_type }}&token={{ initial_token }}" alt="Live QR Code">
+      </div>
+
+      <div class="timer-ring-wrap">
+        <span style="font-size: 1.1rem;">⏳</span>
+        <span style="font-size: 0.88rem; color: #cbd5e1;">Code refreshes in:</span>
+        <span class="timer-val" id="secondsRemaining">{{ seconds_remaining }}</span>
+        <span style="font-size: 0.88rem; color: #94a3b8;">seconds</span>
+      </div>
+
+      <div style="margin-top: 1.25rem; font-size: 0.78rem; color: #64748b; display: flex; align-items: center; gap: 0.5rem;">
+        <span>🛡️ Anti-Proxy Guard Active</span>
+        <span>•</span>
+        <span>Tokens auto-rotate every 45s</span>
+        <span>•</span>
+        <span>Single submission per session</span>
+      </div>
+    </div>
+
+    <!-- Right Column: Live Attendees Counter & Stream -->
+    <div class="status-panel">
+      <div class="metric-box">
+        <div class="metric-num" id="attendeeCount">{{ attendees_count }}</div>
+        <div class="metric-label">Students Present Today</div>
+      </div>
+
+      <div class="live-feed-title">
+        <span>⚡ Live Check-In Stream</span>
+        <span style="font-size: 0.75rem; color: #4ade80; display: flex; align-items: center; gap: 0.35rem;">
+          <span class="pulse-dot" style="width: 6px; height: 6px;"></span>
+          Auto-syncing
+        </span>
+      </div>
+
+      <ul class="live-feed-list" id="liveFeedList">
+        <li style="text-align: center; color: #64748b; font-size: 0.85rem; padding: 2rem 0;" id="feedPlaceholder">
+          Waiting for scans...
+        </li>
+      </ul>
+
+      <div style="margin-top: 1rem; border-top: 1px solid #334155; padding-top: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 0.78rem; color: #94a3b8;">Date: {{ today_str }}</span>
+        <a href="{{ url_for('course_attendance', course_id=course.id) }}" style="font-size: 0.78rem; color: #38bdf8; text-decoration: none;">Manual Override →</a>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    let courseId = {{ course.id }};
+    let currentSessionType = "{{ session_type }}";
+    let secondsLeft = {{ seconds_remaining }};
+    const ROTATION_SECONDS = {{ rotation_interval }};
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.error("Error attempting to enable fullscreen: " + err.message);
+        });
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    function changeSessionType(newType) {
+      window.location.href = "{{ url_for('attendance_projector', course_id=course.id) }}?type=" + encodeURIComponent(newType);
+    }
+
+    // Timer tick every 1 second
+    setInterval(() => {
+      secondsLeft--;
+      if (secondsLeft < 0) {
+        secondsLeft = 0;
+      }
+      const el = document.getElementById("secondsRemaining");
+      if (el) {
+        el.textContent = secondsLeft;
+      }
+
+      if (secondsLeft <= 0) {
+        fetchNewToken();
+      }
+    }, 1000);
+
+    // Fetch new token & update QR
+    function fetchNewToken() {
+      fetch("/api/attendance/token/" + courseId + "?type=" + encodeURIComponent(currentSessionType))
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.token) {
+            secondsLeft = data.seconds_remaining || ROTATION_SECONDS;
+            const img = document.getElementById("qrImage");
+            img.src = "/api/attendance/qr/" + courseId + "?type=" + encodeURIComponent(currentSessionType) + "&token=" + data.token + "&_ts=" + Date.now();
+            
+            // Brief visual refresh indicator
+            const frame = document.getElementById("qrFrame");
+            frame.style.transform = "scale(0.98)";
+            setTimeout(() => { frame.style.transform = "scale(1)"; }, 200);
+          }
+        })
+        .catch(err => console.error("Error refreshing attendance token:", err));
+    }
+
+    // Live poller for attendee counts & list every 3 seconds
+    function pollAttendees() {
+      fetch("/api/attendance/live-poll/" + courseId + "?type=" + encodeURIComponent(currentSessionType))
+        .then(r => r.json())
+        .then(data => {
+          if (data) {
+            const countEl = document.getElementById("attendeeCount");
+            if (countEl && data.attendee_count !== undefined) {
+              countEl.textContent = data.attendee_count;
+            }
+
+            const listEl = document.getElementById("liveFeedList");
+            if (data.recent && data.recent.length > 0) {
+              listEl.innerHTML = data.recent.map(item => `
+                <li class="live-feed-item">
+                  <div>
+                    <div class="live-roll">${escapeHtml(item.roll_number || 'STUDENT')}</div>
+                    <div class="live-name">${escapeHtml(item.name || '')}</div>
+                  </div>
+                  <div class="live-time">${escapeHtml(item.time || '')}</div>
+                </li>
+              `).join('');
+            } else {
+              listEl.innerHTML = `
+                <li style="text-align: center; color: #64748b; font-size: 0.85rem; padding: 2rem 0;" id="feedPlaceholder">
+                  Waiting for scans...
+                </li>
+              `;
+            }
+          }
+        })
+        .catch(err => console.error("Error polling attendance:", err));
+    }
+
+    setInterval(pollAttendees, 3000);
+    pollAttendees(); // initial trigger
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>

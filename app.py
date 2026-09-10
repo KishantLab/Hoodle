@@ -324,6 +324,50 @@ def init_db():
         )
     """)
 
+    # 11. Attendance Sessions Table
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS attendance_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            session_type TEXT NOT NULL,
+            session_date TEXT NOT NULL,
+            start_time TEXT,
+            end_time TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
+
+    # 12. Attendance Logs Table (Anti-Proxy Atomic Logging)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS attendance_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course_id INTEGER NOT NULL,
+            session_id INTEGER,
+            student_id INTEGER NOT NULL,
+            roll_number TEXT NOT NULL,
+            student_name TEXT NOT NULL,
+            section TEXT DEFAULT 'Section A',
+            session_type TEXT NOT NULL,
+            attendance_date TEXT NOT NULL,
+            status TEXT DEFAULT 'PRESENT',
+            method TEXT DEFAULT 'QR_SCAN',
+            ip_address TEXT,
+            marked_at TEXT NOT NULL,
+            attendance_key TEXT UNIQUE NOT NULL,
+            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+            FOREIGN KEY (session_id) REFERENCES attendance_sessions(id) ON DELETE SET NULL,
+            FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_att_course_date ON attendance_logs (course_id, attendance_date)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_att_student ON attendance_logs (student_id)")
+
+
     conn.commit()
 
     # Pre-seed initial default accounts if not existing
@@ -2075,6 +2119,502 @@ def admin_delete_user(user_id):
     conn.close()
     flash("User deleted.", "info")
     return redirect(url_for("admin_users"))
+
+
+
+# --- Dynamic Anti-Proxy QR Attendance System ---
+
+ATTENDANCE_ROTATION_SECONDS = 45  # QR code rotates dynamically every 45 seconds
+
+
+def get_dynamic_attendance_token(course_id, session_type="Lecture", time_block=None):
+    """
+    Generates a cryptographic 8-character rotating token based on 45-second time blocks.
+    Anti-Proxy Protection: Any photo/link shared expires in 45 seconds.
+    """
+    if time_block is None:
+        time_block = int(time.time() // ATTENDANCE_ROTATION_SECONDS)
+    raw = f"{SECRET_KEY}_ATTEND_{course_id}_{session_type.upper()}_{time_block}"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return digest[:8].upper()
+
+
+def validate_dynamic_attendance_token(course_id, session_type, scanned_token):
+    """
+    Validates token against current 45-second block and immediately preceding block
+    (allowing 30s grace boundary for students scanning near transition).
+    """
+    if not scanned_token:
+        return False
+    current_block = int(time.time() // ATTENDANCE_ROTATION_SECONDS)
+    valid_tokens = [
+        get_dynamic_attendance_token(course_id, session_type, current_block),
+        get_dynamic_attendance_token(course_id, session_type, current_block - 1)
+    ]
+    return scanned_token.strip().upper() in valid_tokens
+
+
+def get_attendance_seconds_remaining():
+    return int(ATTENDANCE_ROTATION_SECONDS - (time.time() % ATTENDANCE_ROTATION_SECONDS))
+
+
+def generate_qr_svg(data_url):
+    """Generate high-quality vector SVG QR code."""
+    try:
+        import qrcode
+        import qrcode.image.svg
+        factory = qrcode.image.svg.SvgPathImage
+        img = qrcode.make(data_url, image_factory=factory)
+        buf = io.BytesIO()
+        img.save(buf)
+        return buf.getvalue()
+    except Exception:
+        # Standalone vector SVG fallback
+        escaped_url = data_url.replace("&", "&amp;")
+        return f"""<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
+            <rect width="300" height="300" fill="#ffffff" rx="12"/>
+            <rect x="20" y="20" width="260" height="260" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2" rx="8"/>
+            <text x="150" y="110" font-family="sans-serif" font-size="28" text-anchor="middle" fill="#0f172a">📱</text>
+            <text x="150" y="150" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="#0f172a">Scan with Phone Camera</text>
+            <text x="150" y="180" font-family="monospace" font-size="11" text-anchor="middle" fill="#2563eb">{escaped_url[:35]}...</text>
+        </svg>""".encode("utf-8")
+
+
+@app.route("/api/attendance/qr/<int:course_id>")
+@login_required
+def attendance_qr_svg(course_id):
+    session_type = request.args.get("type", "Lecture")
+    token = request.args.get("token") or get_dynamic_attendance_token(course_id, session_type)
+    
+    # Construct student scan URL
+    # Respect reverse-proxy prefix (e.g. /lms)
+    base_url = request.host_url.rstrip("/")
+    prefix = request.headers.get("X-Forwarded-Prefix", "")
+    if prefix and not prefix.startswith("/"):
+        prefix = "/" + prefix
+    scan_url = f"{base_url}{prefix}/attend/{course_id}?token={token}&type={session_type}"
+    
+    svg_data = generate_qr_svg(scan_url)
+    return Response(svg_data, mimetype="image/svg+xml")
+
+
+@app.route("/api/attendance/token/<int:course_id>")
+@teacher_required
+def api_attendance_token(course_id):
+    """API for projector screen to fetch rotating dynamic token and stats."""
+    session_type = request.args.get("type", "Lecture")
+    token = get_dynamic_attendance_token(course_id, session_type)
+    seconds_remaining = get_attendance_seconds_remaining()
+    
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    conn = get_db()
+    count_row = conn.execute("""
+        SELECT COUNT(*) as count FROM attendance_logs
+        WHERE course_id = ? AND session_type = ? AND attendance_date = ?
+    """, (course_id, session_type, today_str)).fetchone()
+    conn.close()
+    
+    return jsonify({
+        "token": token,
+        "seconds_remaining": seconds_remaining,
+        "rotation_interval": ATTENDANCE_ROTATION_SECONDS,
+        "session_type": session_type,
+        "attendees_count": count_row["count"] if count_row else 0
+    })
+
+
+@app.route("/api/attendance/live-poll/<int:course_id>")
+@teacher_required
+def api_attendance_live_poll(course_id):
+    """Poll live attendees for projector screen live ticker."""
+    session_type = request.args.get("type", "Lecture")
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    conn = get_db()
+    
+    attendees = conn.execute("""
+        SELECT roll_number, student_name, marked_at, method
+        FROM attendance_logs
+        WHERE course_id = ? AND session_type = ? AND attendance_date = ?
+        ORDER BY id DESC LIMIT 8
+    """, (course_id, session_type, today_str)).fetchall()
+    
+    total_count = conn.execute("""
+        SELECT COUNT(*) as cnt FROM attendance_logs
+        WHERE course_id = ? AND session_type = ? AND attendance_date = ?
+    """, (course_id, session_type, today_str)).fetchone()["cnt"]
+    conn.close()
+    
+    return jsonify({
+        "total_count": total_count,
+        "attendee_count": total_count,
+        "recent": [dict(r) for r in attendees]
+    })
+
+
+# --- Teacher Projector Screen ---
+
+@app.route("/courses/<int:course_id>/attendance/projector")
+@teacher_required
+def attendance_projector(course_id):
+    """
+    Live Projector Display:
+    Full-screen dynamic rotating QR code display for the classroom projector.
+    Features 45-second countdown ring, live scan counter, and anti-proxy rotation.
+    """
+    course = get_course_or_404(course_id)
+    session_type = request.args.get("type", "Lecture")
+    
+    token = get_dynamic_attendance_token(course_id, session_type)
+    seconds_remaining = get_attendance_seconds_remaining()
+    
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    conn = get_db()
+    count_row = conn.execute("""
+        SELECT COUNT(*) as count FROM attendance_logs
+        WHERE course_id = ? AND session_type = ? AND attendance_date = ?
+    """, (course_id, session_type, today_str)).fetchone()
+    conn.close()
+    
+    attendees_count = count_row["count"] if count_row else 0
+    
+    return render_template(
+        "attendance_projector.html",
+        course=course,
+        session_type=session_type,
+        initial_token=token,
+        seconds_remaining=seconds_remaining,
+        rotation_interval=ATTENDANCE_ROTATION_SECONDS,
+        attendees_count=attendees_count,
+        today_str=today_str
+    )
+
+
+# --- Student QR Scan & Mobile Confirmation Flow ---
+
+@app.route("/attend/<int:course_id>")
+def attend_scan_landing(course_id):
+    """
+    Mobile landing page when student scans the projector QR code.
+    Validates dynamic anti-proxy token and displays student verification screen.
+    """
+    if "user_id" not in session:
+        flash("Please sign in with your student account to record attendance.", "info")
+        return redirect(url_for("login", next=request.full_path))
+    
+    user = get_current_user()
+    course = get_course_or_404(course_id)
+    session_type = request.args.get("type", "Lecture").strip()
+    scanned_token = request.args.get("token", "").strip().upper()
+    
+    # 1. Anti-Proxy Token Check
+    is_valid_token = validate_dynamic_attendance_token(course_id, session_type, scanned_token)
+    if not is_valid_token:
+        return render_template(
+            "attendance_confirm.html",
+            course=course,
+            error="EXPIRED_TOKEN",
+            session_type=session_type,
+            user=user
+        )
+    
+    # 2. Enrollment check
+    conn = get_db()
+    enrollment = conn.execute("""
+        SELECT * FROM course_enrollments WHERE course_id = ? AND user_id = ?
+    """, (course_id, user["id"])).fetchone()
+    
+    if not enrollment and user["role"] == "student":
+        conn.close()
+        return render_template(
+            "attendance_confirm.html",
+            course=course,
+            error="NOT_ENROLLED",
+            session_type=session_type,
+            user=user
+        )
+    
+    # 3. Duplicate attendance check
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    target_key = f"{user['id']}_{session_type.upper()}_{today_str}"
+    
+    existing = conn.execute("""
+        SELECT * FROM attendance_logs WHERE attendance_key = ?
+    """, (target_key,)).fetchone()
+    conn.close()
+    
+    if existing:
+        return render_template(
+            "attendance_confirm.html",
+            course=course,
+            error="ALREADY_LOGGED",
+            session_type=session_type,
+            existing_log=existing,
+            today_str=today_str,
+            user=user
+        )
+    
+    return render_template(
+        "attendance_confirm.html",
+        course=course,
+        error=None,
+        token=scanned_token,
+        session_type=session_type,
+        today_str=today_str,
+        user=user
+    )
+
+
+@app.route("/attend/<int:course_id>/submit", methods=["POST"])
+@login_required
+def attend_submit(course_id):
+    """
+    Submits and atomically logs student attendance with anti-proxy validation.
+    """
+    user = get_current_user()
+    course = get_course_or_404(course_id)
+    session_type = request.form.get("session_type", "Lecture").strip()
+    token = request.form.get("token", "").strip().upper()
+    
+    # Re-validate dynamic token
+    if not validate_dynamic_attendance_token(course_id, session_type, token):
+        flash("❌ QR Code Expired: The attendance token changed before your confirmation was sent. Please scan the current projector code.", "danger")
+        return redirect(url_for("course_attendance", course_id=course_id))
+    
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    target_key = f"{user['id']}_{session_type.upper()}_{today_str}"
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    roll_number = user["roll_number"] or user["username"].upper()
+    
+    conn = get_db()
+    try:
+        conn.execute("""
+            INSERT INTO attendance_logs (
+                course_id, session_id, student_id, roll_number, student_name,
+                section, session_type, attendance_date, status, method, ip_address, marked_at, attendance_key
+            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'PRESENT', 'QR_SCAN', ?, ?, ?)
+        """, (
+            course_id, user["id"], roll_number, user["display_name"],
+            course["section"] or "Section A", session_type, today_str,
+            client_ip, now_str, target_key
+        ))
+        conn.commit()
+        conn.close()
+        
+        return render_template(
+            "attendance_confirm.html",
+            course=course,
+            success=True,
+            session_type=session_type,
+            today_str=today_str,
+            now_str=now_str,
+            user=user
+        )
+    except sqlite3.IntegrityError:
+        conn.close()
+        flash(f"Attendance for today's {session_type} has already been logged.", "info")
+        return redirect(url_for("course_attendance", course_id=course_id))
+
+
+# --- Main Course Attendance Tab & Logs Dashboard ---
+
+@app.route("/courses/<int:course_id>/attendance")
+@login_required
+def course_attendance(course_id):
+    course = get_course_or_404(course_id)
+    user = get_current_user()
+    conn = get_db()
+    
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    if user["role"] == "student":
+        # Student view: personal attendance summary & logs
+        my_logs = conn.execute("""
+            SELECT * FROM attendance_logs
+            WHERE course_id = ? AND student_id = ?
+            ORDER BY marked_at DESC
+        """, (course_id, user["id"])).fetchall()
+        
+        # Total unique course sessions conducted
+        sessions_row = conn.execute("""
+            SELECT COUNT(DISTINCT attendance_date || '_' || session_type) as total_sessions
+            FROM attendance_logs WHERE course_id = ?
+        """, (course_id,)).fetchone()
+        total_sessions = sessions_row["total_sessions"] or 0
+        attended_count = len(my_logs)
+        pct = round((attended_count / total_sessions * 100), 1) if total_sessions > 0 else 100.0
+        
+        conn.close()
+        return render_template(
+            "course_attendance.html",
+            course=course,
+            my_logs=my_logs,
+            total_sessions=total_sessions,
+            attended_count=attended_count,
+            attendance_pct=pct,
+            today_str=today_str,
+            active_tab="attendance"
+        )
+        
+    else:
+        # Teacher / Admin view: full class roster, statistics, logs, and manual marker
+        enrolled_students = conn.execute("""
+            SELECT u.id, u.roll_number, u.display_name, u.email,
+                   (SELECT COUNT(*) FROM attendance_logs al WHERE al.course_id = ? AND al.student_id = u.id) as attended_count
+            FROM course_enrollments ce
+            JOIN users u ON ce.user_id = u.id
+            WHERE ce.course_id = ? AND ce.role = 'student'
+            ORDER BY u.roll_number ASC
+        """, (course_id, course_id)).fetchall()
+        
+        sessions_row = conn.execute("""
+            SELECT COUNT(DISTINCT attendance_date || '_' || session_type) as total_sessions
+            FROM attendance_logs WHERE course_id = ?
+        """, (course_id,)).fetchone()
+        total_sessions = sessions_row["total_sessions"] or 0
+        
+        # Recent logs
+        recent_logs = conn.execute("""
+            SELECT * FROM attendance_logs
+            WHERE course_id = ?
+            ORDER BY marked_at DESC LIMIT 50
+        """, (course_id,)).fetchall()
+        
+        today_count = conn.execute("""
+            SELECT COUNT(*) as count FROM attendance_logs
+            WHERE course_id = ? AND attendance_date = ?
+        """, (course_id, today_str)).fetchone()["count"]
+        
+        conn.close()
+        return render_template(
+            "course_attendance.html",
+            course=course,
+            students=enrolled_students,
+            total_sessions=total_sessions,
+            today_count=today_count,
+            recent_logs=recent_logs,
+            today_str=today_str,
+            active_tab="attendance"
+        )
+
+
+@app.route("/courses/<int:course_id>/attendance/manual-bulk", methods=["POST"])
+@teacher_required
+def attendance_manual_bulk(course_id):
+    """
+    Teacher bulk manual attendance marker with date and session type selection.
+    Handles dead phone batteries or technical issues.
+    """
+    course = get_course_or_404(course_id)
+    raw_identifiers = request.form.get("manual_identifiers", "").strip()
+    session_type = request.form.get("session_type", "Lecture").strip()
+    custom_date = request.form.get("custom_date", "").strip()
+    target_date = custom_date if custom_date else datetime.now().strftime("%Y-%m-%d")
+    
+    if not raw_identifiers:
+        flash("Please enter at least one Roll Number or Email.", "warning")
+        return redirect(url_for("course_attendance", course_id=course_id))
+    
+    identifiers = [re.sub(r'[^a-zA-Z0-9@._-]', '', x.strip().lower()) for x in re.split(r'[,;\s\n]+', raw_identifiers) if x.strip()]
+    
+    conn = get_db()
+    # Fetch all enrolled students
+    students = conn.execute("""
+        SELECT u.id, u.roll_number, u.username, u.email, u.display_name
+        FROM course_enrollments ce
+        JOIN users u ON ce.user_id = u.id
+        WHERE ce.course_id = ? AND ce.role = 'student'
+    """, (course_id,)).fetchall()
+    
+    student_map = {}
+    for s in students:
+        if s["roll_number"]:
+            student_map[s["roll_number"].lower().strip()] = s
+        if s["username"]:
+            student_map[s["username"].lower().strip()] = s
+        if s["email"]:
+            student_map[s["email"].lower().strip()] = s
+    
+    marked_count = 0
+    duplicate_count = 0
+    not_found = []
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    for ident in identifiers:
+        if ident in student_map:
+            st = student_map[ident]
+            target_key = f"{st['id']}_{session_type.upper()}_{target_date}"
+            
+            # Check duplicate
+            exists = conn.execute("SELECT id FROM attendance_logs WHERE attendance_key = ?", (target_key,)).fetchone()
+            if exists:
+                duplicate_count += 1
+            else:
+                conn.execute("""
+                    INSERT INTO attendance_logs (
+                        course_id, session_id, student_id, roll_number, student_name,
+                        section, session_type, attendance_date, status, method, marked_at, attendance_key
+                    ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'PRESENT (MANUAL)', 'MANUAL_ADMIN', ?, ?)
+                """, (
+                    course_id, st["id"], st["roll_number"] or st["username"].upper(),
+                    st["display_name"], course["section"] or "Section A", session_type,
+                    target_date, now_str, target_key
+                ))
+                marked_count += 1
+        else:
+            not_found.append(ident)
+            
+    conn.commit()
+    conn.close()
+    
+    msg = f"Bulk attendance for {target_date} ({session_type}): {marked_count} marked successfully."
+    if duplicate_count > 0:
+        msg += f" {duplicate_count} already recorded."
+    if not_found:
+        msg += f" {len(not_found)} not found ({', '.join(not_found[:5])})."
+    
+    flash(msg, "success" if marked_count > 0 else "info")
+    return redirect(url_for("course_attendance", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/attendance/export-csv")
+@teacher_required
+def attendance_export_csv(course_id):
+    course = get_course_or_404(course_id)
+    conn = get_db()
+    
+    sessions_row = conn.execute("""
+        SELECT COUNT(DISTINCT attendance_date || '_' || session_type) as total_sessions
+        FROM attendance_logs WHERE course_id = ?
+    """, (course_id,)).fetchone()
+    total_sessions = sessions_row["total_sessions"] or 0
+    
+    students = conn.execute("""
+        SELECT u.roll_number, u.display_name, u.email,
+               (SELECT COUNT(*) FROM attendance_logs al WHERE al.course_id = ? AND al.student_id = u.id) as attended_count
+        FROM course_enrollments ce
+        JOIN users u ON ce.user_id = u.id
+        WHERE ce.course_id = ? AND ce.role = 'student'
+        ORDER BY u.roll_number ASC
+    """, (course_id, course_id)).fetchall()
+    conn.close()
+    
+    output = io.StringIO()
+    output.write('"Roll Number","Student Name","Email","Attended Sessions","Total Sessions","Attendance Percentage","Status"\n')
+    
+    for s in students:
+        att = s["attended_count"]
+        pct = round((att / total_sessions * 100), 1) if total_sessions > 0 else 100.0
+        status = "Satisfactory (>=75%)" if pct >= 75.0 else "Shortage (<75%)"
+        output.write(f'"{s["roll_number"] or ""}","{s["display_name"]}","{s["email"] or ""}",{att},{total_sessions},{pct}%,{status}\n')
+        
+    output.seek(0)
+    filename = f"{re.sub(r'[^a-zA-Z0-9_-]', '_', course['code'])}_Attendance_{datetime.now().strftime('%Y%m%d')}.csv"
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 
 with app.app_context():

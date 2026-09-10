@@ -28,6 +28,9 @@
   <a href="{{ url_for('course_people', course_id=course.id) }}" class="course-tab">
     👥 People
   </a>
+  <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="course-tab">
+    📅 Attendance
+  </a>
   <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab active">
     📊 Grades
   </a>

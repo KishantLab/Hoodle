@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course.code }} Attendance - ACCLLMS{% endblock %}
+
+{% block content %}
+<!-- Google Classroom Course Header Banner -->
+<div class="course-banner banner-{{ course.theme_color }}">
+  <h1>{{ course.code }}: {{ course.title }}</h1>
+  <div class="course-subtitle">{{ course.section or 'Section A' }}</div>
+  <div class="course-meta">
+    <span>👨‍🏫 {{ course.teacher_name }}</span>
+    <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')">
+      <span>Class Code:</span>
+      <strong>{{ course.join_code }}</strong>
+      <span>📋</span>
+    </div>
+  </div>
+</div>
+
+<!-- Course Tabs Navigation -->
+<nav class="course-tabs-nav">
+  <a href="{{ url_for('course_stream', course_id=course.id) }}" class="course-tab">
+    📢 Stream
+  </a>
+  <a href="{{ url_for('course_classwork', course_id=course.id) }}" class="course-tab">
+    📝 Classwork
+  </a>
+  <a href="{{ url_for('course_people', course_id=course.id) }}" class="course-tab">
+    👥 People
+  </a>
+  <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="course-tab active">
+    📅 Attendance
+  </a>
+  {% if current_user.role in ('teacher', 'admin') %}
+    <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
+      📊 Grades
+    </a>
+  {% endif %}
+</nav>
+
+<div style="max-width: 1100px; margin: 0 auto; padding-bottom: 3rem;">
+
+  {% if current_user.role == 'student' %}
+    <!-- ========================================== -->
+    <!-- STUDENT VIEW: PERSONAL ATTENDANCE SUMMARY -->
+    <!-- ========================================== -->
+    
+    <div class="card" style="padding: 2rem; margin-bottom: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
+        <div>
+          <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.25rem;">
+            My Attendance Record
+          </h2>
+          <div style="font-size: 0.88rem; color: var(--text-muted);">
+            Roll Number: <strong style="color: var(--text-main); font-family: monospace;">{{ current_user.roll_number or current_user.username }}</strong> • {{ current_user.display_name }}
+          </div>
+        </div>
+
+        <div style="text-align: right;">
+          <div style="font-size: 2.5rem; font-weight: 900; line-height: 1; font-family: monospace; color: {% if attendance_pct >= 75.0 %}var(--success){% else %}var(--danger){% endif %};">
+            {{ attendance_pct }}%
+          </div>
+          <div style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; margin-top: 0.35rem;">
+            {% if attendance_pct >= 75.0 %}
+              <span class="badge" style="background: var(--success-bg); color: var(--success);">Satisfactory (≥ 75%)</span>
+            {% else %}
+              <span class="badge" style="background: var(--danger-bg); color: var(--danger);">Shortage Warning (< 75%)</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Attendance Percentage Progress Bar -->
+      <div style="background: var(--border); border-radius: 9999px; height: 14px; overflow: hidden; margin-bottom: 1rem; position: relative;">
+        <div style="background: {% if attendance_pct >= 75.0 %}var(--success){% else %}var(--danger){% endif %}; height: 100%; width: {{ [attendance_pct, 100]|min }}%; border-radius: 9999px; transition: width 0.6s ease;"></div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-muted);">
+        <span>Attended <strong>{{ attended_count }}</strong> of <strong>{{ total_sessions }}</strong> conducted sessions</span>
+        <span>Requirement: 75% minimum</span>
+      </div>
+    </div>
+
+    <!-- Personal Log History Table -->
+    <div class="card" style="padding: 1.5rem;">
+      <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">Attendance History</h3>
+      
+      {% if my_logs %}
+        <div style="overflow-x: auto;">
+          <table class="table" style="width: 100%; text-align: left; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--border); font-size: 0.82rem; color: var(--text-muted); text-transform: uppercase;">
+                <th style="padding: 0.75rem;">Date</th>
+                <th style="padding: 0.75rem;">Session Type</th>
+                <th style="padding: 0.75rem;">Status</th>
+                <th style="padding: 0.75rem;">Method</th>
+                <th style="padding: 0.75rem;">Recorded At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for log in my_logs %}
+                <tr style="border-bottom: 1px solid var(--border); font-size: 0.9rem;">
+                  <td style="padding: 0.75rem; font-weight: 600;">{{ log.attendance_date }}</td>
+                  <td style="padding: 0.75rem;">
+                    <span class="badge" style="background: var(--primary-light); color: var(--primary); font-size: 0.78rem;">{{ log.session_type }}</span>
+                  </td>
+                  <td style="padding: 0.75rem;">
+                    <span class="badge" style="background: var(--success-bg); color: var(--success); font-weight: 700; font-size: 0.78rem;">PRESENT</span>
+                  </td>
+                  <td style="padding: 0.75rem; color: var(--text-muted); font-size: 0.82rem;">
+                    {% if log.method == 'QR_SCAN' %}
+                      📷 Live QR Scan
+                    {% else %}
+                      ✍️ Manual (Teacher)
+                    {% endif %}
+                  </td>
+                  <td style="padding: 0.75rem; font-family: monospace; font-size: 0.82rem; color: var(--text-muted);">
+                    {{ log.marked_at }}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📅</div>
+          <div style="font-weight: 600;">No attendance records found yet</div>
+          <div style="font-size: 0.85rem; margin-top: 0.25rem;">When the instructor displays the QR projector in class, scan it to log your attendance.</div>
+        </div>
+      {% endif %}
+    </div>
+
+  {% else %}
+    <!-- ============================================== -->
+    <!-- TEACHER / ADMIN VIEW: FULL ROSTER & CONTROLS -->
+    <!-- ============================================== -->
+
+    <!-- Action Bar & Stats Overview -->
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
+      <div>
+        <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.25rem;">
+          Class Attendance Management
+        </h2>
+        <div style="font-size: 0.88rem; color: var(--text-muted);">
+          Real-time dynamic anti-proxy tracking, roster analytics, and manual overrides.
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <a href="{{ url_for('attendance_projector', course_id=course.id) }}" target="_blank" class="btn btn-primary" style="display: flex; align-items: center; gap: 0.5rem; font-weight: 700;">
+          <span>📽️</span>
+          <span>Launch QR Projector</span>
+        </a>
+        <a href="{{ url_for('attendance_export_csv', course_id=course.id) }}" class="btn btn-secondary" style="display: flex; align-items: center; gap: 0.5rem;">
+          <span>📥</span>
+          <span>Export CSV</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Metric Stat Cards -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; margin-bottom: 2rem;">
+      <div class="card" style="padding: 1.25rem;">
+        <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+          Conducted Sessions
+        </div>
+        <div style="font-size: 2rem; font-weight: 900; color: var(--primary); font-family: monospace; margin-top: 0.35rem;">
+          {{ total_sessions }}
+        </div>
+        <div style="font-size: 0.78rem; color: var(--text-light); margin-top: 0.2rem;">Total distinct class dates</div>
+      </div>
+
+      <div class="card" style="padding: 1.25rem;">
+        <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+          Today's Attendance
+        </div>
+        <div style="font-size: 2rem; font-weight: 900; color: var(--success); font-family: monospace; margin-top: 0.35rem;">
+          {{ today_count }}
+        </div>
+        <div style="font-size: 0.78rem; color: var(--text-light); margin-top: 0.2rem;">Scans recorded on {{ today_str }}</div>
+      </div>
+
+      <div class="card" style="padding: 1.25rem;">
+        <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+          Enrolled Students
+        </div>
+        <div style="font-size: 2rem; font-weight: 900; color: var(--text-main); font-family: monospace; margin-top: 0.35rem;">
+          {{ students|length }}
+        </div>
+        <div style="font-size: 0.78rem; color: var(--text-light); margin-top: 0.2rem;">Active students in roster</div>
+      </div>
+    </div>
+
+    <!-- Student Attendance Roster Matrix -->
+    <div class="card" style="padding: 1.5rem; margin-bottom: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+        <h3 style="font-size: 1.15rem; font-weight: 700;">Enrolled Students Attendance</h3>
+        
+        <input type="text" id="rosterSearch" placeholder="🔍 Search roll number or name..." onkeyup="filterRoster()" style="padding: 0.45rem 0.85rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.88rem; width: 260px;">
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table class="table" id="rosterTable" style="width: 100%; text-align: left; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border); font-size: 0.82rem; color: var(--text-muted); text-transform: uppercase;">
+              <th style="padding: 0.75rem;">Roll Number</th>
+              <th style="padding: 0.75rem;">Student Name</th>
+              <th style="padding: 0.75rem;">Attended</th>
+              <th style="padding: 0.75rem;">Percentage</th>
+              <th style="padding: 0.75rem;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in students %}
+              {% set pct = ((s.attended_count / total_sessions * 100)|round(1)) if total_sessions > 0 else 100.0 %}
+              <tr class="roster-row" style="border-bottom: 1px solid var(--border); font-size: 0.9rem;">
+                <td style="padding: 0.75rem; font-family: monospace; font-weight: 700; color: var(--primary);">
+                  {{ s.roll_number or '—' }}
+                </td>
+                <td style="padding: 0.75rem;">
+                  <div style="font-weight: 600;">{{ s.display_name }}</div>
+                  <div style="font-size: 0.78rem; color: var(--text-muted);">{{ s.email }}</div>
+                </td>
+                <td style="padding: 0.75rem; font-family: monospace; font-weight: 600;">
+                  {{ s.attended_count }} / {{ total_sessions }}
+                </td>
+                <td style="padding: 0.75rem;">
+                  <div style="display: flex; align-items: center; gap: 0.6rem;">
+                    <div style="width: 70px; background: var(--border); height: 8px; border-radius: 9999px; overflow: hidden;">
+                      <div style="background: {% if pct >= 75.0 %}var(--success){% else %}var(--danger){% endif %}; height: 100%; width: {{ [pct, 100]|min }}%;"></div>
+                    </div>
+                    <span style="font-family: monospace; font-weight: 700; color: {% if pct >= 75.0 %}var(--success){% else %}var(--danger){% endif %};">
+                      {{ pct }}%
+                    </span>
+                  </div>
+                </td>
+                <td style="padding: 0.75rem;">
+                  {% if pct >= 75.0 %}
+                    <span class="badge" style="background: var(--success-bg); color: var(--success); font-weight: 700; font-size: 0.75rem;">Satisfactory</span>
+                  {% else %}
+                    <span class="badge" style="background: var(--danger-bg); color: var(--danger); font-weight: 700; font-size: 0.75rem;">Shortage (<75%)</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                  No students currently enrolled.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Bulk Manual Attendance Marker Form -->
+    <div class="card" style="padding: 1.5rem; margin-bottom: 2rem;">
+      <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem;">
+        ✍️ Bulk Manual Attendance Marker
+      </h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+        Mark attendance manually for students who experienced camera issues, dead phone batteries, or excused absences.
+      </p>
+
+      <form action="{{ url_for('attendance_manual_bulk', course_id=course.id) }}" method="POST">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+              Date
+            </label>
+            <input type="date" name="custom_date" value="{{ today_str }}" required style="width: 100%; padding: 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+              Session Type
+            </label>
+            <select name="session_type" style="width: 100%; padding: 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+              <option value="Lecture">Lecture</option>
+              <option value="Lab">Lab</option>
+              <option value="Tutorial">Tutorial</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+            Student Roll Numbers or Emails
+          </label>
+          <textarea name="manual_identifiers" rows="3" placeholder="e.g. 12240010, 12240020, student@iitbhilai.ac.in (comma or space separated)" required style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: monospace; font-size: 0.9rem;"></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+          Record Bulk Manual Attendance
+        </button>
+      </form>
+    </div>
+
+    <!-- Recent Logs Feed -->
+    <div class="card" style="padding: 1.5rem;">
+      <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 1rem;">Recent Attendance Logs (Last 50)</h3>
+      
+      {% if recent_logs %}
+        <div style="overflow-x: auto;">
+          <table class="table" style="width: 100%; text-align: left; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--border); font-size: 0.82rem; color: var(--text-muted); text-transform: uppercase;">
+                <th style="padding: 0.65rem;">Time</th>
+                <th style="padding: 0.65rem;">Date</th>
+                <th style="padding: 0.65rem;">Roll Number</th>
+                <th style="padding: 0.65rem;">Student Name</th>
+                <th style="padding: 0.65rem;">Session</th>
+                <th style="padding: 0.65rem;">Method</th>
+                <th style="padding: 0.65rem;">IP Address</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for l in recent_logs %}
+                <tr style="border-bottom: 1px solid var(--border); font-size: 0.88rem;">
+                  <td style="padding: 0.65rem; font-family: monospace; font-size: 0.8rem; color: var(--text-muted);">
+                    {{ l.marked_at }}
+                  </td>
+                  <td style="padding: 0.65rem; font-weight: 600;">{{ l.attendance_date }}</td>
+                  <td style="padding: 0.65rem; font-family: monospace; font-weight: 700; color: var(--primary);">
+                    {{ l.roll_number }}
+                  </td>
+                  <td style="padding: 0.65rem;">{{ l.student_name }}</td>
+                  <td style="padding: 0.65rem;">
+                    <span class="badge" style="background: var(--primary-light); color: var(--primary); font-size: 0.75rem;">{{ l.session_type }}</span>
+                  </td>
+                  <td style="padding: 0.65rem; font-size: 0.8rem;">
+                    {% if l.method == 'QR_SCAN' %}
+                      <span style="color: var(--success); font-weight: 600;">📷 QR Scan</span>
+                    {% else %}
+                      <span style="color: var(--text-muted); font-weight: 600;">✍️ Manual</span>
+                    {% endif %}
+                  </td>
+                  <td style="padding: 0.65rem; font-family: monospace; font-size: 0.78rem; color: var(--text-light);">
+                    {{ l.ip_address or '—' }}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
+          No attendance logs recorded yet for this course.
+        </div>
+      {% endif %}
+    </div>
+
+  {% endif %}
+
+</div>
+
+<script>
+  function filterRoster() {
+    const input = document.getElementById("rosterSearch");
+    const filter = input.value.toLowerCase();
+    const rows = document.getElementsByClassName("roster-row");
+    for (let i = 0; i < rows.length; i++) {
+      const text = rows[i].textContent || rows[i].innerText;
+      rows[i].style.display = text.toLowerCase().indexOf(filter) > -1 ? "" : "none";
+    }
+  }
+</script>
+{% endblock %}

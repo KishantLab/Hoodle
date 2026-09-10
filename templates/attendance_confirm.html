@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Record Attendance - {{ course.code }} - ACCLLMS{% endblock %}
+
+{% block content %}
+<div style="max-width: 540px; margin: 2rem auto; padding: 0 1rem;">
+  
+  {% if error == 'EXPIRED_TOKEN' %}
+    <!-- Expired Token State -->
+    <div class="card" style="text-align: center; padding: 2.5rem 1.5rem; border-top: 5px solid var(--danger);">
+      <div style="font-size: 3.5rem; margin-bottom: 0.5rem;">⏱️</div>
+      <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--danger); margin-bottom: 0.5rem;">
+        QR Code Expired
+      </h2>
+      <p style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.5; margin-bottom: 1.5rem;">
+        Anti-Proxy Protection: Attendance QR codes auto-rotate every 45 seconds. The code you scanned has already expired.
+      </p>
+      
+      <div style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.5rem; text-align: left; font-size: 0.88rem;">
+        <div style="color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase; font-weight: 700; margin-bottom: 0.35rem;">What to do:</div>
+        <div>1. Look at the classroom projector screen.</div>
+        <div>2. Scan the current, freshly generated QR code.</div>
+        <div>3. Immediately tap confirm on your phone.</div>
+      </div>
+
+      <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="btn btn-secondary" style="width: 100%;">
+        Go to Course Attendance
+      </a>
+    </div>
+
+  {% elif error == 'NOT_ENROLLED' %}
+    <!-- Not Enrolled State -->
+    <div class="card" style="text-align: center; padding: 2.5rem 1.5rem; border-top: 5px solid var(--warning);">
+      <div style="font-size: 3.5rem; margin-bottom: 0.5rem;">⚠️</div>
+      <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--warning); margin-bottom: 0.5rem;">
+        Not Enrolled in Course
+      </h2>
+      <p style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.5; margin-bottom: 1.5rem;">
+        You are logged in as <strong>{{ user.display_name }}</strong> ({{ user.roll_number or user.username }}), but you are not enrolled in <strong>{{ course.code }}: {{ course.title }}</strong>.
+      </p>
+
+      <div style="display: flex; gap: 0.75rem; justify-content: center;">
+        <a href="{{ url_for('dashboard') }}" class="btn btn-primary">
+          Enter Class Join Code
+        </a>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+          Return to Dashboard
+        </a>
+      </div>
+    </div>
+
+  {% elif error == 'ALREADY_LOGGED' %}
+    <!-- Already Recorded State -->
+    <div class="card" style="text-align: center; padding: 2.5rem 1.5rem; border-top: 5px solid var(--primary);">
+      <div style="font-size: 3.5rem; margin-bottom: 0.5rem;">ℹ️</div>
+      <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">
+        Attendance Already Recorded
+      </h2>
+      <p style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.5; margin-bottom: 1.5rem;">
+        Your presence for today's <strong>{{ session_type }}</strong> has already been logged. Multiple submissions are not allowed.
+      </p>
+
+      <div style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.5rem; text-align: left;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Student:</span>
+          <strong>{{ user.display_name }} ({{ user.roll_number or user.username }})</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Course:</span>
+          <strong>{{ course.code }} - {{ session_type }}</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Recorded At:</span>
+          <span style="font-family: monospace; font-weight: 600;">{{ existing_log.marked_at }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Status:</span>
+          <span class="badge" style="background: var(--success-bg); color: var(--success); font-weight: 700;">PRESENT</span>
+        </div>
+      </div>
+
+      <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="btn btn-primary" style="width: 100%;">
+        View Attendance History
+      </a>
+    </div>
+
+  {% elif success %}
+    <!-- Success State -->
+    <div class="card" style="text-align: center; padding: 2.5rem 1.5rem; border-top: 5px solid var(--success);">
+      <div style="font-size: 3.5rem; margin-bottom: 0.5rem;">🎉</div>
+      <h2 style="font-size: 1.45rem; font-weight: 800; color: var(--success); margin-bottom: 0.35rem;">
+        Attendance Recorded!
+      </h2>
+      <p style="color: var(--text-muted); font-size: 0.92rem; margin-bottom: 1.5rem;">
+        Your attendance has been verified and registered.
+      </p>
+
+      <div style="background: var(--success-bg); border: 1px solid rgba(22, 163, 74, 0.2); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.5rem; text-align: left;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Roll Number:</span>
+          <strong>{{ user.roll_number or user.username }}</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Name:</span>
+          <strong>{{ user.display_name }}</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Course & Session:</span>
+          <strong>{{ course.code }} ({{ session_type }})</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Timestamp:</span>
+          <span style="font-family: monospace; font-weight: 600; color: var(--success);">{{ now_str }}</span>
+        </div>
+      </div>
+
+      <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="btn btn-primary" style="width: 100%;">
+        View My Attendance Record →
+      </a>
+    </div>
+
+  {% else %}
+    <!-- Ready to Confirm State -->
+    <div class="card" style="padding: 2rem 1.5rem; box-shadow: var(--shadow-lg);">
+      <div style="text-align: center; margin-bottom: 1.5rem;">
+        <div style="font-size: 2.5rem; margin-bottom: 0.3rem;">📱</div>
+        <h2 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main);">Confirm Attendance</h2>
+        <div style="font-size: 0.85rem; color: var(--text-muted);">{{ course.code }}: {{ course.title }}</div>
+      </div>
+
+      <div style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.6rem; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Student Name:</span>
+          <strong>{{ user.display_name }}</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.6rem; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Roll Number:</span>
+          <strong style="font-family: monospace; color: var(--primary);">{{ user.roll_number or user.username }}</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.6rem; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Date:</span>
+          <span style="font-weight: 600;">{{ today_str }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.88rem;">
+          <span style="color: var(--text-muted);">Session Type:</span>
+          <span class="badge" style="background: var(--primary-light); color: var(--primary); font-weight: 700;">{{ session_type }}</span>
+        </div>
+      </div>
+
+      <form action="{{ url_for('attend_submit', course_id=course.id) }}" method="POST">
+        <input type="hidden" name="token" value="{{ token }}">
+        <input type="hidden" name="session_type" value="{{ session_type }}">
+        
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.85rem; font-size: 1.05rem; font-weight: 700; display: flex; justify-content: center; align-items: center; gap: 0.5rem;">
+          <span>✅</span>
+          <span>Confirm Attendance Now</span>
+        </button>
+      </form>
+
+      <div style="margin-top: 1rem; text-align: center;">
+        <span style="font-size: 0.76rem; color: var(--text-light);">
+          🔒 Anti-Proxy Verification Active • IP & Session Verified
+        </span>
+      </div>
+    </div>
+
+  {% endif %}
+
+</div>
+{% endblock %}
