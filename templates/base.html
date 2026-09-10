@@ -79,6 +79,15 @@
       </div>
     {% endif %}
 
+    <!-- HTTPS Portal Switcher for Live Video Scanner -->
+    <div id="httpsUpgradeAlert" style="display: none; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 0.65rem 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; font-size: 0.85rem; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span>🔒</span>
+        <span>For live camera video QR scanning, access via the secure HTTPS portal:</span>
+      </div>
+      <a href="#" onclick="switchToHttps(event)" class="btn btn-primary btn-sm" style="font-size: 0.78rem; padding: 0.25rem 0.65rem; text-decoration: none;">Switch to HTTPS →</a>
+    </div>
+
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
@@ -128,12 +137,42 @@
         <div id="qrReader" style="width: 100%; border-radius: 12px; overflow: hidden; background: #000;"></div>
         <div class="scanner-laser-line"></div>
 
-        <!-- In-Modal Android & iOS Camera Permission Guidance -->
+        <!-- Insecure HTTP Restriction Notice (When opened via plain http://) -->
+        <div id="scannerHttpNotice" class="perm-guide-card" style="display: none; padding: 1.25rem 1rem; text-align: center;">
+          <div style="font-size: 2.2rem; margin-bottom: 0.35rem;">🔒</div>
+          <h4 style="font-size: 1.08rem; font-weight: 800; color: var(--text-main); margin: 0 0 0.25rem 0;">Live Camera Requires HTTPS</h4>
+          <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.45; margin: 0 0 1rem 0;">
+            Mobile Chrome & Safari block live video streaming on plain <code>http://</code> addresses. To scan your attendance:
+          </p>
+
+          <!-- 1-Tap Switch to HTTPS -->
+          <a href="#" onclick="switchToHttps(event)" class="btn btn-primary" style="width: 100%; display: flex; justify-content: center; align-items: center; gap: 0.5rem; font-weight: 700; padding: 0.75rem; text-decoration: none;">
+            <span>🔐 Switch to Secure HTTPS</span>
+          </a>
+          <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.3;">
+            (If prompted with a certificate notice, tap <em>Advanced</em> → <em>Proceed</em>)
+          </div>
+
+          <div style="display: flex; align-items: center; margin: 0.85rem 0; color: var(--border);">
+            <div style="flex: 1; height: 1px; background: var(--border);"></div>
+            <span style="padding: 0 0.5rem; font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">or scan right now</span>
+            <div style="flex: 1; height: 1px; background: var(--border);"></div>
+          </div>
+
+          <!-- Direct Phone Camera Fallback -->
+          <label class="btn btn-secondary" style="cursor: pointer; width: 100%; display: flex; justify-content: center; align-items: center; gap: 0.5rem; font-weight: 700; padding: 0.75rem; background: var(--bg-app); border: 2px dashed var(--primary); color: var(--primary);">
+            <span>📸 Snap Photo with Phone Camera</span>
+            <input type="file" accept="image/*" capture="environment" style="display: none;" onchange="onQrPhotoSelected(this)">
+          </label>
+          <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.35rem;">Takes a quick photo of the projector code & scans instantly in browser</div>
+        </div>
+
+        <!-- In-Modal Android & iOS Camera Permission Guidance (When on HTTPS or permission was rejected) -->
         <div id="scannerPermGuide" class="perm-guide-card" style="display: none; padding: 1.25rem 1rem; text-align: left;">
           <div style="text-align: center; margin-bottom: 0.75rem;">
             <div style="font-size: 2rem;">📱</div>
             <h4 style="font-size: 1.05rem; font-weight: 800; color: var(--text-main); margin-top: 0.2rem;">Enable Camera Permission</h4>
-            <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">Your browser blocked camera video stream. Follow your device steps:</p>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">Camera access was blocked by browser. Follow your device steps:</p>
           </div>
 
           <!-- OS Selector Tabs -->
@@ -206,6 +245,22 @@
   <script src="{{ url_for('static', filename='js/lms.js') }}"></script>
   <script src="{{ url_for('static', filename='js/html5-qrcode.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/scanner.js') }}"></script>
+  <script>
+    function switchToHttps(e) {
+      if (e) e.preventDefault();
+      const host = window.location.hostname;
+      const path = window.location.pathname;
+      const search = window.location.search;
+      window.location.href = `https://${host}${path}${search}`;
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+      if (window.location.protocol === "http:" && !["localhost", "127.0.0.1"].includes(window.location.hostname)) {
+        const noticeEl = document.getElementById("httpsUpgradeAlert");
+        if (noticeEl) noticeEl.style.display = "flex";
+      }
+    });
+  </script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

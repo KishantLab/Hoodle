@@ -20,6 +20,9 @@ function openAttendanceScanner() {
   const guideEl = document.getElementById("scannerPermGuide");
   if (guideEl) guideEl.style.display = "none";
 
+  const httpNotice = document.getElementById("scannerHttpNotice");
+  if (httpNotice) httpNotice.style.display = "none";
+
   const readerDiv = document.getElementById("qrReader");
   if (readerDiv) readerDiv.style.display = "block";
 
@@ -29,6 +32,14 @@ function openAttendanceScanner() {
   const statusEl = document.getElementById("scannerStatus");
   if (statusEl) {
     statusEl.innerHTML = '<span class="pulse-dot" style="width:8px;height:8px;"></span> Starting camera...';
+    statusEl.style.color = "var(--text-muted)";
+  }
+
+  // Detect insecure HTTP context (where browsers strictly disable getUserMedia)
+  const isSecure = window.isSecureContext || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  if (!isSecure && window.location.protocol === "http:") {
+    showCameraInsecureHttpNotice();
+    return;
   }
 
   setTimeout(initCameraScanner, 250);
@@ -41,6 +52,18 @@ function closeAttendanceScanner() {
   }
   document.body.style.overflow = "";
   stopCameraScanner();
+
+  const readerDiv = document.getElementById("qrReader");
+  if (readerDiv) readerDiv.style.display = "block";
+
+  const laser = document.querySelector(".scanner-laser-line");
+  if (laser) laser.style.display = "block";
+
+  const guideEl = document.getElementById("scannerPermGuide");
+  if (guideEl) guideEl.style.display = "none";
+
+  const httpNotice = document.getElementById("scannerHttpNotice");
+  if (httpNotice) httpNotice.style.display = "none";
 }
 
 function stopCameraScanner() {
@@ -187,13 +210,42 @@ function onQrCodeProgress(errorMessage) {
   // scanning frame
 }
 
-// Display step-by-step guidance for Android and iOS when camera permission fails
-function showCameraPermissionGuide(errorMsg) {
+// Show insecure HTTP notice when live video is disabled by browser security
+function showCameraInsecureHttpNotice() {
   const laser = document.querySelector(".scanner-laser-line");
   if (laser) laser.style.display = "none";
 
   const readerDiv = document.getElementById("qrReader");
   if (readerDiv) readerDiv.style.display = "none";
+
+  const permGuide = document.getElementById("scannerPermGuide");
+  if (permGuide) permGuide.style.display = "none";
+
+  const httpNotice = document.getElementById("scannerHttpNotice");
+  if (httpNotice) httpNotice.style.display = "block";
+
+  const statusEl = document.getElementById("scannerStatus");
+  if (statusEl) {
+    statusEl.innerHTML = `<span style="color:#b45309; font-weight:700;">🔒 Secure HTTPS Required for Live Camera</span>`;
+  }
+}
+
+// Display step-by-step guidance for Android and iOS when camera permission fails
+function showCameraPermissionGuide(errorMsg) {
+  const isSecure = window.isSecureContext || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  if (!isSecure && window.location.protocol === "http:") {
+    showCameraInsecureHttpNotice();
+    return;
+  }
+
+  const laser = document.querySelector(".scanner-laser-line");
+  if (laser) laser.style.display = "none";
+
+  const readerDiv = document.getElementById("qrReader");
+  if (readerDiv) readerDiv.style.display = "none";
+
+  const httpNotice = document.getElementById("scannerHttpNotice");
+  if (httpNotice) httpNotice.style.display = "none";
 
   const guideEl = document.getElementById("scannerPermGuide");
   if (guideEl) guideEl.style.display = "block";
@@ -232,6 +284,15 @@ function onQrPhotoSelected(input) {
   if (statusEl) {
     statusEl.innerHTML = '<span class="pulse-dot" style="width:8px;height:8px;"></span> Analyzing captured photo...';
     statusEl.style.color = "var(--primary)";
+  }
+
+  // Ensure an element exists for Html5Qrcode to attach canvas
+  let readerDiv = document.getElementById("qrReader");
+  if (!readerDiv) {
+    readerDiv = document.createElement("div");
+    readerDiv.id = "qrReader";
+    readerDiv.style.display = "none";
+    document.body.appendChild(readerDiv);
   }
 
   if (!html5QrCode) {
