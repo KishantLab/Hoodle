@@ -38,6 +38,14 @@
                     <span class="meta-val">{{ exam.course_name }}</span>
                 </div>
                 <div class="meta-item">
+                    <span class="meta-lbl">Exam Start</span>
+                    <span class="meta-val">{{ exam.start_time|format_dt or 'Immediate / Open' }}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-lbl">Exam Deadline</span>
+                    <span class="meta-val">{{ exam.end_time|format_dt or 'No Deadline Set' }}</span>
+                </div>
+                <div class="meta-item">
                     <span class="meta-lbl">Allowed Files</span>
                     <span class="meta-val">
                         {% if exam.allowed_types == 'zip' %}
@@ -46,6 +54,16 @@
                             Any file format
                         {% else %}
                             .{{ exam.allowed_types|replace(',', ', .') }}
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-lbl">Late Policy</span>
+                    <span class="meta-val">
+                        {% if exam.late_policy == 'strict' %}
+                            <span class="badge-policy" style="background: #fee2e2; color: #991b1b;">Strict Cut-off</span>
+                        {% else %}
+                            <span class="badge-policy" style="background: #fef3c7; color: #92400e;">Late Allowed (Delayed)</span>
                         {% endif %}
                     </span>
                 </div>
@@ -72,10 +90,46 @@
         <!-- Main Submission Card -->
         <section class="card" id="submissionCard">
             {% if not exam.is_active %}
-            <div class="alert alert-error" style="display: block; text-align: center; font-weight: 600;">
-                ⛔ This exam submission portal is currently CLOSED by the instructor.
+            <div class="alert alert-error" style="display: block; text-align: center; font-weight: 600; padding: 2rem;">
+                <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">⛔</div>
+                <div style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.35rem;">Portal Closed</div>
+                <div>This exam submission portal is currently closed by the instructor.</div>
             </div>
+            {% elif not can_submit %}
+                {% if timing_status == 'NOT_STARTED' %}
+                <div style="text-align: center; padding: 2.5rem 1.5rem; background: #fffbeb; border: 2px dashed #fcd34d; border-radius: 14px;">
+                    <div style="font-size: 3rem; margin-bottom: 0.75rem;">⏳</div>
+                    <h2 style="font-size: 1.4rem; color: #92400e; margin-bottom: 0.5rem;">Exam Has Not Started Yet</h2>
+                    <p style="color: #b45309; font-size: 1.05rem; margin-bottom: 0.5rem;">
+                        Submissions open at <strong>{{ exam.start_time|format_dt }}</strong>.
+                    </p>
+                    <p style="color: #78350f; font-size: 0.9rem;">Please wait for the instructor to begin the exam session before submitting your file.</p>
+                </div>
+                {% elif timing_status == 'ENDED_STRICT' %}
+                <div style="text-align: center; padding: 2.5rem 1.5rem; background: #fef2f2; border: 2px dashed #fca5a5; border-radius: 14px;">
+                    <div style="font-size: 3rem; margin-bottom: 0.75rem;">⛔</div>
+                    <h2 style="font-size: 1.4rem; color: #991b1b; margin-bottom: 0.5rem;">Submissions Closed</h2>
+                    <p style="color: #b91c1c; font-size: 1.05rem; margin-bottom: 0.5rem;">
+                        The deadline passed at <strong>{{ exam.end_time|format_dt }}</strong>.
+                    </p>
+                    <p style="color: #7f1d1d; font-size: 0.9rem;">Strict cut-off policy is active for this exam. No further submissions are accepted.</p>
+                </div>
+                {% endif %}
             {% else %}
+                {% if timing_status == 'ENDED_LATE_ALLOWED' %}
+                <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <span style="font-size: 1.5rem;">⚠️</span>
+                        <div>
+                            <div style="font-weight: 700; color: #92400e; font-size: 0.95rem;">Late Submission Window Active</div>
+                            <div style="color: #b45309; font-size: 0.875rem;">
+                                The deadline passed at {{ exam.end_time|format_dt }}. You may still submit, but your submission will be flagged as <strong>Late</strong> on your receipt and on the teacher's dashboard.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
             <form id="submissionForm" enctype="multipart/form-data" novalidate>
                 <!-- Roll Number Section -->
                 <div class="form-group">
@@ -205,6 +259,12 @@
                 <div class="receipt-item">
                     <span class="receipt-label">Status</span>
                     <span class="receipt-value status-badge" id="receiptStatus">Active Latest File</span>
+                </div>
+                <div class="receipt-item" id="receiptTimingRow">
+                    <span class="receipt-label">Timing Status</span>
+                    <span class="receipt-value" id="receiptTimingBadge">
+                        <span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 0.2rem 0.55rem; border-radius: 6px; font-weight: 700;">✓ On Time</span>
+                    </span>
                 </div>
                 <div class="receipt-item">
                     <span class="receipt-label">File Name</span>

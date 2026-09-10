@@ -55,13 +55,40 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # Proxy handling
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-# Jinja2 newline filter
+
+def parse_iso_datetime(dt_str):
+    """Parse ISO datetime string (e.g. 2026-09-10T14:30 or 2026-09-10 14:30:00)."""
+    if not dt_str:
+        return None
+    try:
+        clean = dt_str.replace("T", " ").strip()
+        if len(clean) == 16:
+            return datetime.strptime(clean, "%Y-%m-%d %H:%M")
+        return datetime.strptime(clean, "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
+
+def format_datetime_display(dt_str):
+    """Format datetime string for human-readable display."""
+    dt = parse_iso_datetime(dt_str)
+    if not dt:
+        return ""
+    return dt.strftime("%d %b %Y, %I:%M %p")
+
+
 @app.template_filter("nl2br")
 def nl2br_filter(s):
     if not s:
         return ""
     from markupsafe import Markup, escape
     return Markup("<br>".join(escape(s).splitlines()))
+
+
+@app.template_filter("format_dt")
+def format_dt_filter(s):
+    return format_datetime_display(s)
+
 
 # Ensure directories exist
 SUBMISSIONS_DIR.mkdir(parents=True, exist_ok=True)
@@ -78,7 +105,7 @@ def get_db():
 
 
 def init_db():
-    """Initialize SQLite database tables and seed admin user."""
+    """Initialize SQLite database tables, columns, and default admin user."""
     conn = get_db()
     cursor = conn.cursor()
 
@@ -95,7 +122,6 @@ def init_db():
         )
     """)
 
-    # Check and add 'must_change_password' column to users if not present
     cursor.execute("PRAGMA table_info(users)")
     user_cols = [row["name"] for row in cursor.fetchall()]
     if "must_change_password" not in user_cols:
@@ -118,15 +144,23 @@ def init_db():
             is_active INTEGER DEFAULT 1,
             logo_filename TEXT DEFAULT 'iitbhilai_logo.png',
             labs TEXT DEFAULT 'Lab 1, Lab 2, Lab 3',
+            start_time TEXT,
+            end_time TEXT,
+            late_policy TEXT DEFAULT 'allow_late',
             created_at TEXT NOT NULL
         )
     """)
 
-    # Check and add 'labs' column to exams if not present
     cursor.execute("PRAGMA table_info(exams)")
     cols = [row["name"] for row in cursor.fetchall()]
     if "labs" not in cols:
         cursor.execute("ALTER TABLE exams ADD COLUMN labs TEXT DEFAULT 'Lab 1, Lab 2, Lab 3'")
+    if "start_time" not in cols:
+        cursor.execute("ALTER TABLE exams ADD COLUMN start_time TEXT")
+    if "end_time" not in cols:
+        cursor.execute("ALTER TABLE exams ADD COLUMN end_time TEXT")
+    if "late_policy" not in cols:
+        cursor.execute("ALTER TABLE exams ADD COLUMN late_policy TEXT DEFAULT 'allow_late'")
 
     # 3. Submissions table
     cursor.execute("""
@@ -145,17 +179,22 @@ def init_db():
             version INTEGER DEFAULT 1,
             is_latest INTEGER DEFAULT 1,
             lab_name TEXT DEFAULT 'Lab 1',
+            is_late INTEGER DEFAULT 0,
+            late_minutes INTEGER DEFAULT 0,
             FOREIGN KEY (exam_id) REFERENCES exams (id),
             UNIQUE(exam_id, roll_number)
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sub_exam_roll ON submissions (exam_id, roll_number)")
 
-    # Check and add 'lab_name' column to submissions if not present
     cursor.execute("PRAGMA table_info(submissions)")
     sub_cols = [row["name"] for row in cursor.fetchall()]
     if "lab_name" not in sub_cols:
         cursor.execute("ALTER TABLE submissions ADD COLUMN lab_name TEXT DEFAULT 'Lab 1'")
+    if "is_late" not in sub_cols:
+        cursor.execute("ALTER TABLE submissions ADD COLUMN is_late INTEGER DEFAULT 0")
+    if "late_minutes" not in sub_cols:
+        cursor.execute("ALTER TABLE submissions ADD COLUMN late_minutes INTEGER DEFAULT 0")
 
     # Ensure admin account: username 'admin', password 'admin@accl', role 'admin'
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -170,7 +209,7 @@ def init_db():
     else:
         cursor.execute("UPDATE users SET role = 'admin' WHERE id = ?", (admin_user["id"],))
 
-    # Also ensure kishan account
+    # Also ensure kishan account exists
     cursor.execute("SELECT id FROM users WHERE LOWER(username) = 'kishan'")
     kishan_user = cursor.fetchone()
     if not kishan_user:
@@ -270,6 +309,33 @@ def parse_labs_list(labs_str):
     return labs if labs else ["Lab 1", "Lab 2", "Lab 3"]
 
 
+def get_exam_timing_status(exam):
+    """
+    Check if exam is not yet started, ongoing, or ended.
+    Returns (status_code, status_message, allow_submit)
+    status_code: 'NOT_STARTED', 'OPEN', 'ENDED_LATE_ALLOWED', 'ENDED_STRICT'
+    """
+    now = datetime.now()
+    start_dt = parse_iso_datetime(exam["start_time"]) if "start_time" in exam.keys() else None
+    end_dt = parse_iso_datetime(exam["end_time"]) if "end_time" in exam.keys() else None
+    late_policy = exam.get("late_policy", "allow_late") if isinstance(exam, dict) else (exam["late_policy"] if "late_policy" in exam.keys() else "allow_late")
+
+    if start_dt and now < start_dt:
+        return "NOT_STARTED", f"Exam has not started yet. Submissions open at {start_dt.strftime('%d %b %Y, %I:%M %p')}.", False
+
+    if end_dt and now > end_dt:
+        delay_sec = (now - end_dt).total_seconds()
+        late_min = max(1, int(delay_sec / 60))
+        late_desc = f"{late_min}m late" if late_min < 60 else f"{late_min // 60}h {late_min % 60}m late"
+
+        if late_policy == "strict":
+            return "ENDED_STRICT", f"Exam deadline passed at {end_dt.strftime('%d %b %Y, %I:%M %p')}. Submissions are strictly closed.", False
+        else:
+            return "ENDED_LATE_ALLOWED", f"Exam ended at {end_dt.strftime('%d %b %Y, %I:%M %p')}. Late submissions allowed ({late_desc}).", True
+
+    return "OPEN", "Exam is open for submissions.", True
+
+
 # ==========================================
 # PUBLIC STUDENT ROUTES (NO LOGIN REQUIRED)
 # ==========================================
@@ -302,7 +368,16 @@ def short_exam_page(identifier):
         abort(404, description="Exam submission page not found.")
 
     exam_labs = parse_labs_list(exam["labs"] if "labs" in exam.keys() else "")
-    return render_template("index.html", exam=exam, exam_labs=exam_labs)
+    timing_status, timing_msg, can_submit = get_exam_timing_status(exam)
+
+    return render_template(
+        "index.html",
+        exam=exam,
+        exam_labs=exam_labs,
+        timing_status=timing_status,
+        timing_msg=timing_msg,
+        can_submit=can_submit
+    )
 
 
 @app.route("/exam/<slug>", methods=["GET"])
@@ -312,7 +387,16 @@ def exam_page(slug):
     if not exam:
         abort(404, description="Exam submission page not found.")
     exam_labs = parse_labs_list(exam["labs"] if "labs" in exam.keys() else "")
-    return render_template("index.html", exam=exam, exam_labs=exam_labs)
+    timing_status, timing_msg, can_submit = get_exam_timing_status(exam)
+
+    return render_template(
+        "index.html",
+        exam=exam,
+        exam_labs=exam_labs,
+        timing_status=timing_status,
+        timing_msg=timing_msg,
+        can_submit=can_submit
+    )
 
 
 @app.route("/<path:identifier>/status/<roll_number>", methods=["GET"])
@@ -331,7 +415,7 @@ def check_student_status(roll_number, identifier=None, slug=None):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT version, original_filename, file_size, submitted_at, sha256, lab_name
+        SELECT version, original_filename, file_size, submitted_at, sha256, lab_name, is_late, late_minutes
         FROM submissions
         WHERE exam_id = ? AND roll_number = ?
     """, (exam["id"], clean_roll))
@@ -349,6 +433,8 @@ def check_student_status(roll_number, identifier=None, slug=None):
             "submitted_at": row["submitted_at"],
             "sha256": row["sha256"],
             "lab_name": row["lab_name"] or "Lab 1",
+            "is_late": bool(row["is_late"]),
+            "late_minutes": row["late_minutes"],
             "allow_multiple": bool(exam["allow_multiple"])
         })
     return jsonify({
@@ -363,7 +449,7 @@ def check_student_status(roll_number, identifier=None, slug=None):
 def submit_exam_file(identifier=None, slug=None):
     """
     Handle direct exam file upload without login.
-    Enforces exam-specific rules (allowed file types, single vs multiple submissions).
+    Enforces exam-specific rules (start/end time, allowed file types, single vs multiple submissions).
     Stores only a single latest file per student in the course folder.
     """
     exam_id_str = identifier or slug
@@ -373,7 +459,21 @@ def submit_exam_file(identifier=None, slug=None):
         return jsonify({"success": False, "error": "Exam not found."}), 404
 
     if not exam["is_active"]:
-        return jsonify({"success": False, "error": "This exam submission portal is currently closed."}), 403
+        return jsonify({"success": False, "error": "This exam submission portal is currently closed by the instructor."}), 403
+
+    # Check timing window
+    timing_status, timing_msg, can_submit = get_exam_timing_status(exam)
+    if not can_submit:
+        return jsonify({"success": False, "error": timing_msg}), 403
+
+    now = datetime.now()
+    is_late = 0
+    late_minutes = 0
+    end_dt = parse_iso_datetime(exam["end_time"]) if "end_time" in exam.keys() else None
+    if end_dt and now > end_dt:
+        is_late = 1
+        delay_sec = (now - end_dt).total_seconds()
+        late_minutes = max(1, int(delay_sec / 60))
 
     raw_roll = request.form.get("roll_number", "")
     roll_number = sanitize_roll_number(raw_roll)
@@ -455,7 +555,7 @@ def submit_exam_file(identifier=None, slug=None):
     # Compute SHA-256
     file_sha256 = compute_sha256(saved_path)
     client_ip = get_client_ip()
-    display_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    display_time = now.strftime("%Y-%m-%d %H:%M:%S")
 
     version = 1
     if existing_sub:
@@ -470,22 +570,24 @@ def submit_exam_file(identifier=None, slug=None):
                 ip_address = ?,
                 submitted_at = ?,
                 version = ?,
-                lab_name = ?
+                lab_name = ?,
+                is_late = ?,
+                late_minutes = ?
             WHERE id = ?
         """, (
             original_filename, stored_filename, str(saved_path),
             file_size, file_sha256, client_ip, display_time,
-            version, lab_name, existing_sub["id"]
+            version, lab_name, is_late, late_minutes, existing_sub["id"]
         ))
     else:
         cursor.execute("""
             INSERT INTO submissions (
                 exam_id, roll_number, original_filename, stored_filename,
-                file_path, file_size, sha256, ip_address, submitted_at, version, is_latest, lab_name
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)
+                file_path, file_size, sha256, ip_address, submitted_at, version, is_latest, lab_name, is_late, late_minutes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?)
         """, (
             exam["id"], roll_number, original_filename, stored_filename,
-            str(saved_path), file_size, file_sha256, client_ip, display_time, lab_name
+            str(saved_path), file_size, file_sha256, client_ip, display_time, lab_name, is_late, late_minutes
         ))
 
     conn.commit()
@@ -498,6 +600,10 @@ def submit_exam_file(identifier=None, slug=None):
         size_str = f"{file_size / 1024:.1f} KB"
     else:
         size_str = f"{file_size / (1024 * 1024):.2f} MB"
+
+    late_desc = ""
+    if is_late:
+        late_desc = f"{late_minutes} min late" if late_minutes < 60 else f"{late_minutes // 60}h {late_minutes % 60}m late"
 
     return jsonify({
         "success": True,
@@ -512,6 +618,8 @@ def submit_exam_file(identifier=None, slug=None):
             "submitted_at": display_time,
             "sha256": file_sha256,
             "lab_name": lab_name,
+            "is_late": bool(is_late),
+            "late_desc": late_desc,
             "is_update": version > 1,
             "course_code": exam["course_code"],
             "exam_title": exam["exam_title"]
@@ -647,9 +755,7 @@ def add_teacher():
 @app.route("/admin/users/<int:target_user_id>/password", methods=["POST"])
 @login_required
 def admin_set_user_password(target_user_id):
-    """
-    Admin changes password of any user or triggers password reset.
-    """
+    """Admin changes password of any user or triggers password reset."""
     if session.get("role") != "admin":
         flash("Permission denied. Only administrators can change other users' passwords.", "error")
         return redirect(url_for("admin_dashboard"))
@@ -689,9 +795,7 @@ def admin_set_user_password(target_user_id):
 @app.route("/admin/users/<int:target_user_id>/delete", methods=["POST"])
 @login_required
 def admin_delete_user(target_user_id):
-    """
-    Admin deletes a teacher account.
-    """
+    """Admin deletes a teacher account."""
     if session.get("role") != "admin":
         flash("Permission denied. Only administrators can delete users.", "error")
         return redirect(url_for("admin_dashboard"))
@@ -710,7 +814,6 @@ def admin_delete_user(target_user_id):
         flash("User not found.", "error")
         return redirect(url_for("admin_dashboard"))
 
-    # Delete user
     cursor.execute("DELETE FROM users WHERE id = ?", (target_user_id,))
     conn.commit()
     conn.close()
@@ -763,9 +866,8 @@ def change_password():
 def admin_dashboard():
     """
     Teacher/Admin dashboard:
-    - Admin sees all courses; Teachers ONLY see their own courses!
     - View 1: Clean Course Overview cards.
-    - View 2: Detailed Course View with submissions, lab breakdown, and downloads.
+    - View 2: Detailed Course View with real-time auto-refresh, late badges, and lab filters.
     """
     conn = get_db()
     cursor = conn.cursor()
@@ -801,7 +903,6 @@ def admin_dashboard():
         """)
         teachers = [dict(row) for row in cursor.fetchall()]
 
-    # Check if a specific course/exam is selected
     selected_slug = request.args.get("exam")
     selected_exam = None
     submissions = []
@@ -814,7 +915,6 @@ def admin_dashboard():
                 break
 
         if selected_exam:
-            # Enforce privacy check: if teacher is not creator and not admin, reject
             if not is_admin and selected_exam["created_by_user_id"] != user_id:
                 conn.close()
                 flash("Confidentiality restriction: You can only access your own course exams.", "error")
@@ -827,7 +927,6 @@ def admin_dashboard():
             """, (selected_exam["id"],))
             submissions = [dict(row) for row in cursor.fetchall()]
 
-            # Compute lab stats
             for s in submissions:
                 lab = s["lab_name"] or "Lab 1"
                 lab_counts[lab] = lab_counts.get(lab, 0) + 1
@@ -847,10 +946,73 @@ def admin_dashboard():
     )
 
 
+# Polling API for Live Auto-Refresh
+@app.route("/api/exam/<int:exam_id>/submissions-poll", methods=["GET"])
+@login_required
+def poll_submissions(exam_id):
+    """
+    Lightweight endpoint for instructor dashboard auto-refresh.
+    Returns JSON list of submissions, total count, and lab breakdown.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM exams WHERE id = ?", (exam_id,))
+    exam = cursor.fetchone()
+
+    if not exam:
+        conn.close()
+        return jsonify({"success": False, "error": "Exam not found"}), 404
+
+    # Permission check
+    if session.get("role") != "admin" and exam["created_by_user_id"] != session.get("user_id"):
+        conn.close()
+        return jsonify({"success": False, "error": "Access denied"}), 403
+
+    cursor.execute("""
+        SELECT id, roll_number, original_filename, stored_filename, file_size, submitted_at, version, lab_name, is_late, late_minutes
+        FROM submissions
+        WHERE exam_id = ?
+        ORDER BY roll_number ASC
+    """, (exam_id,))
+    rows = cursor.fetchall()
+    conn.close()
+
+    items = []
+    lab_counts = {}
+    for r in rows:
+        lab = r["lab_name"] or "Lab 1"
+        lab_counts[lab] = lab_counts.get(lab, 0) + 1
+        late_desc = ""
+        if r["is_late"]:
+            m = r["late_minutes"]
+            late_desc = f"{m}m late" if m < 60 else f"{m // 60}h {m % 60}m late"
+
+        items.append({
+            "id": r["id"],
+            "roll_number": r["roll_number"],
+            "original_filename": r["original_filename"],
+            "stored_filename": r["stored_filename"],
+            "file_size_kb": round(r["file_size"] / 1024, 1),
+            "submitted_at": r["submitted_at"],
+            "version": r["version"],
+            "lab_name": lab,
+            "is_late": bool(r["is_late"]),
+            "late_minutes": r["late_minutes"],
+            "late_desc": late_desc
+        })
+
+    return jsonify({
+        "success": True,
+        "count": len(items),
+        "lab_counts": lab_counts,
+        "submissions": items
+    })
+
+
 @app.route("/admin/exams/create", methods=["POST"])
 @login_required
 def create_exam():
-    """Create a new course exam submission page."""
+    """Create a new course exam submission page with timing and policy."""
     course_code = request.form.get("course_code", "").strip().upper()
     course_name = request.form.get("course_name", "").strip()
     exam_title = request.form.get("exam_title", "").strip()
@@ -860,6 +1022,9 @@ def create_exam():
     allow_multiple = 1 if request.form.get("allow_multiple") == "1" else 0
     short_code = request.form.get("short_code", "").strip().lower()
     labs = request.form.get("labs", "Lab 1, Lab 2, Lab 3").strip()
+    start_time = request.form.get("start_time", "").strip()
+    end_time = request.form.get("end_time", "").strip()
+    late_policy = request.form.get("late_policy", "allow_late").strip()
 
     if not course_code or not exam_title:
         flash("Course Code and Exam Title are required.", "error")
@@ -899,12 +1064,12 @@ def create_exam():
         INSERT INTO exams (
             slug, course_code, course_name, exam_title, teacher_name,
             created_by_user_id, instructions, folder_name, allowed_types,
-            allow_multiple, is_active, logo_filename, labs, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+            allow_multiple, is_active, logo_filename, labs, start_time, end_time, late_policy, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
     """, (
         slug, course_code, course_name, exam_title, teacher_name,
         session.get("user_id"), instructions, folder_name, allowed_types,
-        allow_multiple, logo_filename, labs, now_str
+        allow_multiple, logo_filename, labs, start_time, end_time, late_policy, now_str
     ))
     conn.commit()
     conn.close()
@@ -915,6 +1080,45 @@ def create_exam():
 
     flash(f"Course exam page created for {course_code} - {exam_title}! Short link: /{slug}", "success")
     return redirect(url_for("admin_dashboard", exam=slug))
+
+
+@app.route("/admin/exams/<int:exam_id>/edit-schedule", methods=["POST"])
+@login_required
+def edit_exam_schedule(exam_id):
+    """Update exam schedule, start/end times, and late submission policy."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM exams WHERE id = ?", (exam_id,))
+    exam = cursor.fetchone()
+
+    if not exam:
+        conn.close()
+        flash("Exam not found.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if session.get("role") != "admin" and exam["created_by_user_id"] != session.get("user_id"):
+        conn.close()
+        flash("Permission denied.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    start_time = request.form.get("start_time", "").strip()
+    end_time = request.form.get("end_time", "").strip()
+    late_policy = request.form.get("late_policy", "allow_late").strip()
+    labs = request.form.get("labs", "").strip() or exam["labs"]
+
+    cursor.execute("""
+        UPDATE exams SET
+            start_time = ?,
+            end_time = ?,
+            late_policy = ?,
+            labs = ?
+        WHERE id = ?
+    """, (start_time, end_time, late_policy, labs, exam_id))
+    conn.commit()
+    conn.close()
+
+    flash("Exam timing schedule & late policy updated successfully!", "success")
+    return redirect(url_for("admin_dashboard", exam=exam["slug"]))
 
 
 @app.route("/admin/exams/<int:exam_id>/toggle-status", methods=["POST"])
@@ -947,7 +1151,6 @@ def toggle_exam_status(exam_id):
 def delete_exam(exam_id):
     """
     Permanently delete a course exam from the database AND delete its folder and files from the server disk.
-    Only the teacher who created the course or an admin can delete it.
     """
     conn = get_db()
     cursor = conn.cursor()
@@ -964,19 +1167,15 @@ def delete_exam(exam_id):
         flash("Permission denied. You can only delete courses that you created.", "error")
         return redirect(url_for("admin_dashboard"))
 
-    # 1. Delete submissions records
     cursor.execute("DELETE FROM submissions WHERE exam_id = ?", (exam_id,))
-    # 2. Delete exam record
     cursor.execute("DELETE FROM exams WHERE id = ?", (exam_id,))
     conn.commit()
     conn.close()
 
-    # 3. Delete directory from server disk
     folder_path = SUBMISSIONS_DIR / exam["folder_name"]
     if folder_path.exists():
         shutil.rmtree(str(folder_path), ignore_errors=True)
 
-    # 4. Clean up custom logo if uploaded
     if exam["logo_filename"] and exam["logo_filename"] != "iitbhilai_logo.png":
         logo_path = UPLOAD_FOLDER / exam["logo_filename"]
         if logo_path.exists():
@@ -993,9 +1192,7 @@ def delete_exam(exam_id):
 @app.route("/admin/exam/<int:exam_id>/download-all", methods=["GET"])
 @login_required
 def download_exam_all(exam_id):
-    """
-    Bulk download all submissions for an exam as a single ZIP archive.
-    """
+    """Bulk download all submissions for an exam as a single ZIP archive."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM exams WHERE id = ?", (exam_id,))

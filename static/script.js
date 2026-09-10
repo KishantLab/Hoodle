@@ -272,8 +272,19 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById("receiptLab").textContent = details.lab_name || "Lab 1";
         }
 
+        const timingBadge = document.getElementById("receiptTimingBadge");
+        if (timingBadge) {
+            if (details.is_late) {
+                timingBadge.innerHTML = `<span style="background: #fef3c7; color: #b45309; border: 1px solid #fde68a; padding: 0.2rem 0.55rem; border-radius: 6px; font-weight: 700;">⚠️ Late Submission (${details.late_desc || 'Delayed'})</span>`;
+            } else {
+                timingBadge.innerHTML = `<span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 0.2rem 0.55rem; border-radius: 6px; font-weight: 700;">✓ On Time</span>`;
+            }
+        }
+
         const subtitle = document.getElementById("receiptSubtitle");
-        if (details.is_update) {
+        if (details.is_late) {
+            subtitle.innerHTML = `⚠️ Your file was submitted <strong>after the deadline (${details.late_desc})</strong>. It has been securely recorded.`;
+        } else if (details.is_update) {
             subtitle.innerHTML = `Your updated submission was received. Your active latest file has been replaced and saved.`;
         } else {
             subtitle.textContent = "Your exam file has been successfully uploaded and recorded.";

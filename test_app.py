@@ -213,5 +213,99 @@ class TestLabExamPortalV4(unittest.TestCase):
         conn.close()
         self.assertIsNone(row)
 
+    def test_timing_and_late_submission_policies(self):
+        from datetime import datetime, timedelta
+        self.login("admin", "admin@accl")
+
+        now = datetime.now()
+        future_start = (now + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M")
+        future_end = (now + timedelta(hours=4)).strftime("%Y-%m-%d %H:%M")
+
+        # 1. Exam not started yet
+        self.client.post("/admin/exams/create", data={
+            "course_code": "CSL200",
+            "short_code": "csl200",
+            "course_name": "Data Structures",
+            "exam_title": "Midterm Exam",
+            "teacher_name": "Prof. Kishan",
+            "start_time": future_start,
+            "end_time": future_end,
+            "late_policy": "strict"
+        })
+
+        # Check student page indicates not started
+        res_page = self.client.get("/csl200")
+        self.assertIn(b"Exam Has Not Started Yet", res_page.data)
+
+        # Attempt student submission before start -> rejected 403
+        res_sub = self.client.post("/csl200/submit", data={
+            "roll_number": "B26DS001",
+            "exam_file": (create_sample_zip(b"code"), "my.zip")
+        })
+        self.assertEqual(res_sub.status_code, 403)
+        self.assertIn("not started yet", res_sub.get_json()["error"].lower())
+
+        # 2. Strict End Time Policy (past deadline)
+        past_start = (now - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M")
+        past_end = (now - timedelta(minutes=25)).strftime("%Y-%m-%d %H:%M")
+
+        # Edit schedule of exam 1 to be past deadline with strict policy
+        res_edit = self.client.post("/admin/exams/1/edit-schedule", data={
+            "start_time": past_start,
+            "end_time": past_end,
+            "late_policy": "strict",
+            "labs": "Lab 1, Lab 2"
+        }, follow_redirects=True)
+        self.assertEqual(res_edit.status_code, 200)
+
+        # Check student page indicates submissions closed
+        res_page2 = self.client.get("/csl200")
+        self.assertIn(b"Submissions Closed", res_page2.data)
+
+        # Attempt submission -> rejected 403
+        res_sub2 = self.client.post("/csl200/submit", data={
+            "roll_number": "B26DS001",
+            "exam_file": (create_sample_zip(b"code"), "my.zip")
+        })
+        self.assertEqual(res_sub2.status_code, 403)
+        self.assertIn("strictly closed", res_sub2.get_json()["error"].lower())
+
+        # 3. Allow Late Policy (past deadline)
+        res_edit2 = self.client.post("/admin/exams/1/edit-schedule", data={
+            "start_time": past_start,
+            "end_time": past_end,
+            "late_policy": "allow_late",
+            "labs": "Lab 1, Lab 2"
+        }, follow_redirects=True)
+        self.assertEqual(res_edit2.status_code, 200)
+
+        # Check student page indicates late submission window active
+        res_page3 = self.client.get("/csl200")
+        self.assertIn(b"Late Submission Window Active", res_page3.data)
+
+        # Attempt submission -> accepted, flagged as late with minutes
+        res_sub3 = self.client.post("/csl200/submit", data={
+            "roll_number": "B26DS001",
+            "lab_name": "Lab 1",
+            "exam_file": (create_sample_zip(b"late code"), "my.zip")
+        })
+        self.assertEqual(res_sub3.status_code, 200)
+        data = res_sub3.get_json()
+        self.assertTrue(data["success"])
+        self.assertTrue(data["details"]["is_late"])
+        self.assertIn("late", data["details"]["late_desc"])
+
+        # 4. Polling API
+        res_poll = self.client.get("/api/exam/1/submissions-poll")
+        self.assertEqual(res_poll.status_code, 200)
+        poll_data = res_poll.get_json()
+        self.assertTrue(poll_data["success"])
+        self.assertEqual(poll_data["count"], 1)
+        self.assertEqual(poll_data["lab_counts"].get("Lab 1"), 1)
+        self.assertTrue(poll_data["submissions"][0]["is_late"])
+        self.assertEqual(poll_data["submissions"][0]["roll_number"], "B26DS001")
+
+
 if __name__ == "__main__":
     unittest.main()
+

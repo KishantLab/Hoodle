@@ -449,6 +449,39 @@
                 </div>
             </div>
 
+            <!-- Schedule & Policy Bar -->
+            <div style="background: white; border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem 1.5rem; margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <div style="display: flex; gap: 2rem; align-items: center; flex-wrap: wrap;">
+                    <div>
+                        <span style="font-size: 0.75rem; color: #64748b; font-weight: 700; text-transform: uppercase;">Exam Start Time</span>
+                        <div style="font-size: 0.95rem; font-weight: 700; color: #1e293b; margin-top: 0.15rem;">
+                            {{ current_exam.start_time|format_dt or 'Immediate / Open' }}
+                        </div>
+                    </div>
+                    <div>
+                        <span style="font-size: 0.75rem; color: #64748b; font-weight: 700; text-transform: uppercase;">Deadline (End Time)</span>
+                        <div style="font-size: 0.95rem; font-weight: 700; color: #1e293b; margin-top: 0.15rem;">
+                            {{ current_exam.end_time|format_dt or 'No Deadline Set' }}
+                        </div>
+                    </div>
+                    <div>
+                        <span style="font-size: 0.75rem; color: #64748b; font-weight: 700; text-transform: uppercase;">Late Policy</span>
+                        <div style="margin-top: 0.15rem;">
+                            {% if current_exam.late_policy == 'strict' %}
+                                <span style="font-size: 0.8rem; background: #fee2e2; color: #991b1b; padding: 0.2rem 0.55rem; border-radius: 6px; font-weight: 700;">Strict Cut-off</span>
+                            {% else %}
+                                <span style="font-size: 0.8rem; background: #fef3c7; color: #92400e; padding: 0.2rem 0.55rem; border-radius: 6px; font-weight: 700;">Late Allowed (Delay Flagged)</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <button type="button" class="btn-sm btn-outline" onclick="openModal('editScheduleModal')">
+                        ✏️ Edit Schedule / Extend Time
+                    </button>
+                </div>
+            </div>
+
             <!-- Short Link Student Banner -->
             <div class="share-banner">
                 <div>
@@ -469,20 +502,26 @@
 
             <!-- Lab Venues Breakdown & Filter Bar -->
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
-                <div class="lab-pills-bar">
+                <div class="lab-pills-bar" id="labPillsBar">
                     <span style="font-size: 0.8rem; font-weight: 700; color: #475569; text-transform: uppercase;">Filter by Lab:</span>
-                    <button type="button" class="lab-pill active" onclick="setLabFilter('ALL', this)">
-                        All Labs ({{ submissions|length }})
+                    <button type="button" class="lab-pill active" onclick="setLabFilter('ALL', this)" data-lab="ALL">
+                        All Labs (<span id="countAll">{{ submissions|length }}</span>)
                     </button>
                     {% for lab, count in lab_counts.items() %}
-                    <button type="button" class="lab-pill" onclick="setLabFilter('{{ lab }}', this)">
-                        {{ lab }} ({{ count }})
+                    <button type="button" class="lab-pill" onclick="setLabFilter('{{ lab }}', this)" data-lab="{{ lab }}">
+                        {{ lab }} (<span class="pill-count" data-lab="{{ lab }}">{{ count }}</span>)
                     </button>
                     {% endfor %}
                 </div>
 
-                <div>
-                    <input type="text" id="tableSearch" placeholder="Search Roll Number..." onkeyup="filterSubmissions()" style="width: 220px; padding: 0.5rem 0.85rem; font-size: 0.85rem; border: 1px solid #cbd5e1; border-radius: 8px;">
+                <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                    <!-- Auto-Refresh Toggle -->
+                    <button type="button" id="btnToggleAutoRefresh" class="btn-sm btn-outline" style="font-size: 0.8rem;" onclick="toggleAutoRefresh()">
+                        <span id="autoRefreshIcon">⚡</span> Auto-Refresh: <strong id="autoRefreshText">ON (5s)</strong>
+                    </button>
+                    <span id="refreshPulse" style="display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 6px #22c55e;" title="Live polling active"></span>
+
+                    <input type="text" id="tableSearch" placeholder="Search Roll Number..." onkeyup="filterSubmissions()" style="width: 190px; padding: 0.5rem 0.85rem; font-size: 0.85rem; border: 1px solid #cbd5e1; border-radius: 8px;">
                 </div>
             </div>
 
@@ -498,12 +537,13 @@
                             <th>Size</th>
                             <th>Submission Time</th>
                             <th>Attempts</th>
+                            <th>Status</th>
                             <th style="text-align: right;">Action</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="subTableBody">
                         {% for s in submissions %}
-                        <tr data-lab="{{ s.lab_name or 'Lab 1' }}">
+                        <tr data-lab="{{ s.lab_name or 'Lab 1' }}" data-id="{{ s.id }}">
                             <td>{{ loop.index }}</td>
                             <td><span class="roll-badge">{{ s.roll_number }}</span></td>
                             <td><span class="lab-tag">{{ s.lab_name or 'Lab 1' }}</span></td>
@@ -514,6 +554,17 @@
                             <td>{{ (s.file_size / 1024)|round(1) }} KB</td>
                             <td>{{ s.submitted_at }}</td>
                             <td><span class="badge-ver">v{{ s.version }}</span></td>
+                            <td>
+                                {% if s.is_late %}
+                                <span style="background: #fef3c7; color: #b45309; border: 1px solid #fde68a; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 700; white-space: nowrap;">
+                                    ⚠️ {{ s.late_minutes }}m Late
+                                </span>
+                                {% else %}
+                                <span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 700; white-space: nowrap;">
+                                    ✓ On Time
+                                </span>
+                                {% endif %}
+                            </td>
                             <td style="text-align: right;">
                                 <!-- Single File Download Button -->
                                 <a href="admin/download-file/{{ s.id }}" class="btn-sm btn-outline" style="text-decoration: none; padding: 0.4rem 0.85rem; font-size: 0.85rem;" title="Download file for {{ s.roll_number }}">
@@ -522,8 +573,8 @@
                             </td>
                         </tr>
                         {% else %}
-                        <tr>
-                            <td colspan="8" style="text-align: center; padding: 3.5rem; color: #94a3b8;">
+                        <tr id="emptyRow">
+                            <td colspan="9" style="text-align: center; padding: 3.5rem; color: #94a3b8;">
                                 No student submissions received for this exam yet.
                             </td>
                         </tr>
@@ -607,6 +658,27 @@
                     </div>
                 </div>
 
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="createStartTime"><span class="label-title">Exam Start Time (Optional)</span></label>
+                        <input type="datetime-local" id="createStartTime" name="start_time" style="font-size: 0.9rem;">
+                        <span style="font-size: 0.75rem; color: #64748b;">Leave blank for immediate open.</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="createEndTime"><span class="label-title">Exam Deadline / End Time (Optional)</span></label>
+                        <input type="datetime-local" id="createEndTime" name="end_time" style="font-size: 0.9rem;">
+                        <span style="font-size: 0.75rem; color: #64748b;">Leave blank for open duration.</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="createLatePolicy"><span class="label-title">Late Submission Policy (After Deadline)</span></label>
+                    <select id="createLatePolicy" name="late_policy" style="width: 100%; padding: 0.85rem; border: 2px solid var(--border-color); border-radius: var(--radius-md); font-size: 0.95rem;">
+                        <option value="allow_late">Allow Late Submissions (Record and display delay e.g. "12m late")</option>
+                        <option value="strict">Strict Deadline (Submissions completely close after deadline)</option>
+                    </select>
+                </div>
+
                 <div class="form-group">
                     <label for="labLogo"><span class="label-title">Custom Lab / Exam Logo (Optional)</span></label>
                     <input type="file" id="labLogo" name="lab_logo" accept="image/*" style="font-size: 0.85rem;">
@@ -620,6 +692,49 @@
             </form>
         </div>
     </div>
+
+    {% if current_exam %}
+    <!-- Modal: Edit Exam Schedule & Policy -->
+    <div class="modal" id="editScheduleModal">
+        <div class="modal-card" style="max-width: 500px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <h2 style="font-size: 1.3rem; color: #0f172a; margin: 0;">Edit Exam Schedule & Policy</h2>
+                <button type="button" onclick="closeModal('editScheduleModal')" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">✕</button>
+            </div>
+            <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1.25rem;">
+                Adjust the exam window or extend the submission deadline in real time.
+            </p>
+            <form method="POST" action="admin/exams/{{ current_exam.id }}/edit-schedule">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="editStartTime"><span class="label-title">Exam Start Time</span></label>
+                    <input type="datetime-local" id="editStartTime" name="start_time" value="{{ current_exam.start_time or '' }}" style="font-size: 0.9rem;">
+                    <span style="font-size: 0.75rem; color: #64748b;">Leave empty for immediate opening.</span>
+                </div>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="editEndTime"><span class="label-title">Exam Deadline / End Time</span></label>
+                    <input type="datetime-local" id="editEndTime" name="end_time" value="{{ current_exam.end_time or '' }}" style="font-size: 0.9rem;">
+                    <span style="font-size: 0.75rem; color: #64748b;">Leave empty for no deadline.</span>
+                </div>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="editLatePolicy"><span class="label-title">Late Submission Policy</span></label>
+                    <select id="editLatePolicy" name="late_policy" style="width: 100%; padding: 0.85rem; border: 2px solid var(--border-color); border-radius: var(--radius-md); font-size: 0.95rem;">
+                        <option value="allow_late" {% if current_exam.late_policy != 'strict' %}selected{% endif %}>Allow Late Submissions (Record and display delay)</option>
+                        <option value="strict" {% if current_exam.late_policy == 'strict' %}selected{% endif %}>Strict Deadline (Reject any submissions after deadline)</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label for="editLabs"><span class="label-title">Participating Computer Labs</span></label>
+                    <input type="text" id="editLabs" name="labs" value="{{ current_exam.labs }}" style="text-transform: none;">
+                    <span style="font-size: 0.75rem; color: #64748b;">Comma-separated list of labs.</span>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn-sm btn-outline" onclick="closeModal('editScheduleModal')">Cancel</button>
+                    <button type="submit" class="btn-submit" style="width: auto; padding: 0.7rem 1.4rem;">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
 
     {% if is_admin %}
     <!-- Modal: Manage Teachers (Admin Only) -->
@@ -797,7 +912,7 @@
         }
 
         function filterSubmissions() {
-            const q = document.getElementById('tableSearch').value.toUpperCase();
+            const q = document.getElementById('tableSearch') ? document.getElementById('tableSearch').value.toUpperCase() : '';
             const rows = document.querySelectorAll('#subTable tbody tr');
             rows.forEach(r => {
                 const rollCell = r.children[1];
@@ -814,6 +929,129 @@
                 }
             });
         }
+
+        {% if current_exam %}
+        const currentExamId = {{ current_exam.id }};
+        let autoRefreshEnabled = true;
+        let pollTimer = null;
+        let lastSubmissionCount = {{ submissions|length }};
+
+        function toggleAutoRefresh() {
+            autoRefreshEnabled = !autoRefreshEnabled;
+            const textElem = document.getElementById('autoRefreshText');
+            const pulseElem = document.getElementById('refreshPulse');
+            const iconElem = document.getElementById('autoRefreshIcon');
+
+            if (autoRefreshEnabled) {
+                textElem.textContent = 'ON (5s)';
+                pulseElem.style.background = '#22c55e';
+                pulseElem.style.boxShadow = '0 0 6px #22c55e';
+                iconElem.textContent = '⚡';
+                startPolling();
+            } else {
+                textElem.textContent = 'OFF';
+                pulseElem.style.background = '#94a3b8';
+                pulseElem.style.boxShadow = 'none';
+                iconElem.textContent = '⏸';
+                if (pollTimer) clearTimeout(pollTimer);
+            }
+        }
+
+        async function pollSubmissions() {
+            if (!autoRefreshEnabled) return;
+
+            try {
+                const res = await fetch(`api/exam/${currentExamId}/submissions-poll`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) {
+                        updateDashboardData(data);
+                    }
+                }
+            } catch (err) {
+                // Silently ignore network hiccup during poll
+            } finally {
+                if (autoRefreshEnabled) {
+                    pollTimer = setTimeout(pollSubmissions, 5000);
+                }
+            }
+        }
+
+        function updateDashboardData(data) {
+            // 1. Update total counts
+            const countAll = document.getElementById('countAll');
+            if (countAll) countAll.textContent = data.count;
+
+            // 2. Update lab counts
+            for (const [lab, count] of Object.entries(data.lab_counts)) {
+                const pill = document.querySelector(`.pill-count[data-lab="${lab}"]`);
+                if (pill) pill.textContent = count;
+            }
+
+            // 3. Check if table needs update
+            const tbody = document.getElementById('subTableBody');
+            if (!tbody) return;
+
+            if (data.submissions.length === 0) {
+                tbody.innerHTML = `
+                    <tr id="emptyRow">
+                        <td colspan="9" style="text-align: center; padding: 3.5rem; color: #94a3b8;">
+                            No student submissions received for this exam yet.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            if (data.count !== lastSubmissionCount) {
+                lastSubmissionCount = data.count;
+                const pulse = document.getElementById('refreshPulse');
+                if (pulse) {
+                    pulse.style.transform = 'scale(1.6)';
+                    setTimeout(() => { pulse.style.transform = 'scale(1)'; }, 400);
+                }
+            }
+
+            let html = '';
+            data.submissions.forEach((s, idx) => {
+                const lateBadge = s.is_late
+                    ? `<span style="background: #fef3c7; color: #b45309; border: 1px solid #fde68a; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 700; white-space: nowrap;">⚠️ ${s.late_desc}</span>`
+                    : `<span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 700; white-space: nowrap;">✓ On Time</span>`;
+
+                html += `
+                    <tr data-lab="${s.lab_name}" data-id="${s.id}">
+                        <td>${idx + 1}</td>
+                        <td><span class="roll-badge">${s.roll_number}</span></td>
+                        <td><span class="lab-tag">${s.lab_name}</span></td>
+                        <td>
+                            <span style="font-weight: 600; color: #1e293b;">${s.stored_filename}</span>
+                            <div style="font-size: 0.75rem; color: #94a3b8;">Orig: ${s.original_filename}</div>
+                        </td>
+                        <td>${s.file_size_kb} KB</td>
+                        <td>${s.submitted_at}</td>
+                        <td><span class="badge-ver">v${s.version}</span></td>
+                        <td>${lateBadge}</td>
+                        <td style="text-align: right;">
+                            <a href="admin/download-file/${s.id}" class="btn-sm btn-outline" style="text-decoration: none; padding: 0.4rem 0.85rem; font-size: 0.85rem;" title="Download file for ${s.roll_number}">
+                                ⬇ Download
+                            </a>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = html;
+            filterSubmissions();
+        }
+
+        function startPolling() {
+            if (pollTimer) clearTimeout(pollTimer);
+            pollTimer = setTimeout(pollSubmissions, 5000);
+        }
+
+        // Start polling on load
+        startPolling();
+        {% endif %}
     </script>
 </body>
 </html>
