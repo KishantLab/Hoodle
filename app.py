@@ -569,7 +569,7 @@ def enforce_exam_lockdown():
     endpoint = request.endpoint or ""
     allowed_endpoints = {
         "exam_view", "exam_submit", "exam_receipt", "logout", "static", "login",
-        "attend_scan_landing", "attend_submit"
+        "attend_scan_landing", "attend_submit", "course_attendance"
     }
 
     if endpoint in allowed_endpoints:
