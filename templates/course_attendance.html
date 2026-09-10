@@ -159,7 +159,7 @@
         </div>
       </div>
 
-      <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+      <div class="attendance-action-btns" style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
         <a href="{{ url_for('attendance_projector', course_id=course.id) }}" target="_blank" class="btn btn-primary" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700;">
           <span>📽️</span>
           <span>Launch QR Projector</span>
@@ -172,7 +172,7 @@
     </div>
 
     <!-- Metric Stat Cards -->
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+    <div class="attendance-stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
       <div class="card" style="padding: 1.15rem;">
         <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
           Conducted Sessions
@@ -215,7 +215,7 @@
         </div>
 
         <!-- Filter Controls Toolbar -->
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+        <div class="attendance-filter-bar" style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
           <!-- Search box -->
           <input type="text" id="rosterSearch" placeholder="🔍 Search roll / name..." onkeyup="applyRosterFilters()" style="padding: 0.45rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; width: 180px;">
 
@@ -239,6 +239,8 @@
           </button>
         </div>
       </div>
+
+      <div class="mobile-scroll-hint" style="display: none;">👈 Swipe table horizontally to view all columns 👉</div>
 
       <!-- Roster Table with Clickable Rows for Drilldown -->
       <div class="table-responsive">

@@ -493,13 +493,39 @@ def teacher_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if "user_id" not in session:
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Authentication required"}), 401
             flash("Please sign in to proceed.", "warning")
             return redirect(url_for("login", next=request.path))
+            
         role = session.get("role")
-        if role not in ("teacher", "admin"):
-            flash("Access restricted to faculty and instructors.", "danger")
-            return redirect(url_for("dashboard"))
-        return f(*args, **kwargs)
+        user_id = session.get("user_id")
+        
+        # 1. Global teacher or admin role
+        if role in ("teacher", "admin"):
+            return f(*args, **kwargs)
+            
+        # 2. Course-specific instructor or co-teacher check
+        course_id = kwargs.get("course_id")
+        if course_id:
+            conn = get_db()
+            is_instr = conn.execute("SELECT 1 FROM courses WHERE id = ? AND teacher_id = ?", (course_id, user_id)).fetchone()
+            if is_instr:
+                conn.close()
+                return f(*args, **kwargs)
+                
+            co_teacher = conn.execute("""
+                SELECT 1 FROM course_enrollments
+                WHERE course_id = ? AND user_id = ? AND role IN ('teacher', 'ta', 'co-teacher')
+            """, (course_id, user_id)).fetchone()
+            conn.close()
+            if co_teacher:
+                return f(*args, **kwargs)
+
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Access restricted to faculty and instructors."}), 403
+        flash("Access restricted to faculty, instructors, and co-teachers.", "danger")
+        return redirect(url_for("dashboard"))
     return decorated_function
 
 
@@ -2483,7 +2509,21 @@ def course_attendance(course_id):
     
     today_str = datetime.now().strftime("%Y-%m-%d")
     
-    if user["role"] == "student":
+    # Check whether user has instructor, co-teacher, TA, or admin privileges for this course
+    is_course_teacher = False
+    if user["role"] in ("teacher", "admin"):
+        is_course_teacher = True
+    elif course["teacher_id"] == user["id"]:
+        is_course_teacher = True
+    else:
+        co_t = conn.execute("""
+            SELECT 1 FROM course_enrollments
+            WHERE course_id = ? AND user_id = ? AND role IN ('teacher', 'ta', 'co-teacher')
+        """, (course_id, user["id"])).fetchone()
+        if co_t:
+            is_course_teacher = True
+
+    if not is_course_teacher:
         # Student view: personal attendance summary & logs
         my_logs = conn.execute("""
             SELECT * FROM attendance_logs
@@ -2496,7 +2536,7 @@ def course_attendance(course_id):
             SELECT COUNT(DISTINCT attendance_date || '_' || session_type) as total_sessions
             FROM attendance_logs WHERE course_id = ?
         """, (course_id,)).fetchone()
-        total_sessions = sessions_row["total_sessions"] or 0
+        total_sessions = (sessions_row["total_sessions"] if sessions_row else 0) or 0
         attended_count = len(my_logs)
         pct = round((attended_count / total_sessions * 100), 1) if total_sessions > 0 else 100.0
         
@@ -2513,7 +2553,7 @@ def course_attendance(course_id):
         )
         
     else:
-        # Teacher / Admin view: full class roster, statistics, logs, and manual marker
+        # Teacher / Co-Teacher / Admin view: full class roster, statistics, logs, and manual marker
         enrolled_students = conn.execute("""
             SELECT u.id, u.roll_number, u.display_name, u.email,
                    (SELECT COUNT(*) FROM attendance_logs al WHERE al.course_id = ? AND al.student_id = u.id) as attended_count
@@ -2527,7 +2567,7 @@ def course_attendance(course_id):
             SELECT COUNT(DISTINCT attendance_date || '_' || session_type) as total_sessions
             FROM attendance_logs WHERE course_id = ?
         """, (course_id,)).fetchone()
-        total_sessions = sessions_row["total_sessions"] or 0
+        total_sessions = (sessions_row["total_sessions"] if sessions_row else 0) or 0
         
         # Recent logs
         recent_logs = conn.execute("""
@@ -2536,10 +2576,11 @@ def course_attendance(course_id):
             ORDER BY marked_at DESC LIMIT 50
         """, (course_id,)).fetchall()
         
-        today_count = conn.execute("""
+        today_row = conn.execute("""
             SELECT COUNT(*) as count FROM attendance_logs
             WHERE course_id = ? AND attendance_date = ?
-        """, (course_id, today_str)).fetchone()["count"]
+        """, (course_id, today_str)).fetchone()
+        today_count = (today_row["count"] if today_row else 0) or 0
         
         conn.close()
         return render_template(

@@ -1,6 +1,7 @@
 /**
  * ACCLLMS - In-Portal Attendance Camera QR Scanner
  * Built with Html5Qrcode for cross-device mobile & tablet camera access.
+ * Includes Android & iOS camera permission guidance + native camera photo capture fallback.
  */
 
 let html5QrCode = null;
@@ -13,14 +14,23 @@ function openAttendanceScanner() {
   if (!modal) return;
 
   modal.style.display = "flex";
-  document.body.style.overflow = "hidden"; // prevent scroll while scanning
+  document.body.style.overflow = "hidden"; // prevent background scrolling
+
+  // Reset status and guide
+  const guideEl = document.getElementById("scannerPermGuide");
+  if (guideEl) guideEl.style.display = "none";
+
+  const readerDiv = document.getElementById("qrReader");
+  if (readerDiv) readerDiv.style.display = "block";
+
+  const laser = document.querySelector(".scanner-laser-line");
+  if (laser) laser.style.display = "block";
 
   const statusEl = document.getElementById("scannerStatus");
   if (statusEl) {
     statusEl.innerHTML = '<span class="pulse-dot" style="width:8px;height:8px;"></span> Starting camera...';
   }
 
-  // Delay slightly for modal layout rendering
   setTimeout(initCameraScanner, 250);
 }
 
@@ -30,7 +40,6 @@ function closeAttendanceScanner() {
     modal.style.display = "none";
   }
   document.body.style.overflow = "";
-
   stopCameraScanner();
 }
 
@@ -38,9 +47,7 @@ function stopCameraScanner() {
   if (html5QrCode && isScanning) {
     html5QrCode.stop().then(() => {
       isScanning = false;
-      try {
-        html5QrCode.clear();
-      } catch (e) {}
+      try { html5QrCode.clear(); } catch (e) {}
     }).catch(err => {
       console.warn("Error stopping scanner:", err);
       isScanning = false;
@@ -53,7 +60,7 @@ function initCameraScanner() {
   if (!readerDiv) return;
 
   if (typeof Html5Qrcode === "undefined") {
-    showScannerError("Scanner library not loaded. Please refresh the page.");
+    showCameraPermissionGuide("Scanner library not loaded. Please refresh the page.");
     return;
   }
 
@@ -61,7 +68,6 @@ function initCameraScanner() {
     html5QrCode = new Html5Qrcode("qrReader");
   }
 
-  // Config options for high performance and responsiveness
   const config = {
     fps: 15,
     qrbox: function(viewfinderWidth, viewfinderHeight) {
@@ -82,7 +88,6 @@ function initCameraScanner() {
       switchBtn.style.display = camerasList.length > 1 ? "inline-flex" : "none";
     }
 
-    // Prefer back/rear camera
     const backCamera = camerasList.find(c => 
       c.label.toLowerCase().includes("back") || 
       c.label.toLowerCase().includes("rear") || 
@@ -105,8 +110,7 @@ function initCameraScanner() {
         statusEl.innerHTML = '🟢 <strong>Camera active:</strong> Point at the projector screen QR code';
       }
     }).catch(err => {
-      console.error("Camera start error:", err);
-      // Fallback to simple facingMode if deviceId failed
+      console.warn("Camera start error with deviceId, trying facingMode:", err);
       html5QrCode.start(
         { facingMode: "environment" },
         config,
@@ -115,12 +119,12 @@ function initCameraScanner() {
       ).then(() => {
         isScanning = true;
       }).catch(fallbackErr => {
-        showScannerError("Camera permission denied or camera unavailable. Please grant camera permissions in your browser settings.");
+        console.error("Camera permission denied or unavailable:", fallbackErr);
+        showCameraPermissionGuide("Camera permission was not granted by your mobile browser.");
       });
     });
   }).catch(err => {
-    console.warn("Could not list cameras:", err);
-    // Try directly with facingMode: environment
+    console.warn("Could not list cameras, trying facingMode environment:", err);
     html5QrCode.start(
       { facingMode: "environment" },
       config,
@@ -129,17 +133,16 @@ function initCameraScanner() {
     ).then(() => {
       isScanning = true;
     }).catch(permErr => {
-      showScannerError("Please enable camera permissions to scan attendance QR codes.");
+      console.error("Camera permission blocked:", permErr);
+      showCameraPermissionGuide("Camera permission was blocked or is not supported over HTTP.");
     });
   });
 }
 
 function switchCamera() {
   if (!html5QrCode || camerasList.length <= 1) return;
-
   stopCameraScanner();
 
-  // Find next camera index
   const currentIndex = camerasList.findIndex(c => c.id === currentCameraId);
   const nextIndex = (currentIndex + 1) % camerasList.length;
   currentCameraId = camerasList[nextIndex].id;
@@ -150,41 +153,92 @@ function switchCamera() {
 function onQrCodeSuccess(decodedText, decodedResult) {
   if (!decodedText) return;
 
-  // Haptic feedback if supported on mobile
   if (navigator.vibrate) {
     try { navigator.vibrate([80, 40, 80]); } catch (e) {}
   }
 
   const statusEl = document.getElementById("scannerStatus");
   if (statusEl) {
-    statusEl.innerHTML = '🎉 <strong>QR Code Recognized!</strong> Redirecting to attendance confirmation...';
+    statusEl.innerHTML = '🎉 <strong>QR Code Recognized!</strong> Redirecting...';
     statusEl.style.color = "#16a34a";
   }
 
-  // Stop scanner
   stopCameraScanner();
 
-  // If decodedText is a URL, redirect to it
   if (decodedText.startsWith("http://") || decodedText.startsWith("https://") || decodedText.startsWith("/")) {
     window.location.href = decodedText;
   } else if (decodedText.includes("attend/")) {
-    // Relative link
     window.location.href = "/" + decodedText.replace(/^\/+/, "");
   } else {
-    // Might be raw token or JSON
-    showScannerError("Unrecognized QR Code. Please scan the official ACCLLMS projector code.");
+    alert("Scanned text: " + decodedText + "\nPlease scan the official ACCLLMS projector code.");
   }
 }
 
 function onQrCodeProgress(errorMessage) {
-  // Silent frame error while searching for QR code in camera frames
+  // scanning frame
 }
 
-function showScannerError(msg) {
+// Display step-by-step guidance for Android and iOS when camera permission fails
+function showCameraPermissionGuide(errorMsg) {
+  const laser = document.querySelector(".scanner-laser-line");
+  if (laser) laser.style.display = "none";
+
+  const readerDiv = document.getElementById("qrReader");
+  if (readerDiv) readerDiv.style.display = "none";
+
+  const guideEl = document.getElementById("scannerPermGuide");
+  if (guideEl) guideEl.style.display = "block";
+
   const statusEl = document.getElementById("scannerStatus");
   if (statusEl) {
-    statusEl.innerHTML = `<span style="color:#dc2626;">⚠️ ${msg}</span>`;
+    statusEl.innerHTML = `<span style="color:#dc2626; font-weight:700;">⚠️ Camera Access Blocked</span>`;
   }
+}
+
+function switchPermTab(os) {
+  const tabAndroid = document.getElementById("tabAndroid");
+  const tabIOS = document.getElementById("tabIOS");
+  const contentAndroid = document.getElementById("guideAndroid");
+  const contentIOS = document.getElementById("guideIOS");
+
+  if (os === "ios") {
+    if (tabIOS) tabIOS.classList.add("active");
+    if (tabAndroid) tabAndroid.classList.remove("active");
+    if (contentIOS) contentIOS.style.display = "block";
+    if (contentAndroid) contentAndroid.style.display = "none";
+  } else {
+    if (tabAndroid) tabAndroid.classList.add("active");
+    if (tabIOS) tabIOS.classList.remove("active");
+    if (contentAndroid) contentAndroid.style.display = "block";
+    if (contentIOS) contentIOS.style.display = "none";
+  }
+}
+
+// Fallback: Student takes photo with native Android/iOS camera app
+function onQrPhotoSelected(input) {
+  if (!input.files || input.files.length === 0) return;
+  const file = input.files[0];
+
+  const statusEl = document.getElementById("scannerStatus");
+  if (statusEl) {
+    statusEl.innerHTML = '<span class="pulse-dot" style="width:8px;height:8px;"></span> Analyzing captured photo...';
+    statusEl.style.color = "var(--primary)";
+  }
+
+  if (!html5QrCode) {
+    html5QrCode = new Html5Qrcode("qrReader");
+  }
+
+  html5QrCode.scanFile(file, true)
+    .then(decodedText => {
+      onQrCodeSuccess(decodedText);
+    })
+    .catch(err => {
+      console.error("Error scanning photo:", err);
+      if (statusEl) {
+        statusEl.innerHTML = '<span style="color:#dc2626; font-weight:700;">❌ QR Code not detected in photo. Please point closer and try again.</span>';
+      }
+    });
 }
 
 // Close scanner with ESC key

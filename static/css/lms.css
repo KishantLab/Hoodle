@@ -592,6 +592,69 @@ body {
   border-radius: 3px;
 }
 
+/* Nav User Section Desktop Styles */
+.nav-right-wrap {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.nav-user-section {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-left: 1px solid var(--border);
+  padding-left: 1rem;
+}
+
+.user-info-text {
+  display: flex;
+  flex-direction: column;
+  text-align: right;
+}
+
+.user-display-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.user-role-text {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Camera Permission Guide Tabs in Scanner Modal */
+.os-guide-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+
+.os-tab-btn {
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+}
+
+.os-tab-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.mobile-scroll-hint {
+  display: none;
+}
+
 /* =======================================================
    Multi-Device & Responsive Viewport Rules
    ======================================================= */
@@ -606,23 +669,35 @@ body {
   }
 }
 
-/* Mobile Devices & Tablets (<= 768px) */
+/* Mobile Devices & Portrait Mode (<= 768px) */
 @media (max-width: 768px) {
-  /* Show Floating Camera Button on Mobile for quick access */
+  /* Show Floating Camera Button on Mobile for 1-tap scan */
   .scanner-fab {
     display: flex;
   }
 
-  /* Responsive Navbar */
+  /* 2-Tier Mobile Header: User Profile is ALWAYS visible */
   .lms-navbar {
     height: auto;
-    padding: 0.65rem 1rem;
-    flex-wrap: wrap;
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    position: sticky;
+    top: 0;
+    z-index: 99;
+  }
+
+  .brand-section {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
     gap: 0.5rem;
   }
 
   .brand-logo {
-    height: 32px;
+    height: 30px;
   }
 
   .brand-title {
@@ -630,22 +705,67 @@ body {
   }
 
   .brand-subtitle {
-    display: none; /* save vertical space on mobile */
+    display: none; /* conserve vertical mobile space */
   }
 
+  .nav-right-wrap {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 0.35rem;
+  }
+
+  /* User profile + Sign Out header bar on mobile portrait */
+  .nav-user-section {
+    width: 100%;
+    border-left: none;
+    padding-left: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.35rem;
+  }
+
+  .user-info-text {
+    text-align: left;
+  }
+
+  .user-display-name {
+    font-size: 0.82rem;
+  }
+
+  .logout-btn {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.75rem;
+  }
+
+  /* Scrollable Tab Strip for Links */
   .nav-links {
     width: 100%;
     overflow-x: auto;
     white-space: nowrap;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    padding-top: 0.35rem;
-    border-top: 1px solid var(--border);
+    padding: 0.15rem 0;
+    gap: 0.35rem;
     justify-content: flex-start;
   }
 
   .nav-links::-webkit-scrollbar {
     display: none;
+  }
+
+  .nav-item {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.82rem;
+    flex-shrink: 0;
+  }
+
+  .scanner-nav-btn {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.82rem;
+    flex-shrink: 0;
   }
 
   /* Course Tabs Navigation on mobile */
@@ -664,20 +784,20 @@ body {
   }
 
   .course-tab {
-    padding: 0.6rem 0.85rem;
-    font-size: 0.88rem;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.82rem;
     flex-shrink: 0;
   }
 
   /* Course Header Banner */
   .course-banner {
-    padding: 1.25rem 1rem;
+    padding: 1.15rem 0.85rem;
     border-radius: var(--radius-md);
   }
 
   .course-banner h1 {
-    font-size: 1.25rem;
-    line-height: 1.3;
+    font-size: 1.15rem;
+    line-height: 1.25;
   }
 
   .course-meta {
@@ -685,50 +805,103 @@ body {
     gap: 0.5rem;
   }
 
-  /* Grid Layouts Stacked on Mobile */
-  .card {
-    padding: 1.15rem;
-    border-radius: var(--radius-md);
+  .class-code-badge {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.78rem;
   }
 
-  /* Scanner modal fits small mobile screens */
+  /* Responsive Metric Stat Cards in Portrait */
+  .attendance-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 0.65rem !important;
+  }
+
+  /* Responsive Filter Controls in Portrait */
+  .attendance-filter-bar {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0.5rem !important;
+    width: 100% !important;
+  }
+
+  .attendance-filter-bar #rosterSearch {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+  }
+
+  .attendance-filter-bar #studentSelectFilter {
+    max-width: 100% !important;
+  }
+
+  /* Action Buttons Full Width on Mobile */
+  .attendance-action-btns {
+    width: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+
+  .attendance-action-btns .btn {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* Mobile horizontal scroll helper */
+  .mobile-scroll-hint {
+    display: block !important;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 0.35rem 0;
+    background: #f1f5f9;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Scanner modal fits mobile portrait screens */
   .scanner-modal-card {
-    padding: 1rem;
+    padding: 1rem 0.85rem;
     max-width: 95vw;
   }
 
   .scanner-viewfinder-wrap {
-    min-height: 240px;
+    min-height: 220px;
+    max-height: 280px;
   }
 }
 
-/* Extra Small Phones (<= 480px) */
+/* Extra Small Mobile Devices & Tight Portrait (< 480px) */
 @media (max-width: 480px) {
   body {
-    font-size: 14px;
+    font-size: 13.5px;
   }
 
   .lms-navbar {
-    padding: 0.5rem 0.75rem;
+    padding: 0.4rem 0.6rem;
   }
 
-  .btn {
-    padding: 0.5rem 0.85rem;
-    font-size: 0.82rem;
+  .attendance-stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .attendance-filter-bar {
+    grid-template-columns: 1fr !important;
   }
 
   .card {
-    padding: 1rem;
+    padding: 0.85rem;
+    margin-bottom: 1.25rem;
   }
 
   .course-tab {
-    padding: 0.5rem 0.7rem;
-    font-size: 0.82rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.78rem;
   }
 
   .lms-table th, .lms-table td {
-    padding: 0.6rem 0.5rem;
-    font-size: 0.82rem;
+    padding: 0.55rem 0.45rem;
+    font-size: 0.78rem;
   }
 }
+
 

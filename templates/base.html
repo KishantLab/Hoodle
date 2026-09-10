@@ -20,45 +20,49 @@
       </div>
     </a>
 
-    <nav class="nav-links">
+    <div class="nav-right-wrap">
+      <nav class="nav-links">
+        {% if current_user %}
+          <a href="{{ url_for('dashboard') }}" class="nav-item {% if request.path == '/dashboard' or request.path == '/' %}active{% endif %}">
+            📚 Courses
+          </a>
+
+          {% if current_user.role == 'student' %}
+            <a href="{{ url_for('locker') }}" class="nav-item {% if '/locker' in request.path %}active{% endif %}">
+              🔒 My Private Locker
+            </a>
+            <button type="button" class="btn btn-primary btn-sm scanner-nav-btn" onclick="openAttendanceScanner()" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:700;">
+              <span>📷</span>
+              <span>Scan</span>
+            </button>
+          {% endif %}
+
+          {% if current_user.role == 'admin' %}
+            <a href="{{ url_for('admin_users') }}" class="nav-item {% if '/admin' in request.path %}active{% endif %}">
+              ⚙️ User Directory
+            </a>
+          {% endif %}
+        {% endif %}
+      </nav>
+
       {% if current_user %}
-        <a href="{{ url_for('dashboard') }}" class="nav-item {% if request.path == '/dashboard' or request.path == '/' %}active{% endif %}">
-          📚 Courses
-        </a>
-
-        {% if current_user.role == 'student' %}
-          <a href="{{ url_for('locker') }}" class="nav-item {% if '/locker' in request.path %}active{% endif %}">
-            🔒 My Private Locker
-          </a>
-          <button type="button" class="btn btn-primary btn-sm scanner-nav-btn" onclick="openAttendanceScanner()" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:700; margin-left:0.25rem;">
-            <span>📷</span>
-            <span>Scan Attendance</span>
-          </button>
-        {% endif %}
-
-        {% if current_user.role == 'admin' %}
-          <a href="{{ url_for('admin_users') }}" class="nav-item {% if '/admin' in request.path %}active{% endif %}">
-            ⚙️ User Directory
-          </a>
-        {% endif %}
-
-        <div style="display:flex; align-items:center; gap:0.75rem; margin-left:1rem; border-left:1px solid var(--border); padding-left:1rem;">
-          <div style="display:flex; flex-direction:column; text-align:right;">
-            <span style="font-size:0.88rem; font-weight:700;">{{ current_user.display_name }}</span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">
+        <div class="nav-user-section">
+          <div class="user-info-text">
+            <span class="user-display-name">{{ current_user.display_name }}</span>
+            <span class="user-role-text">
               {% if current_user.roll_number %}{{ current_user.roll_number }} • {% endif %}
               <span class="role-badge role-{{ current_user.role }}">{{ current_user.role }}</span>
             </span>
           </div>
 
-          <a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm" title="Sign Out">
+          <a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm logout-btn" title="Sign Out">
             Sign Out
           </a>
         </div>
       {% else %}
         <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Sign In</a>
       {% endif %}
-    </nav>
+    </div>
   </header>
 
   <!-- Flash Alerts & System Banners -->
@@ -123,13 +127,63 @@
       <div class="scanner-viewfinder-wrap">
         <div id="qrReader" style="width: 100%; border-radius: 12px; overflow: hidden; background: #000;"></div>
         <div class="scanner-laser-line"></div>
+
+        <!-- In-Modal Android & iOS Camera Permission Guidance -->
+        <div id="scannerPermGuide" class="perm-guide-card" style="display: none; padding: 1.25rem 1rem; text-align: left;">
+          <div style="text-align: center; margin-bottom: 0.75rem;">
+            <div style="font-size: 2rem;">📱</div>
+            <h4 style="font-size: 1.05rem; font-weight: 800; color: var(--text-main); margin-top: 0.2rem;">Enable Camera Permission</h4>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">Your browser blocked camera video stream. Follow your device steps:</p>
+          </div>
+
+          <!-- OS Selector Tabs -->
+          <div class="os-guide-tabs" style="display: flex; gap: 0.4rem; margin-bottom: 0.75rem;">
+            <button type="button" id="tabAndroid" class="os-tab-btn active" onclick="switchPermTab('android')">🤖 Android (Chrome)</button>
+            <button type="button" id="tabIOS" class="os-tab-btn" onclick="switchPermTab('ios')">🍎 iPhone / iPad (Safari)</button>
+          </div>
+
+          <!-- Android Steps -->
+          <div id="guideAndroid" style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.75rem; font-size: 0.82rem; line-height: 1.5;">
+            <div>1. Look at the top address bar in Chrome.</div>
+            <div>2. Tap the <strong>🔒 Padlock</strong> or <strong>⚙️ tune icon</strong>.</div>
+            <div>3. Tap <strong>Permissions</strong> → <strong>Camera</strong> → Choose <strong>Allow</strong>.</div>
+            <div>4. Reload the page, or tap the button below to snap photo!</div>
+          </div>
+
+          <!-- iOS Steps -->
+          <div id="guideIOS" style="display: none; background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.75rem; font-size: 0.82rem; line-height: 1.5;">
+            <div>1. In Safari's address bar, tap <strong>aA</strong> (or the <strong>🔒 Padlock</strong>).</div>
+            <div>2. Tap <strong>Website Settings</strong>.</div>
+            <div>3. Tap <strong>Camera</strong> and set to <strong>Allow</strong>.</div>
+            <div>4. Reload the page, or tap the button below to snap photo!</div>
+          </div>
+
+          <!-- Direct Phone Camera Fallback -->
+          <div style="margin-top: 1rem; text-align: center;">
+            <label class="btn btn-primary" style="cursor: pointer; width: 100%; display: flex; justify-content: center; align-items: center; gap: 0.5rem; font-weight: 700; padding: 0.75rem;">
+              <span>📸</span>
+              <span>Open Phone Camera to Scan</span>
+              <input type="file" accept="image/*" capture="environment" style="display: none;" onchange="onQrPhotoSelected(this)">
+            </label>
+            <div style="font-size: 0.72rem; color: var(--text-light); margin-top: 0.4rem;">Works directly via your phone's native camera app</div>
+          </div>
+        </div>
       </div>
 
       <div id="scannerStatus" style="text-align: center; font-size: 0.85rem; color: var(--text-muted); margin-top: 0.85rem; min-height: 24px;">
         Starting camera...
       </div>
 
-      <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 0.75rem;">
+      <!-- Quick Native Camera Trigger Available Anytime -->
+      <div style="margin-top: 0.75rem; display: flex; justify-content: center;">
+        <label class="btn btn-secondary btn-sm" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; font-weight: 600;">
+          <span>📸</span>
+          <span>Snap Photo with Phone Camera</span>
+          <input type="file" accept="image/*" capture="environment" style="display: none;" onchange="onQrPhotoSelected(this)">
+        </label>
+      </div>
+
+      <div style="margin-top: 0.85rem; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 0.75rem;">
         <span style="font-size: 0.75rem; color: var(--text-light);">Point camera at the projector screen</span>
         <button type="button" class="btn btn-secondary btn-sm" onclick="closeAttendanceScanner()">Cancel</button>
       </div>
