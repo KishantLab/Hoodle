@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+
+{% block title %}{{ cw.title }} - ACCLLMS{% endblock %}
+
+{% block content %}
+<!-- Back to Classwork Link -->
+<div style="margin-bottom: 1.25rem;">
+  <a href="{{ url_for('course_classwork', course_id=course.id) }}" style="text-decoration: none; color: var(--primary); font-weight: 600; font-size: 0.9rem;">
+    ← Back to Classwork
+  </a>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr {% if current_user.role == 'student' %}360px{% endif %}; gap: 2rem;">
+  <!-- Left Side: Problem Statement & Details (or Teacher Review Table) -->
+  <div>
+    <div class="card">
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 1.25rem; margin-bottom: 1.25rem;">
+        <div>
+          <div style="font-size: 0.85rem; font-weight: 700; color: var(--primary); text-transform: uppercase;">
+            {{ course.code }} • {{ cw.type | capitalize }}
+          </div>
+          <h1 style="font-size: 1.75rem; font-weight: 800; color: var(--text-main); margin-top: 0.25rem;">
+            {{ cw.title }}
+          </h1>
+          <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem;">
+            Created by {{ cw.creator_name }} • {{ cw.created_at | format_dt }}
+          </div>
+        </div>
+
+        {% if cw.type != 'material' %}
+          <div style="text-align: right;">
+            <div style="font-size: 1.25rem; font-weight: 800; color: var(--text-main);">
+              {{ cw.points }} Points
+            </div>
+            {% if cw.due_date %}
+              <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.2rem;">
+                Due {{ cw.due_date | format_dt }}
+              </div>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- Description -->
+      <div style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main); white-space: pre-wrap; margin-bottom: 1.5rem;">
+        {{ cw.description | nl2br if cw.description else 'No special instructions provided.' }}
+      </div>
+
+      <!-- Instructor Attachments -->
+      {% if attachments %}
+        <div style="margin-top: 1.5rem;">
+          <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.75rem;">
+            Reference Files & Materials
+          </h3>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            {% for att in attachments %}
+              <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                  <span style="font-size: 1.2rem;">📄</span>
+                  <div>
+                    <div style="font-weight: 600; font-size: 0.88rem;">{{ att.original_filename }}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">{{ att.file_size | filesize }}</div>
+                  </div>
+                </div>
+                <a href="{{ url_for('download_attachment', att_id=att.id) }}" class="btn btn-secondary btn-sm">
+                  Download
+                </a>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- For Teachers: Submissions Grading Table -->
+    {% if current_user.role in ('teacher', 'admin') and cw.type != 'material' %}
+      <div class="card" style="margin-top: 2rem;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h2 class="card-title" style="font-size: 1.2rem;">Student Submissions Roster</h2>
+            <div style="display: flex; gap: 1rem; font-size: 0.82rem; color: var(--text-muted); margin-top: 0.35rem;">
+              <span><strong>{{ stats.turned_in }}</strong> Turned In</span>
+              <span><strong>{{ stats.graded }}</strong> Graded</span>
+              <span><strong>{{ stats.assigned }}</strong> Pending / Assigned</span>
+            </div>
+          </div>
+
+          <a href="{{ url_for('download_all_submissions_zip', course_id=course.id, coursework_id=cw.id) }}" class="btn btn-primary btn-sm">
+            📦 Download All Submissions (ZIP)
+          </a>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="lms-table">
+            <thead>
+              <tr>
+                <th>Roll Number</th>
+                <th>Student</th>
+                <th>Status & Timing</th>
+                <th>Submission File</th>
+                <th>Grade / Score</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sub in all_submissions %}
+                <tr>
+                  <td style="font-family: monospace; font-weight: 700;">{{ sub.roll_number or 'N/A' }}</td>
+                  <td>
+                    <div style="font-weight: 600;">{{ sub.display_name }}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">{{ sub.email }}</div>
+                  </td>
+                  <td>
+                    {% if sub.submission_id %}
+                      {% if sub.status == 'graded' %}
+                        <span class="badge badge-graded">Graded</span>
+                      {% else %}
+                        <span class="badge badge-turned-in">Turned In</span>
+                      {% endif %}
+
+                      {% if sub.is_late %}
+                        <span class="badge badge-late">+{{ sub.late_minutes }}m Late</span>
+                      {% endif %}
+                      <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;">
+                        {{ sub.submitted_at | format_dt }}
+                      </div>
+                    {% else %}
+                      <span class="badge badge-assigned">Assigned</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if sub.submission_id %}
+                      <a href="{{ url_for('download_submission', sub_id=sub.submission_id) }}" style="color: var(--primary); text-decoration: none; font-weight: 600; font-size: 0.85rem;">
+                        ⬇️ {{ sub.original_filename }}
+                      </a>
+                      <div style="font-size: 0.72rem; color: var(--text-muted);">{{ sub.file_size | filesize }}</div>
+                    {% else %}
+                      <span style="color: var(--text-light); font-size: 0.85rem;">No submission</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if sub.submission_id %}
+                      <form action="{{ url_for('grade_submission', course_id=course.id, coursework_id=cw.id, submission_id=sub.submission_id) }}" method="POST" style="display: flex; gap: 0.4rem; align-items: center;">
+                        <input type="number" step="0.5" name="grade" value="{{ sub.grade if sub.grade is not none else '' }}" placeholder="0-{{ cw.points }}" class="form-control" style="width: 75px; padding: 0.35rem 0.5rem; font-size: 0.85rem;" required>
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">/{{ cw.points }}</span>
+                        <input type="text" name="feedback" value="{{ sub.feedback or '' }}" placeholder="Feedback comment..." class="form-control" style="width: 140px; padding: 0.35rem 0.5rem; font-size: 0.82rem;">
+                        <button type="submit" class="btn btn-secondary btn-sm" title="Save Grade">Save</button>
+                      </form>
+                    {% else %}
+                      <span style="color: var(--text-light); font-size: 0.85rem;">-</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if sub.submission_id %}
+                      <a href="{{ url_for('exam_receipt', receipt_token=sub.receipt_token) }}" target="_blank" class="btn btn-secondary btn-sm" style="font-size: 0.75rem;" title="View Digital Receipt">
+                        Receipt
+                      </a>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Right Side (For Students): Submission Box & Private Comments -->
+  {% if current_user.role == 'student' and cw.type != 'material' %}
+    <div>
+      <!-- Turn In Card -->
+      <div class="card" style="box-shadow: var(--shadow-md);">
+        <div class="card-header">
+          <h3 class="card-title" style="font-size: 1.1rem;">Your Work</h3>
+          <div>
+            {% if my_submission %}
+              {% if my_submission.status == 'graded' %}
+                <span class="badge badge-graded">Graded ({{ my_submission.grade }}/{{ cw.points }})</span>
+              {% else %}
+                <span class="badge badge-turned-in">
+                  Turned In {% if my_submission.is_late %}(Late){% endif %}
+                </span>
+              {% endif %}
+            {% else %}
+              <span class="badge badge-assigned">Assigned</span>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if my_submission and my_submission.status != 'assigned' %}
+          <!-- Submitted File Display -->
+          <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">
+                  📎 {{ my_submission.original_filename }}
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem;">
+                  Size: {{ my_submission.file_size | filesize }} • Version {{ my_submission.version }}
+                </div>
+              </div>
+              <a href="{{ url_for('download_submission', sub_id=my_submission.id) }}" class="btn btn-secondary btn-sm">
+                ⬇️
+              </a>
+            </div>
+
+            <!-- SHA-256 Checksum -->
+            <div style="margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px dashed var(--border); font-size: 0.72rem; color: var(--text-muted);">
+              <span>SHA-256 Checksum:</span>
+              <div style="font-family: monospace; font-size: 0.7rem; background: white; padding: 4px; border-radius: 4px; border: 1px solid var(--border); word-break: break-all; margin-top: 2px;">
+                {{ my_submission.sha256 }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Digital Receipt Link -->
+          <div style="margin-bottom: 1rem; text-align: center;">
+            <a href="{{ url_for('exam_receipt', receipt_token=my_submission.receipt_token) }}" target="_blank" style="font-size: 0.82rem; color: var(--primary); text-decoration: none; font-weight: 600;">
+              📜 View Official Digital Receipt →
+            </a>
+          </div>
+
+          <!-- Instructor Feedback if Graded -->
+          {% if my_submission.status == 'graded' %}
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-md); padding: 0.85rem; margin-bottom: 1rem;">
+              <div style="font-size: 0.82rem; font-weight: 700; color: #166534;">Instructor Grade & Feedback:</div>
+              <div style="font-size: 1.1rem; font-weight: 800; color: #15803d; margin: 0.25rem 0;">
+                Score: {{ my_submission.grade }} / {{ cw.points }}
+              </div>
+              {% if my_submission.feedback %}
+                <div style="font-size: 0.85rem; color: #166534;">"{{ my_submission.feedback }}"</div>
+              {% endif %}
+            </div>
+          {% else %}
+            <!-- Unsubmit Button -->
+            <form action="{{ url_for('unsubmit_coursework', course_id=course.id, coursework_id=cw.id) }}" method="POST">
+              <button type="submit" class="btn btn-secondary" style="width: 100%;" onclick="return confirm('Unsubmit your work? You will be able to attach revised files.');">
+                Unsubmit & Edit Work
+              </button>
+            </form>
+          {% endif %}
+
+        {% else %}
+          <!-- Turn In Form -->
+          <form action="{{ url_for('submit_coursework', course_id=course.id, coursework_id=cw.id) }}" method="POST" enctype="multipart/form-data">
+            <!-- Source Selector: Local Computer vs My Private Locker -->
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; background: #f1f5f9; padding: 4px; border-radius: var(--radius-md);">
+              <label style="flex: 1; text-align: center; font-size: 0.82rem; font-weight: 600; padding: 0.4rem; cursor: pointer; border-radius: 6px;" id="lblLocal">
+                <input type="radio" name="source_type" value="local" checked style="display: none;" onchange="toggleSubmissionSource('local')">
+                💻 From Computer
+              </label>
+              <label style="flex: 1; text-align: center; font-size: 0.82rem; font-weight: 600; padding: 0.4rem; cursor: pointer; border-radius: 6px;" id="lblLocker">
+                <input type="radio" name="source_type" value="locker" style="display: none;" onchange="toggleSubmissionSource('locker')">
+                🔒 From My Locker
+              </label>
+            </div>
+
+            <!-- Upload File Option -->
+            <div id="boxLocalUpload" class="form-group">
+              <label class="form-label" style="font-size: 0.85rem;">Upload File {% if cw.allowed_types == 'zip' %}(.zip only){% endif %}</label>
+              <input type="file" name="submission_file" class="form-control" style="font-size: 0.85rem;" {% if cw.allowed_types == 'zip' %}accept=".zip"{% endif %}>
+            </div>
+
+            <!-- Choose From My Locker Option -->
+            <div id="boxLockerPicker" class="form-group" style="display: none;">
+              <label class="form-label" style="font-size: 0.85rem;">Select from Your Private Locker</label>
+              {% if locker_files %}
+                <select name="locker_file_id" class="form-control" style="font-size: 0.85rem;">
+                  {% for lf in locker_files %}
+                    <option value="{{ lf.id }}">{{ lf.original_filename }} ({{ lf.file_size | filesize }})</option>
+                  {% endfor %}
+                </select>
+              {% else %}
+                <p style="font-size: 0.8rem; color: var(--text-muted); padding: 0.5rem 0;">
+                  Your locker is currently empty. <a href="{{ url_for('locker') }}" target="_blank">Upload files to your locker</a> first.
+                </p>
+              {% endif %}
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; margin-top: 0.5rem;">
+              Turn In Assignment
+            </button>
+          </form>
+        {% endif %}
+      </div>
+
+      <!-- Private Teacher Comments -->
+      <div class="card">
+        <div class="card-header" style="margin-bottom: 0.75rem;">
+          <h3 class="card-title" style="font-size: 0.95rem;">💬 Private Comments</h3>
+        </div>
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+          Exchange private questions and remarks directly with your course instructor.
+        </p>
+
+        {% if private_comments %}
+          <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+            {% for cm in private_comments %}
+              <div style="background: #f8fafc; border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.82rem;">
+                <div style="font-weight: 700; color: var(--text-main);">{{ cm.display_name }}</div>
+                <div style="color: var(--text-main); margin-top: 0.15rem;">{{ cm.content }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+function toggleSubmissionSource(type) {
+  const boxLocal = document.getElementById("boxLocalUpload");
+  const boxLocker = document.getElementById("boxLockerPicker");
+  const lblLocal = document.getElementById("lblLocal");
+  const lblLocker = document.getElementById("lblLocker");
+
+  if (type === 'locker') {
+    boxLocal.style.display = "none";
+    boxLocker.style.display = "block";
+    lblLocker.style.background = "white";
+    lblLocker.style.color = "var(--primary)";
+    lblLocal.style.background = "transparent";
+    lblLocal.style.color = "var(--text-muted)";
+  } else {
+    boxLocal.style.display = "block";
+    boxLocker.style.display = "none";
+    lblLocal.style.background = "white";
+    lblLocal.style.color = "var(--primary)";
+    lblLocker.style.background = "transparent";
+    lblLocker.style.color = "var(--text-muted)";
+  }
+}
+</script>
+{% endblock %}

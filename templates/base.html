@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ACCLLMS - Learning Management System{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/lms.css') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/accl_logo.png') }}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="lms-navbar">
+    <a href="{{ url_for('dashboard') }}" class="brand-section">
+      <img src="{{ url_for('static', filename='images/iitbhilai_logo.png') }}" alt="IIT Bhilai" class="brand-logo">
+      <div class="brand-text">
+        <span class="brand-title">ACCLLMS</span>
+        <span class="brand-subtitle">Accelerated Computing Lab • Classroom</span>
+      </div>
+    </a>
+
+    <nav class="nav-links">
+      {% if current_user %}
+        <a href="{{ url_for('dashboard') }}" class="nav-item {% if request.path == '/dashboard' or request.path == '/' %}active{% endif %}">
+          📚 Courses
+        </a>
+
+        {% if current_user.role == 'student' %}
+          <a href="{{ url_for('locker') }}" class="nav-item {% if '/locker' in request.path %}active{% endif %}">
+            🔒 My Private Locker
+          </a>
+        {% endif %}
+
+        {% if current_user.role == 'admin' %}
+          <a href="{{ url_for('admin_users') }}" class="nav-item {% if '/admin' in request.path %}active{% endif %}">
+            ⚙️ User Directory
+          </a>
+        {% endif %}
+
+        <div style="display:flex; align-items:center; gap:0.75rem; margin-left:1rem; border-left:1px solid var(--border); padding-left:1rem;">
+          <div style="display:flex; flex-direction:column; text-align:right;">
+            <span style="font-size:0.88rem; font-weight:700;">{{ current_user.display_name }}</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">
+              {% if current_user.roll_number %}{{ current_user.roll_number }} • {% endif %}
+              <span class="role-badge role-{{ current_user.role }}">{{ current_user.role }}</span>
+            </span>
+          </div>
+
+          <a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm" title="Sign Out">
+            Sign Out
+          </a>
+        </div>
+      {% else %}
+        <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Sign In</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <!-- Flash Alerts & System Banners -->
+  <div class="alerts-container">
+    {% if active_exam_lockdown %}
+      <div class="exam-lockdown-banner">
+        <div>
+          <strong>🔒 STRICT EXAM LOCKDOWN ACTIVE:</strong>
+          <span> {{ active_exam_lockdown.course_code }} - {{ active_exam_lockdown.title }}. All LMS materials and private lockers are restricted until the exam ends.</span>
+        </div>
+        <a href="{{ url_for('exam_view', course_id=active_exam_lockdown.course_id, coursework_id=active_exam_lockdown.coursework_id) }}" class="btn btn-secondary btn-sm" style="background:white; color:#dc2626; font-weight:700;">
+          Go to Exam Portal →
+        </a>
+      </div>
+    {% endif %}
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">
+            <span>{{ message }}</span>
+            <button onclick="this.parentElement.remove()" style="background:none; border:none; cursor:pointer; font-weight:700; color:inherit;">&times;</button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+  </div>
+
+  <!-- Main Body Content -->
+  <main class="lms-main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Common File Preview Modal -->
+  <div id="filePreviewModal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:750px;">
+      <div class="modal-header">
+        <h3 id="previewModalTitle" style="font-size:1.1rem; font-weight:700;">File Preview</h3>
+        <button class="modal-close" onclick="closeModal('filePreviewModal')">&times;</button>
+      </div>
+      <div id="previewModalBody"></div>
+    </div>
+  </div>
+
+  <footer style="margin-top:auto; padding:1.5rem; text-align:center; font-size:0.8rem; color:var(--text-muted); border-top:1px solid var(--border); background:white;">
+    <p>ACCLLMS • Accelerated Computing Research Lab (ACCL) • Indian Institute of Technology Bhilai (IIT Bhilai)</p>
+    <p style="font-size:0.75rem; margin-top:0.3rem;">Developed by Kishan Tamboli (PhD) • Local Enterprise Deployment</p>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/lms.js') }}"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

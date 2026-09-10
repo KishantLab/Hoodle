@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course.code }} Classwork - ACCLLMS{% endblock %}
+
+{% block content %}
+<!-- Google Classroom Course Header Banner -->
+<div class="course-banner banner-{{ course.theme_color }}">
+  <h1>{{ course.code }}: {{ course.title }}</h1>
+  <div class="course-subtitle">{{ course.section or 'Section A' }}</div>
+  <div class="course-meta">
+    <span>👨‍🏫 {{ course.teacher_name }}</span>
+    <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')">
+      <span>Class Code:</span>
+      <strong>{{ course.join_code }}</strong>
+      <span>📋</span>
+    </div>
+  </div>
+</div>
+
+<!-- Course Tabs Navigation -->
+<nav class="course-tabs-nav">
+  <a href="{{ url_for('course_stream', course_id=course.id) }}" class="course-tab">
+    📢 Stream
+  </a>
+  <a href="{{ url_for('course_classwork', course_id=course.id) }}" class="course-tab active">
+    📝 Classwork
+  </a>
+  <a href="{{ url_for('course_people', course_id=course.id) }}" class="course-tab">
+    👥 People
+  </a>
+  {% if current_user.role in ('teacher', 'admin') %}
+    <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
+      📊 Grades
+    </a>
+  {% endif %}
+</nav>
+
+<!-- Teacher Action Bar -->
+{% if current_user.role in ('teacher', 'admin') %}
+  <div style="display: flex; gap: 0.75rem; margin-bottom: 2rem;">
+    <button onclick="openModal('createCourseworkModal')" class="btn btn-primary">
+      ➕ Create Coursework
+    </button>
+    <button onclick="openModal('createTopicModal')" class="btn btn-secondary">
+      📁 Create Topic / Unit
+    </button>
+  </div>
+{% endif %}
+
+<!-- Topics & Coursework Listing -->
+<div style="display: flex; flex-direction: column; gap: 2rem;">
+  {% for t_id, data in topic_map.items() %}
+    {% if data.cw_items or current_user.role in ('teacher', 'admin') %}
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--primary); padding-bottom: 0.5rem; margin-bottom: 1rem;">
+          <h2 style="font-size: 1.35rem; font-weight: 700; color: #1e3a8a;">
+            📁 {{ data.topic.name }}
+          </h2>
+          {% if current_user.role in ('teacher', 'admin') and data.topic.id %}
+            <form action="{{ url_for('delete_topic', course_id=course.id, topic_id=data.topic.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove this topic?');">
+              <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger);">
+                Delete Topic
+              </button>
+            </form>
+          {% endif %}
+        </div>
+
+        {% if data.cw_items %}
+          <div style="display: flex; flex-direction: column; gap: 0.85rem;">
+            {% for cw in data.cw_items %}
+              <div class="card" style="margin-bottom: 0; padding: 1.15rem 1.35rem; {% if cw.is_exam_mode %}border-left: 4px solid var(--danger); background: #fffbfb;{% endif %}">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div style="display: flex; align-items: center; gap: 1rem;">
+                    <!-- Type Icon -->
+                    <div style="width: 42px; height: 42px; border-radius: 50%; background: {% if cw.type == 'exam' %}#fee2e2; color:#b91c1c;{% elif cw.type == 'material' %}#f1f5f9; color:#475569;{% else %}#eff6ff; color:#1d4ed8;{% endif %} display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">
+                      {% if cw.type == 'exam' %}🧪{% elif cw.type == 'material' %}📄{% else %}📝{% endif %}
+                    </div>
+
+                    <div>
+                      <div style="display: flex; align-items: center; gap: 0.6rem;">
+                        <a href="{% if cw.is_exam_mode and current_user.role == 'student' %}{{ url_for('exam_view', course_id=course.id, coursework_id=cw.id) }}{% else %}{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}{% endif %}" style="font-size: 1.05rem; font-weight: 700; color: var(--text-main); text-decoration: none;">
+                          {{ cw.title }}
+                        </a>
+                        {% if cw.is_exam_mode %}
+                          <span class="badge" style="background: #fee2e2; color: #b91c1c; font-weight: 800;">🔒 STRICT EXAM MODE ACTIVE</span>
+                        {% endif %}
+                      </div>
+
+                      <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
+                        {% if cw.type != 'material' %}
+                          {% if cw.due_date %}Due: {{ cw.due_date | format_dt }} • {% endif %}
+                          {{ cw.points }} points
+                        {% else %}
+                          Class Resource • Posted {{ cw.created_at | format_dt }}
+                        {% endif %}
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Right Side: Status Badge or Teacher Actions -->
+                  <div style="display: flex; align-items: center; gap: 0.85rem;">
+                    {% if current_user.role == 'student' and cw.type != 'material' %}
+                      {% if cw.my_status == 'graded' %}
+                        <span class="badge badge-graded">Graded: {{ cw.my_grade }}/{{ cw.points }}</span>
+                      {% elif cw.my_status == 'turned_in' %}
+                        <span class="badge badge-turned-in">
+                          Turned In {% if cw.my_is_late %}(Late){% endif %}
+                        </span>
+                      {% else %}
+                        <span class="badge badge-assigned">Assigned</span>
+                      {% endif %}
+                    {% endif %}
+
+                    {% if current_user.role in ('teacher', 'admin') %}
+                      {% if cw.type == 'exam' %}
+                        <form action="{{ url_for('toggle_exam_mode', course_id=course.id, coursework_id=cw.id) }}" method="POST" style="display: inline;">
+                          <button type="submit" class="btn btn-sm {% if cw.is_exam_mode %}btn-danger{% else %}btn-secondary{% endif %}" title="Toggle Strict Exam Mode for students">
+                            {% if cw.is_exam_mode %}🔓 Disable Exam Lockdown{% else %}🔒 Enable Exam Lockdown{% endif %}
+                          </button>
+                        </form>
+                      {% endif %}
+
+                      <form action="{{ url_for('delete_coursework', course_id=course.id, coursework_id=cw.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete this coursework item?');">
+                        <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger);" title="Delete Item">
+                          🗑
+                        </button>
+                      </form>
+                    {% endif %}
+
+                    <a href="{% if cw.is_exam_mode and current_user.role == 'student' %}{{ url_for('exam_view', course_id=course.id, coursework_id=cw.id) }}{% else %}{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}{% endif %}" class="btn btn-secondary btn-sm">
+                      View →
+                    </a>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="font-size: 0.88rem; color: var(--text-muted); font-style: italic; padding: 0.5rem 0;">
+            No items in this topic yet.
+          </p>
+        {% endif %}
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<!-- Modal: Create Coursework (Teacher) -->
+<div id="createCourseworkModal" class="modal-backdrop">
+  <div class="modal-content" style="max-width: 650px;">
+    <div class="modal-header">
+      <h3 style="font-size: 1.2rem; font-weight: 700;">Create Coursework</h3>
+      <button class="modal-close" onclick="closeModal('createCourseworkModal')">&times;</button>
+    </div>
+    <form action="{{ url_for('create_coursework', course_id=course.id) }}" method="POST" enctype="multipart/form-data">
+      <div class="form-group">
+        <label class="form-label" for="cw_type">Coursework Type</label>
+        <select id="cw_type" name="type" class="form-control" onchange="adjustCourseworkFields(this.value)">
+          <option value="assignment">Assignment (Homework, Problem Set, Code Submission)</option>
+          <option value="exam">Lab Exam / Timed Quiz (Supports Strict Lockdown)</option>
+          <option value="material">Class Material (Lecture Notes, Code Templates, Slides)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cw_title">Title</label>
+        <input type="text" id="cw_title" name="title" class="form-control" placeholder="e.g. Lab 2: CUDA Kernel Optimization" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cw_topic">Topic / Module</label>
+        <select id="cw_topic" name="topic_id" class="form-control">
+          <option value="">No Topic (General)</option>
+          {% for t in topics %}
+            <option value="{{ t.id }}">{{ t.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cw_description">Instructions / Problem Statement</label>
+        <textarea id="cw_description" name="description" rows="4" class="form-control" placeholder="Describe the objectives, requirements, and submission format."></textarea>
+      </div>
+
+      <!-- Assignment & Exam specific fields -->
+      <div id="gradingFields">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label" for="cw_points">Maximum Points</label>
+            <input type="number" id="cw_points" name="points" class="form-control" value="100">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="cw_due_date">Due Date & Time</label>
+            <input type="datetime-local" id="cw_due_date" name="due_date" class="form-control">
+          </div>
+        </div>
+
+        <!-- Strict Exam Lockdown Settings -->
+        <div id="examSettingsBox" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
+          <h4 style="font-size: 0.95rem; font-weight: 700; color: #b91c1c; margin-bottom: 0.5rem;">
+            🔒 Strict Exam Mode Lockdown Settings
+          </h4>
+          <p style="font-size: 0.8rem; color: #7f1d1d; margin-bottom: 0.75rem;">
+            When active, students cannot browse materials, stream discussions, or their locker. They can only access this single exam submission link and submit ONLY .zip files.
+          </p>
+
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 700; color: #991b1b; cursor: pointer; margin-bottom: 0.75rem;">
+            <input type="checkbox" name="is_exam_mode" value="1">
+            Enable Strict Exam Lockdown Immediately
+          </label>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div>
+              <label class="form-label" style="font-size: 0.8rem;">Exam Start Time</label>
+              <input type="datetime-local" name="start_time" class="form-control" style="font-size: 0.85rem;">
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.8rem;">Exam End Time</label>
+              <input type="datetime-local" name="end_time" class="form-control" style="font-size: 0.85rem;">
+            </div>
+          </div>
+
+          <div style="margin-top: 0.75rem;">
+            <label class="form-label" style="font-size: 0.8rem;">Lab Venues (comma-separated)</label>
+            <input type="text" name="labs" class="form-control" value="Lab 1, Lab 2, Lab 3, CC-101" style="font-size: 0.85rem;">
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 1.5rem; margin-bottom: 1.25rem;">
+          <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+            <input type="checkbox" name="allow_multiple" value="1" checked>
+            Allow Resubmissions (Keeps Latest Version)
+          </label>
+          <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+            <input type="checkbox" name="allow_late" value="1" checked>
+            Allow Late Submissions
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Attach Problem Files / Slides</label>
+        <input type="file" name="attachments" multiple class="form-control">
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('createCourseworkModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Publish Coursework</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Create Topic (Teacher) -->
+<div id="createTopicModal" class="modal-backdrop">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 style="font-size: 1.15rem; font-weight: 700;">Create Topic / Unit</h3>
+      <button class="modal-close" onclick="closeModal('createTopicModal')">&times;</button>
+    </div>
+    <form action="{{ url_for('create_topic', course_id=course.id) }}" method="POST">
+      <div class="form-group">
+        <label class="form-label" for="topic_name">Topic Name</label>
+        <input type="text" id="topic_name" name="name" class="form-control" placeholder="e.g. Week 3: Memory Allocators & Pointers" required>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('createTopicModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Topic</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function adjustCourseworkFields(type) {
+  const gradingFields = document.getElementById("gradingFields");
+  const examSettingsBox = document.getElementById("examSettingsBox");
+  if (type === 'material') {
+    gradingFields.style.display = "none";
+  } else if (type === 'exam') {
+    gradingFields.style.display = "block";
+    examSettingsBox.style.display = "block";
+  } else {
+    gradingFields.style.display = "block";
+    examSettingsBox.style.display = "none";
+  }
+}
+</script>
+{% endblock %}

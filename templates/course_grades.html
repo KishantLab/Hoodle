@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course.code }} Grades - ACCLLMS{% endblock %}
+
+{% block content %}
+<!-- Google Classroom Course Header Banner -->
+<div class="course-banner banner-{{ course.theme_color }}">
+  <h1>{{ course.code }}: {{ course.title }}</h1>
+  <div class="course-subtitle">{{ course.section or 'Section A' }}</div>
+  <div class="course-meta">
+    <span>👨‍🏫 {{ course.teacher_name }}</span>
+    <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')">
+      <span>Class Code:</span>
+      <strong>{{ course.join_code }}</strong>
+      <span>📋</span>
+    </div>
+  </div>
+</div>
+
+<!-- Course Tabs Navigation -->
+<nav class="course-tabs-nav">
+  <a href="{{ url_for('course_stream', course_id=course.id) }}" class="course-tab">
+    📢 Stream
+  </a>
+  <a href="{{ url_for('course_classwork', course_id=course.id) }}" class="course-tab">
+    📝 Classwork
+  </a>
+  <a href="{{ url_for('course_people', course_id=course.id) }}" class="course-tab">
+    👥 People
+  </a>
+  <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab active">
+    📊 Grades
+  </a>
+</nav>
+
+<!-- Gradebook Header & CSV Export -->
+<div class="card" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem;">
+  <div>
+    <h2 class="card-title" style="font-size: 1.25rem; color: #1e3a8a;">Course Gradebook Matrix</h2>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">
+      Full assessment breakdown for all enrolled students across assignments and exams.
+    </p>
+  </div>
+
+  <a href="{{ url_for('export_grades_csv', course_id=course.id) }}" class="btn btn-primary btn-sm">
+    📥 Export Gradebook (CSV)
+  </a>
+</div>
+
+<!-- Matrix Table -->
+<div class="card" style="padding: 0; overflow: hidden;">
+  {% if students and coursework_list %}
+    <div style="overflow-x: auto; max-height: 70vh;">
+      <table class="lms-table" style="margin: 0; min-width: 800px;">
+        <thead style="position: sticky; top: 0; z-index: 10;">
+          <tr>
+            <th style="min-width: 220px; background: #f8fafc;">Student Information</th>
+            {% for cw in coursework_list %}
+              <th style="text-align: center; min-width: 140px; background: #f8fafc;">
+                <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px;" title="{{ cw.title }}">
+                  {{ cw.title }}
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
+                  Out of {{ cw.points }} pts
+                </div>
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in students %}
+            <tr>
+              <td>
+                <div style="font-weight: 700; color: var(--text-main);">{{ s.display_name }}</div>
+                <div style="font-family: monospace; font-size: 0.78rem; color: var(--primary);">{{ s.roll_number or 'N/A' }}</div>
+              </td>
+
+              {% for cw in coursework_list %}
+                {% set sub = sub_map.get((s.id, cw.id)) %}
+                <td style="text-align: center; vertical-align: middle;">
+                  {% if sub %}
+                    {% if sub.grade is not none %}
+                      <span style="font-size: 1.05rem; font-weight: 800; color: #166534;">
+                        {{ sub.grade }}
+                      </span>
+                      <span style="font-size: 0.75rem; color: var(--text-muted);">/{{ cw.points }}</span>
+                    {% else %}
+                      <span class="badge badge-turned-in" style="font-size: 0.75rem;">
+                        Turned In
+                      </span>
+                    {% endif %}
+
+                    {% if sub.is_late %}
+                      <div style="font-size: 0.68rem; color: var(--warning); font-weight: 700; margin-top: 2px;">Late</div>
+                    {% endif %}
+                  {% else %}
+                    <span class="badge badge-missing" style="font-size: 0.75rem;">
+                      Missing
+                    </span>
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div style="text-align: center; padding: 3rem; color: var(--text-muted);">
+      <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📊</div>
+      <h3>Gradebook Empty</h3>
+      <p style="font-size: 0.88rem; margin-top: 0.25rem;">
+        Add coursework assignments and enroll students to populate the grading grid.
+      </p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

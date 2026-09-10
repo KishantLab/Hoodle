@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submission Receipt - {{ sub.roll_number }} - ACCLLMS</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/lms.css') }}">
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white; padding: 0; }
+      .receipt-card { box-shadow: none !important; border: 1px solid #000 !important; }
+    }
+  </style>
+</head>
+<body style="background: #f1f5f9; padding: 2rem 1rem;">
+
+  <div style="max-width: 680px; margin: 0 auto;">
+    <div class="no-print" style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+      <a href="javascript:history.back()" class="btn btn-secondary btn-sm">← Back</a>
+      <button onclick="window.print()" class="btn btn-primary btn-sm">🖨 Print / Save as PDF</button>
+    </div>
+
+    <div class="card receipt-card" style="padding: 2.5rem; background: white; border-radius: var(--radius-lg); position: relative;">
+      <!-- Header with IIT Bhilai Logo -->
+      <div style="text-align: center; border-bottom: 2px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 1.5rem;">
+        <img src="{{ url_for('static', filename='images/iitbhilai_logo.png') }}" alt="IIT Bhilai" style="height: 65px; margin-bottom: 0.5rem;">
+        <h2 style="font-size: 1.4rem; font-weight: 800; color: #1e3a8a;">Accelerated Computing Research Lab (ACCL)</h2>
+        <div style="font-size: 0.9rem; color: var(--text-muted); font-weight: 600;">Indian Institute of Technology Bhilai (IIT Bhilai)</div>
+        <div style="margin-top: 0.75rem; display: inline-block; background: #e0e7ff; color: #3730a3; padding: 0.35rem 1rem; border-radius: 9999px; font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">
+          Official Digital Submission Receipt
+        </div>
+      </div>
+
+      <!-- Receipt Fields -->
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.92rem; margin-bottom: 1.5rem;">
+        <tr>
+          <td style="padding: 0.6rem 0; color: var(--text-muted); width: 35%;">Course:</td>
+          <td style="padding: 0.6rem 0; font-weight: 700; color: var(--text-main);">{{ sub.course_code }} - {{ sub.course_title }}</td>
+        </tr>
+        <tr>
+          <td style="padding: 0.6rem 0; color: var(--text-muted);">Assessment Title:</td>
+          <td style="padding: 0.6rem 0; font-weight: 700; color: var(--text-main);">{{ sub.exam_title }}</td>
+        </tr>
+        <tr>
+          <td style="padding: 0.6rem 0; color: var(--text-muted);">Student Name:</td>
+          <td style="padding: 0.6rem 0; font-weight: 600;">{{ sub.student_name }}</td>
+        </tr>
+        <tr>
+          <td style="padding: 0.6rem 0; color: var(--text-muted);">Roll Number:</td>
+          <td style="padding: 0.6rem 0; font-family: monospace; font-size: 1.05rem; font-weight: 800; color: #1e3a8a;">{{ sub.roll_number }}</td>
+        </tr>
+        <tr>
+          <td style="padding: 0.6rem 0; color: var(--text-muted);">Lab Venue:</td>
+          <td style="padding: 0.6rem 0; font-weight: 600;">{{ sub.lab_name }}</td>
+        </tr>
+        <tr>
+          <td style="padding: 0.6rem 0; color: var(--text-muted);">Submission File:</td>
+          <td style="padding: 0.6rem 0; font-weight: 600; word-break: break-all;">{{ sub.original_filename }} ({{ sub.file_size | filesize }})</td>
+        </tr>
+        <tr>
+          <td style="padding: 0.6rem 0; color: var(--text-muted);">Submission Timestamp:</td>
+          <td style="padding: 0.6rem 0; font-weight: 600;">{{ sub.submitted_at | format_dt }}</td>
+        </tr>
+        <tr>
+          <td style="padding: 0.6rem 0; color: var(--text-muted);">Submission Version:</td>
+          <td style="padding: 0.6rem 0; font-weight: 600;">Version {{ sub.version }}</td>
+        </tr>
+        <tr>
+          <td style="padding: 0.6rem 0; color: var(--text-muted);">Timing Status:</td>
+          <td style="padding: 0.6rem 0; font-weight: 700;">
+            {% if sub.is_late %}
+              <span style="color: #dc2626;">⚠️ Late Submission (+{{ sub.late_minutes }} minutes)</span>
+            {% else %}
+              <span style="color: #16a34a;">✅ On Time (Verified)</span>
+            {% endif %}
+          </td>
+        </tr>
+      </table>
+
+      <!-- SHA-256 Checksum Card -->
+      <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.5rem;">
+        <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.35rem;">
+          Cryptographic Verification Hash (SHA-256):
+        </div>
+        <div style="font-family: monospace; font-size: 0.82rem; font-weight: 700; color: #0f172a; word-break: break-all; background: white; padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border);">
+          {{ sub.sha256 }}
+        </div>
+      </div>
+
+      <!-- Verification Token -->
+      <div style="border-top: 1px solid var(--border); padding-top: 1rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: var(--text-muted);">
+        <div>
+          <span>Receipt Token: </span>
+          <span style="font-family: monospace; font-weight: 700; color: var(--text-main);">{{ sub.receipt_token }}</span>
+        </div>
+        <div>System Verified • ACCLLMS Portal</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

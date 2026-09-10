@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}User Directory - ACCLLMS Admin{% endblock %}
+
+{% block content %}
+<div style="max-width: 1100px; margin: 0 auto;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <div>
+      <h1 style="font-size: 1.75rem; font-weight: 800; color: #1e3a8a;">System User Directory</h1>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">
+        Manage student and instructor accounts, role promotions, and credentials across ACCLLMS.
+      </p>
+    </div>
+  </div>
+
+  <div class="card" style="padding: 0; overflow: hidden;">
+    <div style="overflow-x: auto;">
+      <table class="lms-table" style="margin: 0;">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Roll / ID</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Storage Used</th>
+            <th>Enrolled</th>
+            <th>Joined</th>
+            <th>Management</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+            <tr>
+              <td>
+                <div style="font-weight: 700; color: var(--text-main);">{{ u.display_name }}</div>
+                <div style="font-size: 0.78rem; color: var(--text-muted);">@{{ u.username }}</div>
+              </td>
+              <td style="font-family: monospace; font-weight: 700; color: var(--primary);">
+                {{ u.roll_number or '-' }}
+              </td>
+              <td style="font-size: 0.85rem; color: var(--text-muted);">
+                {{ u.email or '-' }}
+              </td>
+              <td>
+                <form action="{{ url_for('admin_change_role', user_id=u.id) }}" method="POST" style="display: inline;">
+                  <select name="role" class="form-control" style="font-size: 0.8rem; padding: 0.25rem 0.5rem; width: auto;" onchange="this.form.submit()">
+                    <option value="student" {% if u.role == 'student' %}selected{% endif %}>Student</option>
+                    <option value="teacher" {% if u.role == 'teacher' %}selected{% endif %}>Teacher / TA</option>
+                    <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Administrator</option>
+                  </select>
+                </form>
+              </td>
+              <td style="font-size: 0.85rem; color: var(--text-muted);">
+                {{ u.locker_used_bytes | filesize }}
+              </td>
+              <td style="font-size: 0.85rem; color: var(--text-muted);">
+                {{ u.enrolled_courses_count }} courses
+              </td>
+              <td style="font-size: 0.82rem; color: var(--text-muted);">
+                {{ u.created_at | format_dt }}
+              </td>
+              <td>
+                <div style="display: flex; gap: 0.35rem; align-items: center;">
+                  <!-- Reset Password Form -->
+                  <form action="{{ url_for('admin_reset_password', user_id=u.id) }}" method="POST" style="display: flex; gap: 0.25rem;">
+                    <input type="password" name="new_password" placeholder="New pass" class="form-control" style="font-size: 0.75rem; padding: 0.25rem 0.4rem; width: 85px;" required>
+                    <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 0.72rem; padding: 0.25rem 0.5rem;">Reset</button>
+                  </form>
+
+                  {% if u.id != current_user.id %}
+                    <form action="{{ url_for('admin_delete_user', user_id=u.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete user account @{{ u.username }}? This action cannot be undone.');">
+                      <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger); font-size: 0.72rem; padding: 0.25rem 0.5rem;" title="Delete User">
+                        🗑
+                      </button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course.code }} Stream - ACCLLMS{% endblock %}
+
+{% block content %}
+<!-- Google Classroom Course Header Banner -->
+<div class="course-banner banner-{{ course.theme_color }}">
+  <h1>{{ course.code }}: {{ course.title }}</h1>
+  <div class="course-subtitle">{{ course.section or 'Section A' }}</div>
+  <div class="course-meta">
+    <span>👨‍🏫 {{ course.teacher_name }}</span>
+    <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')" title="Click to copy class code">
+      <span>Class Code:</span>
+      <strong>{{ course.join_code }}</strong>
+      <span>📋</span>
+    </div>
+  </div>
+</div>
+
+<!-- Course Tabs Navigation -->
+<nav class="course-tabs-nav">
+  <a href="{{ url_for('course_stream', course_id=course.id) }}" class="course-tab active">
+    📢 Stream
+  </a>
+  <a href="{{ url_for('course_classwork', course_id=course.id) }}" class="course-tab">
+    📝 Classwork
+  </a>
+  <a href="{{ url_for('course_people', course_id=course.id) }}" class="course-tab">
+    👥 People
+  </a>
+  {% if current_user.role in ('teacher', 'admin') %}
+    <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
+      📊 Grades
+    </a>
+  {% endif %}
+</nav>
+
+<div style="display: grid; grid-template-columns: 260px 1fr; gap: 1.5rem;">
+  <!-- Left Column: Course Quick Info -->
+  <div>
+    <div class="card" style="padding: 1.25rem;">
+      <h3 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 0.75rem; color: var(--text-main);">
+        Class Code
+      </h3>
+      <div style="background: #f1f5f9; padding: 0.75rem; border-radius: var(--radius-md); text-align: center; font-family: monospace; font-size: 1.25rem; font-weight: 700; color: var(--primary); letter-spacing: 0.08em; border: 1px dashed var(--border);">
+        {{ course.join_code }}
+      </div>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">
+        Share this code with students to allow them to self-enroll.
+      </p>
+    </div>
+
+    <div class="card" style="padding: 1.25rem;">
+      <h3 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 0.5rem; color: var(--text-main);">
+        Course Description
+      </h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
+        {{ course.description or 'No syllabus description provided.' }}
+      </p>
+    </div>
+  </div>
+
+  <!-- Right Column: Announcements Feed -->
+  <div>
+    <!-- Announcement Composer -->
+    <div class="card" style="padding: 1.25rem;">
+      <form action="{{ url_for('post_announcement', course_id=course.id) }}" method="POST" enctype="multipart/form-data">
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <textarea name="content" rows="3" class="form-control" placeholder="Announce something to your class..." required style="resize: vertical;"></textarea>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <label style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-muted); cursor: pointer;">
+            <span>📎 Attach File:</span>
+            <input type="file" name="attachment" style="font-size: 0.8rem;">
+          </label>
+          <button type="submit" class="btn btn-primary btn-sm">
+            Post Announcement
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Feed Items -->
+    {% if announcements %}
+      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        {% for ann in announcements %}
+          <div class="card" style="padding: 1.5rem; {% if ann.is_pinned %}border-left: 4px solid var(--primary);{% endif %}">
+            <!-- Author Header -->
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <div style="width: 40px; height: 40px; border-radius: 50%; background: #e0e7ff; color: #3730a3; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.1rem;">
+                  {{ ann.author_name[0] | upper }}
+                </div>
+                <div>
+                  <div style="font-weight: 700; font-size: 0.95rem;">
+                    {{ ann.author_name }}
+                    {% if ann.author_role in ('teacher', 'admin') %}
+                      <span class="role-badge role-teacher" style="margin-left: 0.25rem;">Instructor</span>
+                    {% endif %}
+                  </div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">
+                    {{ ann.created_at | format_dt }}
+                    {% if ann.is_pinned %}
+                      • <span style="color: var(--primary); font-weight: 700;">📌 Pinned</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Pin & Delete Controls -->
+              <div style="display: flex; gap: 0.35rem;">
+                {% if current_user.role in ('teacher', 'admin') %}
+                  <form action="{{ url_for('toggle_pin_announcement', announcement_id=ann.id) }}" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-secondary btn-sm" title="{% if ann.is_pinned %}Unpin{% else %}Pin to Top{% endif %}">
+                      {% if ann.is_pinned %}Unpin{% else %}📌 Pin{% endif %}
+                    </button>
+                  </form>
+                {% endif %}
+
+                {% if ann.user_id == current_user.id or current_user.role in ('teacher', 'admin') %}
+                  <form action="{{ url_for('delete_announcement', announcement_id=ann.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete this announcement?');">
+                    <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger);" title="Delete Announcement">
+                      🗑
+                    </button>
+                  </form>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Content -->
+            <div style="font-size: 0.92rem; line-height: 1.5; color: var(--text-main); white-space: pre-wrap; margin-bottom: 1rem;">
+              {{ ann.content | nl2br }}
+            </div>
+
+            <!-- Attachment File -->
+            {% if ann.attachment_name %}
+              <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 600;">
+                  <span>📄</span>
+                  <span>{{ ann.attachment_name }}</span>
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">({{ ann.attachment_size | filesize }})</span>
+                </div>
+                <a href="{{ url_for('download_attachment', att_id=ann.id) }}" class="btn btn-secondary btn-sm">
+                  Download
+                </a>
+              </div>
+            {% endif %}
+
+            <!-- Comment Section -->
+            <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+              {% if ann.comments %}
+                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
+                  {% for cm in ann.comments %}
+                    <div style="display: flex; gap: 0.6rem; font-size: 0.85rem;">
+                      <div style="width: 28px; height: 28px; border-radius: 50%; background: #e2e8f0; color: #475569; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.75rem; flex-shrink: 0;">
+                        {{ cm.display_name[0] | upper }}
+                      </div>
+                      <div style="background: #f8fafc; border-radius: 8px; padding: 0.5rem 0.75rem; flex: 1;">
+                        <div style="font-weight: 700; font-size: 0.8rem; margin-bottom: 0.15rem;">
+                          {{ cm.display_name }}
+                          <span style="font-weight: normal; color: var(--text-muted); font-size: 0.72rem;">• {{ cm.created_at | format_dt }}</span>
+                        </div>
+                        <div style="color: var(--text-main); line-height: 1.3;">{{ cm.content }}</div>
+                      </div>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+
+              <!-- Add Comment Input -->
+              <form action="{{ url_for('add_announcement_comment', announcement_id=ann.id) }}" method="POST" style="display: flex; gap: 0.5rem;">
+                <input type="text" name="content" class="form-control" placeholder="Add class comment..." style="font-size: 0.85rem; padding: 0.45rem 0.75rem;" required>
+                <button type="submit" class="btn btn-secondary btn-sm">Post</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="card" style="text-align: center; padding: 3rem 1rem;">
+        <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">📢</div>
+        <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem;">Course Stream is Quiet</h3>
+        <p style="color: var(--text-muted); font-size: 0.88rem;">
+          No announcements have been shared yet. Use the composer above to post updates to the class.
+        </p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

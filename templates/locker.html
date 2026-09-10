@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}My Private Locker - ACCLLMS{% endblock %}
+
+{% block content %}
+<div style="max-width: 1050px; margin: 0 auto;">
+  <!-- Header -->
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.75rem;">
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span style="font-size: 1.75rem;">🔒</span>
+        <h1 style="font-size: 1.75rem; font-weight: 800; color: #1e3a8a;">Student Private Locker</h1>
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
+        Your isolated personal cloud storage. Store code snippets, lecture notes, datasets, and drafts. Attach files directly to course assignments!
+      </p>
+    </div>
+
+    {% if files %}
+      <a href="{{ url_for('locker_download_all') }}" class="btn btn-secondary btn-sm">
+        📦 Download All as ZIP
+      </a>
+    {% endif %}
+  </div>
+
+  <!-- Storage Meter Card -->
+  <div class="card" style="padding: 1.5rem; margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+      <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main);">
+        Personal Storage Quota
+      </div>
+      <div style="font-size: 0.85rem; font-weight: 600; color: {% if stats.percent > 90 %}var(--danger){% else %}var(--text-muted){% endif %};">
+        {{ stats.used_formatted }} of {{ stats.quota_formatted }} used ({{ stats.percent }}%)
+      </div>
+    </div>
+
+    <div class="quota-bar-wrapper" style="height: 10px;">
+      <div class="quota-bar-fill" style="width: {{ stats.percent }}%; background: {% if stats.percent > 90 %}var(--danger){% elif stats.percent > 75 %}var(--warning){% else %}var(--primary){% endif %};"></div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.4rem;">
+      <span>{{ stats.file_count }} file(s) stored</span>
+      <span>Isolated per-student storage on local server</span>
+    </div>
+  </div>
+
+  <!-- Upload Area -->
+  <div class="card" style="padding: 1.75rem; margin-bottom: 2rem;">
+    <h3 class="card-title" style="font-size: 1.1rem; margin-bottom: 0.75rem;">Upload Files to Your Locker</h3>
+    <form action="{{ url_for('locker_upload') }}" method="POST" enctype="multipart/form-data" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+      <input type="file" name="files" multiple class="form-control" style="flex: 1; min-width: 250px; font-size: 0.88rem;" required>
+      <button type="submit" class="btn btn-primary" style="padding: 0.65rem 1.25rem;">
+        ⬆️ Upload to Private Locker
+      </button>
+    </form>
+    <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem;">
+      Supports source code (.c, .cpp, .cu, .py, .sh), archives (.zip), PDF documents, text files, and datasets.
+    </p>
+  </div>
+
+  <!-- Files Table -->
+  <div class="card" style="padding: 0; overflow: hidden;">
+    <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+      <h3 style="font-size: 1.15rem; font-weight: 700; color: var(--text-main);">My Stored Files</h3>
+      <span style="font-size: 0.85rem; color: var(--text-muted);">{{ files | length }} File(s)</span>
+    </div>
+
+    {% if files %}
+      <div style="overflow-x: auto;">
+        <table class="lms-table" style="margin: 0;">
+          <thead>
+            <tr>
+              <th>File Name</th>
+              <th>Size</th>
+              <th>Uploaded Date</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in files %}
+              <tr>
+                <td>
+                  <div style="display: flex; align-items: center; gap: 0.6rem;">
+                    <span style="font-size: 1.2rem;">
+                      {% if f.original_filename.endswith('.c') or f.original_filename.endswith('.cpp') or f.original_filename.endswith('.cu') %}
+                        💻
+                      {% elif f.original_filename.endswith('.py') %}
+                        🐍
+                      {% elif f.original_filename.endswith('.zip') %}
+                        📦
+                      {% elif f.original_filename.endswith('.pdf') %}
+                        📕
+                      {% else %}
+                        📄
+                      {% endif %}
+                    </span>
+                    <span style="font-weight: 600; color: var(--text-main);">
+                      {{ f.original_filename }}
+                    </span>
+                  </div>
+                </td>
+                <td style="color: var(--text-muted); font-size: 0.85rem;">
+                  {{ f.file_size | filesize }}
+                </td>
+                <td style="color: var(--text-muted); font-size: 0.85rem;">
+                  {{ f.uploaded_at | format_dt }}
+                </td>
+                <td style="text-align: right;">
+                  <div style="display: inline-flex; gap: 0.4rem;">
+                    <button class="btn btn-secondary btn-sm" onclick="previewLockerFile({{ f.id }})" title="View Code / Text Preview">
+                      👁 Preview
+                    </button>
+                    <a href="{{ url_for('locker_download', file_id=f.id) }}" class="btn btn-secondary btn-sm" title="Download File">
+                      ⬇️ Download
+                    </a>
+                    <form action="{{ url_for('locker_delete', file_id=f.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete {{ f.original_filename }} from your locker?');">
+                      <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger);" title="Delete File">
+                        🗑
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div style="text-align: center; padding: 3.5rem 1rem; color: var(--text-muted);">
+        <div style="font-size: 3rem; margin-bottom: 0.5rem;">📁</div>
+        <h3 style="font-size: 1.15rem; font-weight: 700;">Your Locker is Empty</h3>
+        <p style="font-size: 0.88rem; max-width: 400px; margin: 0.25rem auto 0;">
+          Upload your files above to access them anywhere in the lab and attach them to your assignments in one click.
+        </p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

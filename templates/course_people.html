@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course.code }} People - ACCLLMS{% endblock %}
+
+{% block content %}
+<!-- Google Classroom Course Header Banner -->
+<div class="course-banner banner-{{ course.theme_color }}">
+  <h1>{{ course.code }}: {{ course.title }}</h1>
+  <div class="course-subtitle">{{ course.section or 'Section A' }}</div>
+  <div class="course-meta">
+    <span>👨‍🏫 {{ course.teacher_name }}</span>
+    <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')">
+      <span>Class Code:</span>
+      <strong>{{ course.join_code }}</strong>
+      <span>📋</span>
+    </div>
+  </div>
+</div>
+
+<!-- Course Tabs Navigation -->
+<nav class="course-tabs-nav">
+  <a href="{{ url_for('course_stream', course_id=course.id) }}" class="course-tab">
+    📢 Stream
+  </a>
+  <a href="{{ url_for('course_classwork', course_id=course.id) }}" class="course-tab">
+    📝 Classwork
+  </a>
+  <a href="{{ url_for('course_people', course_id=course.id) }}" class="course-tab active">
+    👥 People
+  </a>
+  {% if current_user.role in ('teacher', 'admin') %}
+    <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
+      📊 Grades
+    </a>
+  {% endif %}
+</nav>
+
+<div style="max-width: 900px; margin: 0 auto;">
+  <!-- Class Code Card -->
+  <div class="card" style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem; margin-bottom: 2rem;">
+    <div>
+      <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+        Class Invitation Code
+      </div>
+      <div style="font-size: 1.5rem; font-weight: 800; color: var(--primary); font-family: monospace; letter-spacing: 0.08em; margin-top: 0.2rem;">
+        {{ course.join_code }}
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 0.5rem;">
+      <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('{{ course.join_code }}', this, 'Copied!')">
+        📋 Copy Code
+      </button>
+      {% if current_user.role in ('teacher', 'admin') %}
+        <form action="{{ url_for('reset_join_code', course_id=course.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Generate a new class code? Existing enrolled students will not be affected.');">
+          <button type="submit" class="btn btn-secondary btn-sm" title="Generate new code">
+            🔄 Reset Code
+          </button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Teachers Section -->
+  <div class="card" style="margin-bottom: 2rem;">
+    <div class="card-header">
+      <h2 class="card-title" style="font-size: 1.25rem; color: #1e3a8a;">Instructors & Faculty</h2>
+      <span style="font-size: 0.85rem; color: var(--text-muted);">{{ teachers | length }} Instructor(s)</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+      {% for t in teachers %}
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+          <div style="display: flex; align-items: center; gap: 0.85rem;">
+            <div style="width: 38px; height: 38px; border-radius: 50%; background: #dcfce7; color: #15803d; display: flex; align-items: center; justify-content: center; font-weight: 700;">
+              {{ t.display_name[0] | upper }}
+            </div>
+            <div>
+              <div style="font-weight: 700; font-size: 0.95rem;">{{ t.display_name }}</div>
+              <div style="font-size: 0.8rem; color: var(--text-muted);">{{ t.email }}</div>
+            </div>
+          </div>
+          <span class="role-badge role-teacher">{{ t.role }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Students Section -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title" style="font-size: 1.25rem; color: #1e3a8a;">Enrolled Students</h2>
+      <span style="font-size: 0.85rem; color: var(--text-muted);">{{ students | length }} Student(s)</span>
+    </div>
+
+    {% if students %}
+      <div style="overflow-x: auto;">
+        <table class="lms-table">
+          <thead>
+            <tr>
+              <th>Roll Number</th>
+              <th>Student Name</th>
+              <th>Email</th>
+              <th>Enrolled Date</th>
+              <th>Turned In</th>
+              {% if current_user.role in ('teacher', 'admin') %}
+                <th>Actions</th>
+              {% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in students %}
+              <tr>
+                <td style="font-family: monospace; font-weight: 700; color: #1e3a8a;">{{ s.roll_number or '-' }}</td>
+                <td style="font-weight: 600;">{{ s.display_name }}</td>
+                <td style="color: var(--text-muted); font-size: 0.85rem;">{{ s.email }}</td>
+                <td style="color: var(--text-muted); font-size: 0.85rem;">{{ s.enrolled_at | format_dt }}</td>
+                <td>
+                  <span class="badge badge-turned-in">{{ s.submissions_count }} submissions</span>
+                </td>
+                {% if current_user.role in ('teacher', 'admin') %}
+                  <td>
+                    <form action="{{ url_for('remove_student', course_id=course.id, target_user_id=s.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove {{ s.display_name }} from course roster?');">
+                      <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger);" title="Remove Student">
+                        Remove
+                      </button>
+                    </form>
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted);">
+        <div style="font-size: 2rem; margin-bottom: 0.5rem;">👨‍🎓</div>
+        <p>No students have joined this course yet.</p>
+        <p style="font-size: 0.82rem; margin-top: 0.25rem;">Share Class Code <strong>{{ course.join_code }}</strong> with students to enroll.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
