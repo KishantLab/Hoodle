@@ -568,7 +568,8 @@ def enforce_exam_lockdown():
     # Whitelisted endpoints during exam mode
     endpoint = request.endpoint or ""
     allowed_endpoints = {
-        "exam_view", "exam_submit", "exam_receipt", "logout", "static", "login"
+        "exam_view", "exam_submit", "exam_receipt", "logout", "static", "login",
+        "attend_scan_landing", "attend_submit"
     }
 
     if endpoint in allowed_endpoints:
