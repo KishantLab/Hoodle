@@ -6,14 +6,20 @@
     <title>Instructor Dashboard - Lab Exam Portal</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
+        /* Dedicated Admin Page Styling - Clean, professional, no awkward half-blue banner */
+        body.admin-body {
+            background-color: #f1f5f9;
+            padding: 1.5rem 1rem;
+            display: block;
+        }
         .admin-nav {
             display: flex;
             justify-content: space-between;
             align-items: center;
             background: white;
             padding: 1rem 1.75rem;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border-radius: 14px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.04);
             margin-bottom: 2rem;
             border: 1px solid var(--border-color);
         }
@@ -50,7 +56,8 @@
             color: #334155;
         }
         .btn-outline:hover {
-            background: #f1f5f9;
+            background: #f8fafc;
+            border-color: #cbd5e1;
         }
         .btn-primary-sm {
             background: var(--primary);
@@ -68,7 +75,7 @@
         .btn-danger:hover {
             background: #fecaca;
         }
-        /* Top Action Bar */
+        /* Action Bar */
         .action-bar {
             display: flex;
             justify-content: space-between;
@@ -76,11 +83,16 @@
             flex-wrap: wrap;
             gap: 1rem;
             margin-bottom: 1.5rem;
+            background: white;
+            padding: 1.5rem 1.75rem;
+            border-radius: 14px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.03);
         }
-        /* Courses Grid View (Clean Dashboard Home) */
+        /* Courses Grid */
         .courses-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
             gap: 1.5rem;
             margin-bottom: 2.5rem;
         }
@@ -99,9 +111,6 @@
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(0,0,0,0.08);
             border-color: #cbd5e1;
-        }
-        .card-top {
-            margin-bottom: 1.25rem;
         }
         .course-code-badge {
             display: inline-block;
@@ -131,34 +140,31 @@
             padding: 0.75rem 1rem;
             border-radius: 8px;
             font-size: 0.85rem;
-            margin-bottom: 1.25rem;
+            margin-bottom: 1rem;
         }
         .short-link-box {
             background: #f1f5f9;
             padding: 0.5rem 0.75rem;
             border-radius: 6px;
             font-family: monospace;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             color: #1e40af;
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 1rem;
         }
-        .card-actions {
-            display: flex;
-            gap: 0.5rem;
-        }
         .btn-view {
-            flex: 1;
+            width: 100%;
             background: var(--primary);
             color: white;
             text-align: center;
-            padding: 0.65rem;
+            padding: 0.75rem;
             border-radius: 8px;
             font-weight: 600;
             font-size: 0.9rem;
             text-decoration: none;
+            display: block;
             transition: background 0.2s;
         }
         .btn-view:hover {
@@ -170,7 +176,7 @@
             border-radius: 14px;
             border: 1px solid var(--border-color);
             padding: 2rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.04);
             margin-bottom: 2rem;
         }
         .back-link {
@@ -208,6 +214,30 @@
             flex-wrap: wrap;
             gap: 1rem;
         }
+        /* Lab Filter Pills */
+        .lab-pills-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 1.25rem;
+        }
+        .lab-pill {
+            background: #f1f5f9;
+            color: #334155;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 0.35rem 0.75rem;
+            border-radius: 20px;
+            cursor: pointer;
+            border: 1px solid #e2e8f0;
+            transition: all 0.2s;
+        }
+        .lab-pill:hover, .lab-pill.active {
+            background: #dbeafe;
+            color: #1e40af;
+            border-color: #93c5fd;
+        }
         .table-responsive {
             overflow-x: auto;
             border: 1px solid #e2e8f0;
@@ -220,7 +250,7 @@
             text-align: left;
         }
         th, td {
-            padding: 0.9rem 1.1rem;
+            padding: 0.85rem 1.1rem;
             border-bottom: 1px solid #f1f5f9;
         }
         th {
@@ -235,7 +265,17 @@
             font-family: monospace;
             font-weight: 700;
             color: #1e40af;
-            font-size: 1rem;
+            font-size: 0.95rem;
+        }
+        .lab-tag {
+            background: #f0fdfa;
+            color: #0d9488;
+            border: 1px solid #ccfbf1;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.2rem 0.55rem;
+            border-radius: 6px;
+            white-space: nowrap;
         }
         /* Modals */
         .modal {
@@ -271,10 +311,9 @@
         }
     </style>
 </head>
-<body>
-    <div class="background-decor"></div>
+<body class="admin-body">
     <main class="container" style="max-width: 1200px;">
-        <!-- Top Navigation Bar with IIT Bhilai Logo -->
+        <!-- Top Navigation Bar -->
         <nav class="admin-nav">
             <div class="nav-branding">
                 <img src="{{ url_for('static', filename='images/iitbhilai_logo.png') }}" alt="IIT Bhilai" class="nav-logo">
@@ -284,9 +323,15 @@
                 </div>
             </div>
             <div class="nav-user">
-                <span style="font-size: 0.9rem; font-weight: 600; color: #334155;">👤 {{ display_name }}</span>
-                <button type="button" class="btn-sm btn-outline" onclick="openModal('teachersModal')">👥 Teachers</button>
-                <button type="button" class="btn-sm btn-outline" onclick="openModal('passwordModal')">🔑 Password</button>
+                <span style="font-size: 0.9rem; font-weight: 600; color: #334155;">
+                    👤 {{ display_name }} {% if is_admin %}<span style="font-size: 0.75rem; background: #e0e7ff; color: #3730a3; padding: 0.15rem 0.4rem; border-radius: 4px;">Admin</span>{% endif %}
+                </span>
+                
+                {% if is_admin %}
+                <button type="button" class="btn-sm btn-outline" onclick="openModal('teachersModal')">👥 Manage Teachers</button>
+                {% endif %}
+                
+                <button type="button" class="btn-sm btn-outline" onclick="openModal('passwordModal')">🔑 Change Password</button>
                 <a href="{{ url_for('logout') }}" class="btn-sm btn-danger">Log Out</a>
             </div>
         </nav>
@@ -308,13 +353,10 @@
         <!-- ============================================== -->
         <div class="action-bar">
             <div>
-                <h1 style="font-size: 1.7rem; color: #0f172a; margin-bottom: 0.25rem;">Course Examinations</h1>
-                <p style="color: #64748b; font-size: 0.95rem;">Select any course to view submissions and download exam files</p>
+                <h1 style="font-size: 1.6rem; color: #0f172a; margin-bottom: 0.25rem;">Course Examinations</h1>
+                <p style="color: #64748b; font-size: 0.95rem; margin: 0;">Select any course to view student submissions and download exam files</p>
             </div>
             <div style="display: flex; gap: 0.75rem;">
-                <button type="button" class="btn-sm btn-outline" onclick="openModal('teachersModal')">
-                    + Add New Teacher
-                </button>
                 <button type="button" class="btn-sm btn-primary-sm" onclick="openModal('createExamModal')">
                     + Create New Exam
                 </button>
@@ -356,9 +398,9 @@
                 </div>
             </div>
             {% else %}
-            <div style="grid-column: 1/-1; background: white; padding: 4rem 1rem; text-align: center; border-radius: 12px; border: 1px dashed #cbd5e1;">
-                <h3>No Course Exams Created Yet</h3>
-                <p style="color: #64748b; margin-top: 0.5rem; margin-bottom: 1.5rem;">Create your first course exam to share with students.</p>
+            <div style="grid-column: 1/-1; background: white; padding: 4rem 1rem; text-align: center; border-radius: 14px; border: 1px dashed #cbd5e1;">
+                <h3 style="color: #0f172a; margin-bottom: 0.5rem;">No Course Exams Found</h3>
+                <p style="color: #64748b; margin-bottom: 1.5rem;">Click below to create your course exam submission page.</p>
                 <button type="button" class="btn-submit" style="width: auto; padding: 0.75rem 1.5rem;" onclick="openModal('createExamModal')">
                     + Create Course Exam
                 </button>
@@ -397,6 +439,13 @@
                     <a href="admin/exam/{{ current_exam.id }}/download-all" class="btn-submit" style="text-decoration: none; width: auto; padding: 0.7rem 1.4rem; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 0.5rem;">
                         📥 Download All (.ZIP)
                     </a>
+
+                    <!-- Delete Course Button -->
+                    <form method="POST" action="admin/exams/{{ current_exam.id }}/delete" style="margin: 0;" onsubmit="return confirm('⚠️ WARNING: This will permanently delete this course and ALL its submitted files from the server. This cannot be undone!\n\nAre you sure you want to delete?');">
+                        <button type="submit" class="btn-sm btn-danger" title="Permanently delete this exam and its files from the server">
+                            🗑 Delete Course
+                        </button>
+                    </form>
                 </div>
             </div>
 
@@ -404,7 +453,7 @@
             <div class="share-banner">
                 <div>
                     <span style="font-size: 0.75rem; font-weight: 700; color: #475569; text-transform: uppercase;">Direct Student Submission Link (Short & Easy to Type):</span>
-                    <div style="font-family: monospace; font-size: 1rem; color: #1e40af; font-weight: 600; margin-top: 0.25rem;" id="studentShortLink">
+                    <div style="font-family: monospace; font-size: 1.05rem; color: #1e40af; font-weight: 700; margin-top: 0.25rem;" id="studentShortLink">
                         {{ request.host_url.rstrip('/') }}{{ url_for('short_exam_page', identifier=current_exam.slug) }}
                     </div>
                 </div>
@@ -418,13 +467,23 @@
                 </div>
             </div>
 
-            <!-- Submissions Table Header -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem;">
-                <div>
-                    <h3 style="font-size: 1.2rem; color: #0f172a; margin: 0;">Student Submissions ({{ submissions|length }})</h3>
-                    <span style="font-size: 0.8rem; color: #64748b;">Stored in: <code>submissions/{{ current_exam.folder_name }}/</code></span>
+            <!-- Lab Venues Breakdown & Filter Bar -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+                <div class="lab-pills-bar">
+                    <span style="font-size: 0.8rem; font-weight: 700; color: #475569; text-transform: uppercase;">Filter by Lab:</span>
+                    <button type="button" class="lab-pill active" onclick="setLabFilter('ALL', this)">
+                        All Labs ({{ submissions|length }})
+                    </button>
+                    {% for lab, count in lab_counts.items() %}
+                    <button type="button" class="lab-pill" onclick="setLabFilter('{{ lab }}', this)">
+                        {{ lab }} ({{ count }})
+                    </button>
+                    {% endfor %}
                 </div>
-                <input type="text" id="tableSearch" placeholder="Search Roll Number..." onkeyup="filterSubmissions()" style="width: 220px; padding: 0.5rem 0.85rem; font-size: 0.85rem; border: 1px solid #cbd5e1; border-radius: 8px;">
+
+                <div>
+                    <input type="text" id="tableSearch" placeholder="Search Roll Number..." onkeyup="filterSubmissions()" style="width: 220px; padding: 0.5rem 0.85rem; font-size: 0.85rem; border: 1px solid #cbd5e1; border-radius: 8px;">
+                </div>
             </div>
 
             <!-- Submissions Table -->
@@ -434,6 +493,7 @@
                         <tr>
                             <th>#</th>
                             <th>Roll Number</th>
+                            <th>Lab Venue</th>
                             <th>Submitted File</th>
                             <th>Size</th>
                             <th>Submission Time</th>
@@ -443,9 +503,10 @@
                     </thead>
                     <tbody>
                         {% for s in submissions %}
-                        <tr>
+                        <tr data-lab="{{ s.lab_name or 'Lab 1' }}">
                             <td>{{ loop.index }}</td>
                             <td><span class="roll-badge">{{ s.roll_number }}</span></td>
+                            <td><span class="lab-tag">{{ s.lab_name or 'Lab 1' }}</span></td>
                             <td>
                                 <span style="font-weight: 600; color: #1e293b;">{{ s.stored_filename }}</span>
                                 <div style="font-size: 0.75rem; color: #94a3b8;">Orig: {{ s.original_filename }}</div>
@@ -462,7 +523,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="7" style="text-align: center; padding: 3.5rem; color: #94a3b8;">
+                            <td colspan="8" style="text-align: center; padding: 3.5rem; color: #94a3b8;">
                                 No student submissions received for this exam yet.
                             </td>
                         </tr>
@@ -519,6 +580,13 @@
                     <input type="text" id="teacherName" name="teacher_name" value="{{ display_name }}" style="text-transform: none;">
                 </div>
 
+                <!-- Multi-Lab Configuration -->
+                <div class="form-group">
+                    <label for="labs"><span class="label-title">Participating Computer Labs / Venues</span></label>
+                    <input type="text" id="labs" name="labs" value="Lab 1, Lab 2, Lab 3" placeholder="e.g. Lab 1, Lab 2, CC-101" style="text-transform: none;">
+                    <span style="font-size: 0.75rem; color: #64748b;">Comma-separated list of labs. Students will select their lab when submitting.</span>
+                </div>
+
                 <div class="form-group">
                     <label for="instructions"><span class="label-title">Exam Instructions for Students</span></label>
                     <textarea id="instructions" name="instructions" rows="3" placeholder="e.g. Submit all files in a single .zip file. Ensure your code compiles without errors." style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--radius-md); font-family: inherit; font-size: 0.9rem;"></textarea>
@@ -553,11 +621,12 @@
         </div>
     </div>
 
-    <!-- Modal: Manage Teachers / Add Teacher -->
+    {% if is_admin %}
+    <!-- Modal: Manage Teachers (Admin Only) -->
     <div class="modal" id="teachersModal">
         <div class="modal-card" style="max-width: 520px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
-                <h2 style="font-size: 1.35rem; color: #0f172a; margin: 0;">Teacher Accounts</h2>
+                <h2 style="font-size: 1.35rem; color: #0f172a; margin: 0;">Teacher Accounts (Admin Only)</h2>
                 <button type="button" onclick="closeModal('teachersModal')" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">✕</button>
             </div>
 
@@ -584,7 +653,7 @@
             </div>
 
             <!-- Existing Teachers List -->
-            <h4 style="font-size: 0.9rem; color: #475569; margin-bottom: 0.5rem;">Existing Instructors ({{ teachers|length }})</h4>
+            <h4 style="font-size: 0.9rem; color: #475569; margin-bottom: 0.5rem;">Registered Instructors ({{ teachers|length }})</h4>
             <div style="max-height: 180px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
                 <table style="font-size: 0.85rem;">
                     <thead>
@@ -607,6 +676,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <!-- Modal: Change Password -->
     <div class="modal" id="passwordModal">
@@ -641,11 +711,15 @@
     </div>
 
     <script>
+        let currentLabFilter = 'ALL';
+
         function openModal(id) {
-            document.getElementById(id).classList.add('open');
+            const m = document.getElementById(id);
+            if (m) m.classList.add('open');
         }
         function closeModal(id) {
-            document.getElementById(id).classList.remove('open');
+            const m = document.getElementById(id);
+            if (m) m.classList.remove('open');
         }
 
         function copyShortLink(linkText) {
@@ -657,13 +731,28 @@
             });
         }
 
+        function setLabFilter(lab, btn) {
+            currentLabFilter = lab;
+            document.querySelectorAll('.lab-pill').forEach(p => p.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+            filterSubmissions();
+        }
+
         function filterSubmissions() {
             const q = document.getElementById('tableSearch').value.toUpperCase();
             const rows = document.querySelectorAll('#subTable tbody tr');
             rows.forEach(r => {
                 const rollCell = r.children[1];
-                if (rollCell) {
-                    r.style.display = rollCell.textContent.toUpperCase().indexOf(q) > -1 ? '' : 'none';
+                const labAttr = r.getAttribute('data-lab') || '';
+                if (!rollCell) return;
+
+                const matchesRoll = rollCell.textContent.toUpperCase().indexOf(q) > -1;
+                const matchesLab = (currentLabFilter === 'ALL') || (labAttr === currentLabFilter);
+
+                if (matchesRoll && matchesLab) {
+                    r.style.display = '';
+                } else {
+                    r.style.display = 'none';
                 }
             });
         }

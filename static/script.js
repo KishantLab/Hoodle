@@ -2,6 +2,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const form = document.getElementById("submissionForm");
     const rollInput = document.getElementById("rollNumber");
     const rollStatusTip = document.getElementById("rollStatusTip");
+    const labSelect = document.getElementById("labName");
     const dropZone = document.getElementById("dropZone");
     const fileInput = document.getElementById("examFile");
     const btnBrowse = document.getElementById("btnBrowse");
@@ -64,12 +65,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function checkPriorSubmission(roll) {
         try {
-            const res = await fetch(`exam/${encodeURIComponent(examSlug)}/status/${encodeURIComponent(roll)}`);
+            const res = await fetch(`${encodeURIComponent(examSlug)}/status/${encodeURIComponent(roll)}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.has_submitted) {
+                    if (data.lab_name && labSelect) {
+                        labSelect.value = data.lab_name;
+                    }
                     if (examConfig.allowMultiple) {
-                        rollStatusTip.innerHTML = `ℹ️ Previous submission found (<strong>v${data.version}</strong> at ${data.submitted_at}). Uploading again will update your active latest file.`;
+                        rollStatusTip.innerHTML = `ℹ️ Prior submission recorded at ${data.submitted_at} (${data.lab_name || 'Lab'}). Submitting again will replace your active latest file.`;
                         rollStatusTip.style.color = "#b45309";
                         btnSubmit.disabled = false;
                     } else {
@@ -84,7 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             }
         } catch (err) {
-            // Ignore background network glitch
+            // Ignore network check failure
         }
     }
 
@@ -200,10 +204,13 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        const labName = labSelect ? labSelect.value : "Lab 1";
+
         // Prepare FormData
         const formData = new FormData();
         formData.append("roll_number", roll);
         formData.append("exam_file", file);
+        formData.append("lab_name", labName);
 
         // UI State: Uploading
         btnSubmit.disabled = true;
@@ -214,7 +221,7 @@ document.addEventListener("DOMContentLoaded", () => {
         progressText.textContent = "Uploading... 0%";
 
         const xhr = new XMLHttpRequest();
-        xhr.open("POST", `exam/${encodeURIComponent(examSlug)}/submit`, true);
+        xhr.open("POST", `${encodeURIComponent(examSlug)}/submit`, true);
 
         xhr.upload.onprogress = (event) => {
             if (event.lengthComputable) {
@@ -261,10 +268,13 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("receiptSize").textContent = details.file_size;
         document.getElementById("receiptTime").textContent = details.submitted_at;
         document.getElementById("receiptHash").textContent = details.sha256;
+        if (document.getElementById("receiptLab")) {
+            document.getElementById("receiptLab").textContent = details.lab_name || "Lab 1";
+        }
 
         const subtitle = document.getElementById("receiptSubtitle");
         if (details.is_update) {
-            subtitle.innerHTML = `Your updated submission (Attempt #${details.version}) was received. Your active latest file has been updated.`;
+            subtitle.innerHTML = `Your updated submission was received. Your active latest file has been replaced and saved.`;
         } else {
             subtitle.textContent = "Your exam file has been successfully uploaded and recorded.";
         }

@@ -100,6 +100,19 @@
                     <div class="status-tip" id="rollStatusTip"></div>
                 </div>
 
+                <!-- Exam Lab / Venue Selection -->
+                <div class="form-group">
+                    <label for="labName">
+                        <span class="label-title">Computer Lab / Room Venue</span>
+                        <span class="label-hint">Select the lab where you are seated</span>
+                    </label>
+                    <select id="labName" name="lab_name" required style="width: 100%; padding: 0.85rem 1.15rem; border: 2px solid var(--border-color); border-radius: var(--radius-md); font-size: 1rem; font-weight: 600; background: #fafbfc;">
+                        {% for lab in exam_labs %}
+                        <option value="{{ lab }}">{{ lab }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
                 <!-- File Upload Section -->
                 <div class="form-group">
                     <label>
@@ -168,7 +181,7 @@
             {% endif %}
         </section>
 
-        <!-- Success Receipt Card (Shown after successful upload) -->
+        <!-- Success Receipt Card -->
         <section class="card receipt-card" id="receiptCard" style="display: none;">
             <div class="receipt-header">
                 <div class="success-icon">✓</div>
@@ -184,6 +197,10 @@
                 <div class="receipt-item">
                     <span class="receipt-label">Roll Number</span>
                     <span class="receipt-value highlight" id="receiptRoll">--</span>
+                </div>
+                <div class="receipt-item">
+                    <span class="receipt-label">Lab Venue</span>
+                    <span class="receipt-value highlight" id="receiptLab" style="color: #0d9488;">--</span>
                 </div>
                 <div class="receipt-item">
                     <span class="receipt-label">Status</span>

@@ -110,11 +110,18 @@ def init_db():
             allow_multiple INTEGER DEFAULT 1,
             is_active INTEGER DEFAULT 1,
             logo_filename TEXT DEFAULT 'iitbhilai_logo.png',
+            labs TEXT DEFAULT 'Lab 1, Lab 2, Lab 3',
             created_at TEXT NOT NULL
         )
     """)
 
-    # 3. Submissions table (Single latest record per student per exam)
+    # Check and add 'labs' column to exams if not present
+    cursor.execute("PRAGMA table_info(exams)")
+    cols = [row["name"] for row in cursor.fetchall()]
+    if "labs" not in cols:
+        cursor.execute("ALTER TABLE exams ADD COLUMN labs TEXT DEFAULT 'Lab 1, Lab 2, Lab 3'")
+
+    # 3. Submissions table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS submissions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,13 +137,20 @@ def init_db():
             submitted_at TEXT NOT NULL,
             version INTEGER DEFAULT 1,
             is_latest INTEGER DEFAULT 1,
+            lab_name TEXT DEFAULT 'Lab 1',
             FOREIGN KEY (exam_id) REFERENCES exams (id),
             UNIQUE(exam_id, roll_number)
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sub_exam_roll ON submissions (exam_id, roll_number)")
 
-    # Seed default teacher if no users exist
+    # Check and add 'lab_name' column to submissions if not present
+    cursor.execute("PRAGMA table_info(submissions)")
+    sub_cols = [row["name"] for row in cursor.fetchall()]
+    if "lab_name" not in sub_cols:
+        cursor.execute("ALTER TABLE submissions ADD COLUMN lab_name TEXT DEFAULT 'Lab 1'")
+
+    # Seed default admin: kishan / password123
     cursor.execute("SELECT id FROM users WHERE username = ?", ("kishan",))
     if not cursor.fetchone():
         pwd_hash = generate_password_hash("password123")
@@ -226,6 +240,14 @@ def find_exam_by_identifier(identifier):
     return exam
 
 
+def parse_labs_list(labs_str):
+    """Parse comma-separated labs string into a clean list."""
+    if not labs_str:
+        return ["Lab 1", "Lab 2", "Lab 3"]
+    labs = [l.strip() for l in labs_str.split(",") if l.strip()]
+    return labs if labs else ["Lab 1", "Lab 2", "Lab 3"]
+
+
 # ==========================================
 # PUBLIC STUDENT ROUTES (NO LOGIN REQUIRED)
 # ==========================================
@@ -248,7 +270,7 @@ def root_redirect():
 # Short URL direct endpoint: e.g. /lab_exam/csl100
 @app.route("/<path:identifier>", methods=["GET"])
 def short_exam_page(identifier):
-    """Render exam page via short URL e.g. /csl100 or /csl100-lab-exam-1."""
+    """Render exam page via short URL e.g. /csl100."""
     identifier_clean = identifier.strip("/").lower()
     if identifier_clean in RESERVED_ROUTES or "/" in identifier_clean:
         abort(404)
@@ -257,7 +279,8 @@ def short_exam_page(identifier):
     if not exam:
         abort(404, description="Exam submission page not found.")
 
-    return render_template("index.html", exam=exam)
+    exam_labs = parse_labs_list(exam["labs"] if "labs" in exam.keys() else "")
+    return render_template("index.html", exam=exam, exam_labs=exam_labs)
 
 
 @app.route("/exam/<slug>", methods=["GET"])
@@ -266,7 +289,8 @@ def exam_page(slug):
     exam = find_exam_by_identifier(slug)
     if not exam:
         abort(404, description="Exam submission page not found.")
-    return render_template("index.html", exam=exam)
+    exam_labs = parse_labs_list(exam["labs"] if "labs" in exam.keys() else "")
+    return render_template("index.html", exam=exam, exam_labs=exam_labs)
 
 
 @app.route("/<path:identifier>/status/<roll_number>", methods=["GET"])
@@ -285,7 +309,7 @@ def check_student_status(roll_number, identifier=None, slug=None):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT version, original_filename, file_size, submitted_at, sha256
+        SELECT version, original_filename, file_size, submitted_at, sha256, lab_name
         FROM submissions
         WHERE exam_id = ? AND roll_number = ?
     """, (exam["id"], clean_roll))
@@ -302,6 +326,7 @@ def check_student_status(roll_number, identifier=None, slug=None):
             "file_size": row["file_size"],
             "submitted_at": row["submitted_at"],
             "sha256": row["sha256"],
+            "lab_name": row["lab_name"] or "Lab 1",
             "allow_multiple": bool(exam["allow_multiple"])
         })
     return jsonify({
@@ -336,6 +361,8 @@ def submit_exam_file(identifier=None, slug=None):
 
     if len(roll_number) < 2 or len(roll_number) > 30:
         return jsonify({"success": False, "error": "Roll number length must be between 2 and 30 characters."}), 400
+
+    lab_name = request.form.get("lab_name", "Lab 1").strip()
 
     conn = get_db()
     cursor = conn.cursor()
@@ -420,22 +447,23 @@ def submit_exam_file(identifier=None, slug=None):
                 sha256 = ?,
                 ip_address = ?,
                 submitted_at = ?,
-                version = ?
+                version = ?,
+                lab_name = ?
             WHERE id = ?
         """, (
             original_filename, stored_filename, str(saved_path),
             file_size, file_sha256, client_ip, display_time,
-            version, existing_sub["id"]
+            version, lab_name, existing_sub["id"]
         ))
     else:
         cursor.execute("""
             INSERT INTO submissions (
                 exam_id, roll_number, original_filename, stored_filename,
-                file_path, file_size, sha256, ip_address, submitted_at, version, is_latest
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)
+                file_path, file_size, sha256, ip_address, submitted_at, version, is_latest, lab_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)
         """, (
             exam["id"], roll_number, original_filename, stored_filename,
-            str(saved_path), file_size, file_sha256, client_ip, display_time
+            str(saved_path), file_size, file_sha256, client_ip, display_time, lab_name
         ))
 
     conn.commit()
@@ -461,6 +489,7 @@ def submit_exam_file(identifier=None, slug=None):
             "file_size_bytes": file_size,
             "submitted_at": display_time,
             "sha256": file_sha256,
+            "lab_name": lab_name,
             "is_update": version > 1,
             "course_code": exam["course_code"],
             "exam_title": exam["exam_title"]
@@ -480,12 +509,12 @@ def login():
 
     error = None
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
+        username = request.form.get("username", "").strip().lower()
         password = request.form.get("password", "")
 
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+        cursor.execute("SELECT * FROM users WHERE LOWER(username) = ?", (username,))
         user = cursor.fetchone()
         conn.close()
 
@@ -515,7 +544,11 @@ def logout():
 @app.route("/admin/teachers/add", methods=["POST"])
 @login_required
 def add_teacher():
-    """Allow an instructor to register a new teacher account."""
+    """Only administrators can register a new teacher account."""
+    if session.get("role") != "admin":
+        flash("Permission denied. Only administrators can add teacher accounts.", "error")
+        return redirect(url_for("admin_dashboard"))
+
     username = request.form.get("username", "").strip().lower()
     display_name = request.form.get("display_name", "").strip()
     password = request.form.get("password", "").strip()
@@ -528,12 +561,11 @@ def add_teacher():
         flash("Password must be at least 6 characters.", "error")
         return redirect(url_for("admin_dashboard"))
 
-    # Clean username
     clean_username = re.sub(r"[^a-z0-9_-]", "", username)
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE username = ?", (clean_username,))
+    cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (clean_username,))
     if cursor.fetchone():
         conn.close()
         flash(f"Username '{clean_username}' already exists. Please choose a different username.", "error")
@@ -595,44 +627,71 @@ def change_password():
 @login_required
 def admin_dashboard():
     """
-    Teacher dashboard:
-    - View 1: Clean Course Overview grid (when ?exam is not specified).
-    - View 2: Detailed Course View with submissions and downloads (when ?exam=<slug>).
+    Teacher/Admin dashboard:
+    - Admin sees all courses; Teachers ONLY see their own courses!
+    - View 1: Clean Course Overview cards.
+    - View 2: Detailed Course View with submissions, lab breakdown, and downloads.
     """
     conn = get_db()
     cursor = conn.cursor()
+    user_id = session.get("user_id")
+    is_admin = (session.get("role") == "admin")
 
-    # Get all exams with submission counts
-    cursor.execute("""
-        SELECT e.*, 
-               (SELECT COUNT(*) FROM submissions s WHERE s.exam_id = e.id) AS submission_count
-        FROM exams e
-        ORDER BY e.id DESC
-    """)
+    # Filter exams by user (Admin sees all; Teacher sees only their own)
+    if is_admin:
+        cursor.execute("""
+            SELECT e.*, 
+                   (SELECT COUNT(*) FROM submissions s WHERE s.exam_id = e.id) AS submission_count
+            FROM exams e
+            ORDER BY e.id DESC
+        """)
+    else:
+        cursor.execute("""
+            SELECT e.*, 
+                   (SELECT COUNT(*) FROM submissions s WHERE s.exam_id = e.id) AS submission_count
+            FROM exams e
+            WHERE e.created_by_user_id = ?
+            ORDER BY e.id DESC
+        """, (user_id,))
     exams = [dict(row) for row in cursor.fetchall()]
 
-    # Get all teachers for management modal
-    cursor.execute("SELECT id, username, display_name, role, created_at FROM users ORDER BY id ASC")
-    teachers = [dict(row) for row in cursor.fetchall()]
+    # Teachers list for admin management modal
+    teachers = []
+    if is_admin:
+        cursor.execute("SELECT id, username, display_name, role, created_at FROM users ORDER BY id ASC")
+        teachers = [dict(row) for row in cursor.fetchall()]
 
-    # Check if a specific course/exam is opened
+    # Check if a specific course/exam is selected
     selected_slug = request.args.get("exam")
     selected_exam = None
     submissions = []
+    lab_counts = {}
 
     if selected_slug:
+        # Lookup exam
         for ex in exams:
             if ex["slug"] == selected_slug or ex["course_code"].lower() == selected_slug.lower():
                 selected_exam = ex
                 break
 
         if selected_exam:
+            # Enforce privacy check: if teacher is not creator and not admin, reject
+            if not is_admin and selected_exam["created_by_user_id"] != user_id:
+                conn.close()
+                flash("Confidentiality restriction: You can only access your own course exams.", "error")
+                return redirect(url_for("admin_dashboard"))
+
             cursor.execute("""
                 SELECT * FROM submissions
                 WHERE exam_id = ?
                 ORDER BY roll_number ASC
             """, (selected_exam["id"],))
             submissions = [dict(row) for row in cursor.fetchall()]
+
+            # Compute lab stats
+            for s in submissions:
+                lab = s["lab_name"] or "Lab 1"
+                lab_counts[lab] = lab_counts.get(lab, 0) + 1
 
     conn.close()
 
@@ -642,8 +701,10 @@ def admin_dashboard():
         teachers=teachers,
         current_exam=selected_exam,
         submissions=submissions,
+        lab_counts=lab_counts,
         username=session.get("username"),
-        display_name=session.get("display_name")
+        display_name=session.get("display_name"),
+        is_admin=is_admin
     )
 
 
@@ -659,12 +720,12 @@ def create_exam():
     allowed_types = request.form.get("allowed_types", "zip").strip().lower()
     allow_multiple = 1 if request.form.get("allow_multiple") == "1" else 0
     short_code = request.form.get("short_code", "").strip().lower()
+    labs = request.form.get("labs", "Lab 1, Lab 2, Lab 3").strip()
 
     if not course_code or not exam_title:
         flash("Course Code and Exam Title are required.", "error")
         return redirect(url_for("admin_dashboard"))
 
-    # Determine slug (use short_code if provided, else course_code)
     if short_code:
         slug = slugify(short_code)
     else:
@@ -699,12 +760,12 @@ def create_exam():
         INSERT INTO exams (
             slug, course_code, course_name, exam_title, teacher_name,
             created_by_user_id, instructions, folder_name, allowed_types,
-            allow_multiple, is_active, logo_filename, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            allow_multiple, is_active, logo_filename, labs, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
     """, (
         slug, course_code, course_name, exam_title, teacher_name,
         session.get("user_id"), instructions, folder_name, allowed_types,
-        allow_multiple, logo_filename, now_str
+        allow_multiple, logo_filename, labs, now_str
     ))
     conn.commit()
     conn.close()
@@ -723,9 +784,16 @@ def toggle_exam_status(exam_id):
     """Toggle exam active / closed."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT is_active, slug FROM exams WHERE id = ?", (exam_id,))
+    cursor.execute("SELECT is_active, slug, created_by_user_id FROM exams WHERE id = ?", (exam_id,))
     exam = cursor.fetchone()
+
     if exam:
+        # Check permissions
+        if session.get("role") != "admin" and exam["created_by_user_id"] != session.get("user_id"):
+            conn.close()
+            flash("Permission denied. You can only modify your own courses.", "error")
+            return redirect(url_for("admin_dashboard"))
+
         new_status = 0 if exam["is_active"] else 1
         cursor.execute("UPDATE exams SET is_active = ? WHERE id = ?", (new_status, exam_id))
         conn.commit()
@@ -733,6 +801,51 @@ def toggle_exam_status(exam_id):
         conn.close()
         return redirect(url_for("admin_dashboard", exam=exam["slug"]))
     conn.close()
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/exams/<int:exam_id>/delete", methods=["POST"])
+@login_required
+def delete_exam(exam_id):
+    """
+    Permanently delete a course exam from the database AND delete its folder and files from the server disk.
+    Only the teacher who created the course or an admin can delete it.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM exams WHERE id = ?", (exam_id,))
+    exam = cursor.fetchone()
+
+    if not exam:
+        conn.close()
+        flash("Exam not found.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    # Permission check: must be owner or admin
+    if session.get("role") != "admin" and exam["created_by_user_id"] != session.get("user_id"):
+        conn.close()
+        flash("Permission denied. You can only delete courses that you created.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    # 1. Delete submissions records
+    cursor.execute("DELETE FROM submissions WHERE exam_id = ?", (exam_id,))
+    # 2. Delete exam record
+    cursor.execute("DELETE FROM exams WHERE id = ?", (exam_id,))
+    conn.commit()
+    conn.close()
+
+    # 3. Delete directory from server disk
+    folder_path = SUBMISSIONS_DIR / exam["folder_name"]
+    if folder_path.exists():
+        shutil.rmtree(str(folder_path), ignore_errors=True)
+
+    # 4. Clean up custom logo if uploaded
+    if exam["logo_filename"] and exam["logo_filename"] != "iitbhilai_logo.png":
+        logo_path = UPLOAD_FOLDER / exam["logo_filename"]
+        if logo_path.exists():
+            logo_path.unlink(missing_ok=True)
+
+    flash(f"Course '{exam['course_code']} - {exam['exam_title']}' and all its submitted files were permanently deleted from the server.", "success")
     return redirect(url_for("admin_dashboard"))
 
 
@@ -745,7 +858,6 @@ def toggle_exam_status(exam_id):
 def download_exam_all(exam_id):
     """
     Bulk download all submissions for an exam as a single ZIP archive.
-    Uses relative routing to prevent 404 behind proxy.
     """
     conn = get_db()
     cursor = conn.cursor()
@@ -756,8 +868,13 @@ def download_exam_all(exam_id):
         conn.close()
         abort(404, description="Exam not found.")
 
+    # Confidentiality check
+    if session.get("role") != "admin" and exam["created_by_user_id"] != session.get("user_id"):
+        conn.close()
+        abort(403, description="Access denied. You can only download submissions from your own exams.")
+
     cursor.execute("""
-        SELECT roll_number, original_filename, stored_filename, file_path
+        SELECT roll_number, original_filename, stored_filename, file_path, lab_name
         FROM submissions
         WHERE exam_id = ?
         ORDER BY roll_number ASC
@@ -794,7 +911,7 @@ def download_single_file(sub_id):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT s.*, e.course_code, e.exam_title
+        SELECT s.*, e.course_code, e.exam_title, e.created_by_user_id
         FROM submissions s
         JOIN exams e ON s.exam_id = e.id
         WHERE s.id = ?
@@ -804,6 +921,10 @@ def download_single_file(sub_id):
 
     if not sub:
         abort(404, description="Submission file not found.")
+
+    # Confidentiality check
+    if session.get("role") != "admin" and sub["created_by_user_id"] != session.get("user_id"):
+        abort(403, description="Access denied.")
 
     file_path = Path(sub["file_path"])
     if not file_path.exists():
