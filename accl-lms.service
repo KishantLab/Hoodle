@@ -10,7 +10,7 @@ Environment="PORT=8095"
 Environment="HOST=0.0.0.0"
 Environment="STORAGE_DIR=/data/admin/ACCLLMS/storage"
 Environment="DB_PATH=/data/admin/ACCLLMS/accl_lms.db"
-ExecStart=/usr/bin/python3 /data/admin/ACCLLMS/app.py
+ExecStart=/usr/bin/gunicorn --workers 16 --threads 4 --worker-class gthread --bind 0.0.0.0:8095 --timeout 120 --keep-alive 5 --max-requests 2000 --max-requests-jitter 200 app:app
 Restart=always
 RestartSec=3
 
