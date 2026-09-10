@@ -38,6 +38,10 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+def hash_password(password):
+    return generate_password_hash(password, method="pbkdf2:sha256")
+
+
 # --- Directory & Environment Configuration ---
 BASE_DIR = Path(__file__).resolve().parent
 STORAGE_DIR = Path(os.environ.get("STORAGE_DIR", BASE_DIR / "storage"))
@@ -325,7 +329,7 @@ def init_db():
     # Superadmin
     c.execute("SELECT id FROM users WHERE LOWER(username) = 'admin'")
     if not c.fetchone():
-        pwd = generate_password_hash("admin@accl")
+        pwd = hash_password("admin@accl")
         c.execute("""
             INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at)
             VALUES ('admin', 'ADMIN', 'admin@iitbhilai.ac.in', ?, 'LMS Administrator', 'admin', ?)
@@ -335,7 +339,7 @@ def init_db():
     c.execute("SELECT id FROM users WHERE LOWER(username) = 'kishan'")
     t_user = c.fetchone()
     if not t_user:
-        pwd = generate_password_hash("password123")
+        pwd = hash_password("password123")
         c.execute("""
             INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at)
             VALUES ('kishan', 'FAC001', 'kishan@iitbhilai.ac.in', ?, 'Prof. Kishan Tamboli', 'teacher', ?)
@@ -348,7 +352,7 @@ def init_db():
     c.execute("SELECT id FROM users WHERE LOWER(username) = 'student1'")
     s_user = c.fetchone()
     if not s_user:
-        pwd = generate_password_hash("student123")
+        pwd = hash_password("student123")
         c.execute("""
             INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at)
             VALUES ('student1', 'B26DS001', 'b26ds001@iitbhilai.ac.in', ?, 'Aarav Sharma', 'student', ?)
@@ -401,6 +405,17 @@ def init_db():
                     'Laboratory Practical Examination. Strict Exam Mode: When active, students cannot browse materials or private lockers and must submit only a single .zip archive before the timer expires.',
                     100, '2026-09-20 18:00:00', '2026-09-20 15:00:00', '2026-09-20 18:00:00', 'zip', 1, 1, 0, 'Lab 1, Lab 2, Lab 3, CC-101', ?, ?)
         """, (course_id, t2_id, teacher_id, now_str))
+
+    # Upgrade any scrypt hashes for cross-version compatibility
+    c.execute("SELECT id, username, password_hash FROM users")
+    for u in c.fetchall():
+        if u["password_hash"].startswith("scrypt"):
+            if u["username"] == "admin":
+                c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password("admin@accl"), u["id"]))
+            elif u["username"] == "kishan":
+                c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password("password123"), u["id"]))
+            elif u["username"] == "student1":
+                c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password("student123"), u["id"]))
 
     conn.commit()
     conn.close()
@@ -623,7 +638,7 @@ def register():
             flash("An account with this Roll Number or Email already exists. Please log in.", "warning")
             return render_template("login.html", register_active=False)
 
-        pwd_hash = generate_password_hash(password)
+        pwd_hash = hash_password(password)
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         conn.execute("""
@@ -2035,7 +2050,7 @@ def admin_reset_password(user_id):
         flash("New password must be at least 6 characters.", "danger")
         return redirect(url_for("admin_users"))
 
-    pwd_hash = generate_password_hash(new_pwd)
+    pwd_hash = hash_password(new_pwd)
     conn = get_db()
     conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (pwd_hash, user_id))
     conn.commit()

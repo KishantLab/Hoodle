@@ -4,37 +4,43 @@ Test Suite for ACCLLMS Learning Management System
 """
 
 import os
+import shutil
 import tempfile
 import unittest
 import io
 import zipfile
-import sqlite3
 from pathlib import Path
-
-# Set test environment
-test_dir = tempfile.mkdtemp(prefix="accl_lms_test_")
-os.environ["DB_PATH"] = os.path.join(test_dir, "test_lms.db")
-os.environ["STORAGE_DIR"] = os.path.join(test_dir, "storage")
-os.environ["SECRET_KEY"] = "test_secret_key"
 
 import app
 
 
 class ACCLLMSTestCase(unittest.TestCase):
     def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix="accl_lms_unit_")
+        self.db_path = Path(self.test_dir) / "test_lms.db"
+        self.storage_dir = Path(self.test_dir) / "storage"
+
+        app.DB_PATH = self.db_path
+        app.STORAGE_DIR = self.storage_dir
+        app.LOCKERS_DIR = self.storage_dir / "lockers"
+        app.SUBMISSIONS_DIR = self.storage_dir / "submissions"
+        app.ATTACHMENTS_DIR = self.storage_dir / "attachments"
         app.app.config["TESTING"] = True
         app.app.config["WTF_CSRF_ENABLED"] = False
-        self.client = app.app.test_client()
-        # Reset tables for isolation
-        if os.path.exists(app.DB_PATH):
-            conn = sqlite3.connect(app.DB_PATH)
-            tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall() if not r[0].startswith('sqlite_')]
-            for t in tables:
-                conn.execute(f"DROP TABLE IF EXISTS {t}")
-            conn.commit()
-            conn.close()
+
+        for d in (app.STORAGE_DIR, app.LOCKERS_DIR, app.SUBMISSIONS_DIR, app.ATTACHMENTS_DIR):
+            d.mkdir(parents=True, exist_ok=True)
+
         with app.app.app_context():
             app.init_db()
+
+        self.client = app.app.test_client()
+
+    def tearDown(self):
+        try:
+            shutil.rmtree(self.test_dir)
+        except Exception:
+            pass
 
     def login(self, identifier, password):
         return self.client.post("/login", data={
@@ -64,7 +70,7 @@ class ACCLLMSTestCase(unittest.TestCase):
         """Test student registration with roll number standardization."""
         res = self.client.post("/register", data={
             "full_name": "Rohan Gupta",
-            "roll_number": "b26cs099",  # lowercase input
+            "roll_number": "b26cs099",
             "email": "b26cs099@iitbhilai.ac.in",
             "password": "mypassword123",
             "confirm_password": "mypassword123",
@@ -77,7 +83,7 @@ class ACCLLMSTestCase(unittest.TestCase):
         user = conn.execute("SELECT * FROM users WHERE username = 'b26cs099'").fetchone()
         conn.close()
         self.assertIsNotNone(user)
-        self.assertEqual(user["roll_number"], "B26CS099")  # Standardized uppercase
+        self.assertEqual(user["roll_number"], "B26CS099")
 
     def test_student_login_and_dashboard(self):
         """Test student sign in and dashboard rendering."""
@@ -90,7 +96,6 @@ class ACCLLMSTestCase(unittest.TestCase):
         """Test private student locker file upload, quota tracking, and preview."""
         self.login("student1", "student123")
 
-        # Upload a C source code file to locker
         file_content = b'#include <stdio.h>\nint main() { printf("Hello ACCL\\n"); return 0; }\n'
         data = {
             "files": (io.BytesIO(file_content), "hello_accl.c")
@@ -99,13 +104,11 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn(b"file(s) saved to your Private Locker", res.data)
         self.assertIn(b"hello_accl.c", res.data)
 
-        # Get file ID
         conn = app.get_db()
         f_row = conn.execute("SELECT id FROM student_locker_files WHERE original_filename = 'hello_accl.c'").fetchone()
         conn.close()
         self.assertIsNotNone(f_row)
 
-        # Preview file
         prev_res = self.client.get(f"/locker/preview/{f_row['id']}")
         self.assertEqual(prev_res.status_code, 200)
         json_data = prev_res.get_json()
@@ -114,7 +117,6 @@ class ACCLLMSTestCase(unittest.TestCase):
 
     def test_course_join_by_code(self):
         """Test joining a course via 6-character class code."""
-        # Create new student
         self.client.post("/register", data={
             "full_name": "New Student",
             "roll_number": "B26EE010",
@@ -126,7 +128,6 @@ class ACCLLMSTestCase(unittest.TestCase):
 
         self.login("b26ee010", "password123")
 
-        # Join demo course ACCL26
         res = self.client.post("/courses/join", data={"join_code": "ACCL26"}, follow_redirects=True)
         self.assertIn(b"Successfully joined CSL100", res.data)
 
@@ -138,7 +139,6 @@ class ACCLLMSTestCase(unittest.TestCase):
         cw = conn.execute("SELECT id, course_id FROM coursework WHERE type = 'assignment' LIMIT 1").fetchone()
         conn.close()
 
-        # Submit code file
         code_data = b'// Solution to lab assignment 1\n#include <stdlib.h>\n'
         res = self.client.post(f"/courses/{cw['course_id']}/coursework/{cw['id']}/submit", data={
             "source_type": "local",
@@ -149,15 +149,13 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn(b"Work submitted successfully", res.data)
         self.assertIn(b"allocator.c", res.data)
 
-        # Check submission in DB
         conn = app.get_db()
         sub = conn.execute("SELECT * FROM submissions WHERE coursework_id = ?", (cw["id"],)).fetchone()
         conn.close()
         self.assertIsNotNone(sub)
         self.assertEqual(sub["status"], "turned_in")
-        self.assertTrue(len(sub["sha256"]) == 64)  # 64 hex chars for SHA-256
+        self.assertTrue(len(sub["sha256"]) == 64)
 
-        # Check receipt view
         r_res = self.client.get(f"/receipt/{sub['receipt_token']}")
         self.assertEqual(r_res.status_code, 200)
         self.assertIn(b"Official Digital Submission Receipt", r_res.data)
@@ -171,31 +169,25 @@ class ACCLLMSTestCase(unittest.TestCase):
         2. Non-zip files are rejected.
         3. Only valid .zip files are accepted and generate cryptographic receipt.
         """
-        # Faculty enables exam mode on the midterm exam
         self.login("kishan", "password123")
 
         conn = app.get_db()
         exam = conn.execute("SELECT id, course_id FROM coursework WHERE type = 'exam' LIMIT 1").fetchone()
         conn.close()
 
-        # Enable exam mode
         self.client.post(f"/courses/{exam['course_id']}/coursework/{exam['id']}/toggle-exam-mode", follow_redirects=True)
 
         self.logout()
 
-        # Student logs in
         self.login("student1", "student123")
 
-        # Student tries to visit their private locker -> Should be BLOCKED and redirected to exam
         locker_res = self.client.get("/locker", follow_redirects=True)
         self.assertIn(b"STRICT EXAM LOCKDOWN ACTIVE", locker_res.data)
         self.assertIn(b"EXAM MODE LOCKDOWN", locker_res.data)
 
-        # Student tries to visit the course stream -> Should be BLOCKED and redirected to exam
         stream_res = self.client.get(f"/courses/{exam['course_id']}/stream", follow_redirects=True)
         self.assertIn(b"STRICT EXAM LOCKDOWN ACTIVE", stream_res.data)
 
-        # Student tries to submit a non-zip file (.c or .txt) -> Must be REJECTED!
         fake_file = b"not a zip file"
         bad_res = self.client.post(f"/courses/{exam['course_id']}/exam/{exam['id']}/submit", data={
             "exam_file": (io.BytesIO(fake_file), "solution.c"),
@@ -203,23 +195,18 @@ class ACCLLMSTestCase(unittest.TestCase):
         }, content_type="multipart/form-data", follow_redirects=True)
         self.assertIn(b"Only .zip files are allowed", bad_res.data)
 
-        # Create a valid in-memory ZIP archive
         mem_zip = io.BytesIO()
         with zipfile.ZipFile(mem_zip, mode="w") as zf:
             zf.writestr("main.c", "#include <stdio.h>\nint main(){return 0;}\n")
         mem_zip.seek(0)
 
-        # Student submits the valid .zip archive
         good_res = self.client.post(f"/courses/{exam['course_id']}/exam/{exam['id']}/submit", data={
             "exam_file": (mem_zip, "B26DS001_exam.zip"),
             "lab_name": "Lab 1"
         }, content_type="multipart/form-data", follow_redirects=True)
 
-        # Receipt should be displayed
         self.assertIn(b"Official Digital Submission Receipt", good_res.data)
         self.assertIn(b"B26DS001", good_res.data)
-
-
 
     def test_announcements_and_comments(self):
         """Test posting stream announcements and threaded comments."""
@@ -228,13 +215,11 @@ class ACCLLMSTestCase(unittest.TestCase):
         course = conn.execute("SELECT id FROM courses LIMIT 1").fetchone()
         conn.close()
 
-        # Post announcement
         res = self.client.post(f"/courses/{course['id']}/announcements", data={
             "content": "Important class update regarding midterm."
         }, follow_redirects=True)
         self.assertIn(b"Announcement published", res.data)
 
-        # Student comments on announcement
         self.logout()
         self.login("student1", "student123")
 
@@ -254,12 +239,10 @@ class ACCLLMSTestCase(unittest.TestCase):
         course = conn.execute("SELECT id FROM courses LIMIT 1").fetchone()
         conn.close()
 
-        # Gradebook HTML view
         gb_res = self.client.get(f"/courses/{course['id']}/grades")
         self.assertEqual(gb_res.status_code, 200)
         self.assertIn(b"Course Gradebook Matrix", gb_res.data)
 
-        # CSV export
         csv_res = self.client.get(f"/courses/{course['id']}/grades/export-csv")
         self.assertEqual(csv_res.status_code, 200)
         self.assertEqual(csv_res.mimetype, "text/csv")
@@ -275,6 +258,6 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn(b"student1", res.data)
         self.assertIn(b"kishan", res.data)
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     unittest.main()
