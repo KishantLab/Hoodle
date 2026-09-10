@@ -3,7 +3,7 @@
 Lab Exam Portal
 Host: 10.10.14.104
 Directory: /data/admin/lab_exam
-Developed & Maintained by Advanced Computing & Communications Laboratory (ACCL), IIT Bhilai
+Developed by Kishan Tamboli (PhD) • Accelerated Computing Research Lab (ACCL), IIT Bhilai
 """
 
 import os
