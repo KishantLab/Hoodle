@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ exam.course_code }} - {{ exam.exam_title }} | Submission Portal</title>
+    <title>{{ exam.course_code }} - {{ exam.exam_title }} | Lab Exam Portal</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="background-decor"></div>
     <main class="container">
-        <!-- Header with IIT Bhilai Logo & ACCL Creator Attribution -->
+        <!-- Header with IIT Bhilai Logo -->
         <header class="header">
             <div class="header-branding">
                 <div class="logos-container">
@@ -18,16 +18,12 @@
                     {% else %}
                         <img src="{{ url_for('static', filename='images/iitbhilai_logo.png') }}" alt="IIT Bhilai" class="brand-logo">
                     {% endif %}
-                    <div class="creator-tag">
-                        <img src="{{ url_for('static', filename='images/accl_logo.png') }}" alt="ACCL" class="accl-mini-logo">
-                        <span>Created by <strong>ACCL</strong> • IIT Bhilai</span>
-                    </div>
                 </div>
             </div>
 
             <div class="badge">{{ exam.course_code }} • {{ exam.course_name }}</div>
             <h1>{{ exam.exam_title }}</h1>
-            <p class="subtitle">Instructor: {{ exam.teacher_name }}</p>
+            <p class="subtitle">Instructor: {{ exam.teacher_name }} • Indian Institute of Technology Bhilai</p>
         </header>
 
         <!-- Course Information & Instructions Card -->
@@ -220,13 +216,13 @@
             {% endif %}
         </section>
 
-        <!-- Footer with ACCL Branding -->
+        <!-- Footer with ACCL Branding at Bottom -->
         <footer class="footer">
             <div class="accl-footer-banner">
                 <img src="{{ url_for('static', filename='images/accl_logo.png') }}" alt="ACCL Logo" class="accl-mini-logo">
-                <span>Advanced Computing & Communications Laboratory (ACCL) • Department of CSE & EE • IIT Bhilai</span>
+                <span>Developed & Maintained by Advanced Computing & Communications Laboratory (ACCL), IIT Bhilai</span>
             </div>
-            <p class="footer-sub">Direct Submission Portal • Local Intranet • No Login Required for Students</p>
+            <p class="footer-sub">Direct Submission Portal • Local Intranet • No Student Login Required</p>
         </footer>
     </main>
 

@@ -3,27 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Teacher Login - ACCL Lab Exam Portal</title>
+    <title>Teacher Login - Lab Exam Portal</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
         .login-card {
-            max-width: 440px;
-            margin: 2rem auto;
+            max-width: 420px;
+            margin: 2.5rem auto;
             text-align: center;
         }
         .logos-row {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 1.5rem;
-            margin-bottom: 1.5rem;
+            margin-bottom: 1.25rem;
         }
         .logo-img {
-            height: 52px;
+            height: 64px;
             object-fit: contain;
         }
         .login-title {
-            font-size: 1.6rem;
+            font-size: 1.7rem;
             font-weight: 800;
             color: #0f172a;
             margin-bottom: 0.35rem;
@@ -33,16 +32,6 @@
             font-size: 0.9rem;
             margin-bottom: 2rem;
         }
-        .default-creds {
-            background: #f8fafc;
-            border: 1px dashed #cbd5e1;
-            padding: 0.75rem;
-            border-radius: 8px;
-            font-size: 0.8rem;
-            color: #475569;
-            margin-top: 1.5rem;
-            text-align: left;
-        }
     </style>
 </head>
 <body>
@@ -51,11 +40,10 @@
         <div class="card login-card">
             <div class="logos-row">
                 <img src="{{ url_for('static', filename='images/iitbhilai_logo.png') }}" alt="IIT Bhilai" class="logo-img">
-                <img src="{{ url_for('static', filename='images/accl_logo.png') }}" alt="ACCL Lab" class="logo-img">
             </div>
 
-            <h1 class="login-title">Teacher Portal</h1>
-            <p class="login-sub">Advanced Computing & Communications Lab (ACCL)</p>
+            <h1 class="login-title">Lab Exam Portal</h1>
+            <p class="login-sub">Teacher & Instructor Login • IIT Bhilai</p>
 
             {% if error %}
             <div class="alert alert-error" style="display: block; text-align: left;">
@@ -68,30 +56,27 @@
                     <label for="username">
                         <span class="label-title">Username</span>
                     </label>
-                    <input type="text" id="username" name="username" placeholder="Username (e.g. kishan)" required autofocus style="text-transform: none;">
+                    <input type="text" id="username" name="username" placeholder="Enter your username" required autofocus style="text-transform: none;">
                 </div>
 
                 <div class="form-group" style="text-align: left;">
                     <label for="password">
                         <span class="label-title">Password</span>
                     </label>
-                    <input type="password" id="password" name="password" placeholder="Password" required style="width: 100%; padding: 0.85rem 1.15rem; border: 2px solid var(--border-color); border-radius: var(--radius-md); font-size: 1rem;">
+                    <input type="password" id="password" name="password" placeholder="Enter your password" required style="width: 100%; padding: 0.85rem 1.15rem; border: 2px solid var(--border-color); border-radius: var(--radius-md); font-size: 1rem;">
                 </div>
 
                 <button type="submit" class="btn-submit" style="margin-top: 1rem;">
                     Log In to Dashboard
                 </button>
             </form>
-
-            <div class="default-creds">
-                <strong>Default Credentials:</strong><br>
-                Username: <code>kishan</code> | Password: <code>password123</code><br>
-                <em>(Password is changeable once logged into the dashboard)</em>
-            </div>
         </div>
 
         <footer class="footer">
-            <p>Developed & Maintained by ACCL, IIT Bhilai</p>
+            <div class="accl-footer-banner">
+                <img src="{{ url_for('static', filename='images/accl_logo.png') }}" alt="ACCL Logo" class="accl-mini-logo">
+                <span>Developed & Maintained by Advanced Computing & Communications Laboratory (ACCL), IIT Bhilai</span>
+            </div>
         </footer>
     </main>
 </body>

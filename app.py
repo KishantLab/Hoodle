@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-ACCL Lab Exam Submission Portal
+Lab Exam Portal
 Host: 10.10.14.104
 Directory: /data/admin/lab_exam
-Developed by Advanced Computing and Communications Laboratory (ACCL), IIT Bhilai
+Developed & Maintained by Advanced Computing & Communications Laboratory (ACCL), IIT Bhilai
 """
 
 import os
@@ -34,6 +34,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Configuration
 BASE_DIR = Path(__file__).resolve().parent
@@ -46,25 +47,27 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "accl_lab_exam_portal_secret_key_2026"
 UPLOAD_FOLDER = BASE_DIR / "static" / "uploads"
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
-
-@app.template_filter('nl2br')
-def nl2br_filter(s):
-    if not s:
-        return ''
-    from markupsafe import Markup, escape
-    return Markup('<br>'.join(escape(s).splitlines()))
-
-from werkzeug.middleware.proxy_fix import ProxyFix
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-
 app.config["SECRET_KEY"] = SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 app.config["SUBMISSIONS_DIR"] = SUBMISSIONS_DIR
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
+# Proxy handling
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+# Jinja2 newline filter
+@app.template_filter("nl2br")
+def nl2br_filter(s):
+    if not s:
+        return ""
+    from markupsafe import Markup, escape
+    return Markup("<br>".join(escape(s).splitlines()))
+
 # Ensure directories exist
 SUBMISSIONS_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+
+RESERVED_ROUTES = {"login", "logout", "admin", "static", "api", "exam", "favicon.ico"}
 
 
 def get_db():
@@ -133,7 +136,7 @@ def init_db():
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sub_exam_roll ON submissions (exam_id, roll_number)")
 
-    # Seed default teacher: kishan / password123
+    # Seed default teacher if no users exist
     cursor.execute("SELECT id FROM users WHERE username = ?", ("kishan",))
     if not cursor.fetchone():
         pwd_hash = generate_password_hash("password123")
@@ -209,55 +212,83 @@ def login_required(f):
     return decorated_function
 
 
+def find_exam_by_identifier(identifier):
+    """Find exam by slug or course_code (case-insensitive)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM exams 
+        WHERE LOWER(slug) = ? OR LOWER(course_code) = ?
+        ORDER BY id DESC LIMIT 1
+    """, (identifier.lower(), identifier.lower()))
+    exam = cursor.fetchone()
+    conn.close()
+    return exam
+
+
 # ==========================================
 # PUBLIC STUDENT ROUTES (NO LOGIN REQUIRED)
 # ==========================================
 
 @app.route("/", methods=["GET"])
 def root_redirect():
-    """Redirect to active exam or show portal home."""
+    """Redirect to active exam or show portal login."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT slug FROM exams WHERE is_active = 1 ORDER BY id DESC LIMIT 1")
     row = cursor.fetchone()
     conn.close()
 
-    prefix = request.headers.get("X-Forwarded-Prefix", "").rstrip('/')
+    prefix = request.headers.get("X-Forwarded-Prefix", "").rstrip("/")
     if row:
-        return redirect(f"{prefix}/exam/{row['slug']}")
+        return redirect(f"{prefix}/{row['slug']}")
     return redirect(f"{prefix}/login")
 
 
-@app.route("/exam/<slug>", methods=["GET"])
-def exam_page(slug):
-    """Render dynamically-styled submission page for a specific course exam."""
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM exams WHERE slug = ?", (slug,))
-    exam = cursor.fetchone()
-    conn.close()
+# Short URL direct endpoint: e.g. /lab_exam/csl100
+@app.route("/<path:identifier>", methods=["GET"])
+def short_exam_page(identifier):
+    """Render exam page via short URL e.g. /csl100 or /csl100-lab-exam-1."""
+    identifier_clean = identifier.strip("/").lower()
+    if identifier_clean in RESERVED_ROUTES or "/" in identifier_clean:
+        abort(404)
 
+    exam = find_exam_by_identifier(identifier_clean)
     if not exam:
         abort(404, description="Exam submission page not found.")
 
     return render_template("index.html", exam=exam)
 
 
+@app.route("/exam/<slug>", methods=["GET"])
+def exam_page(slug):
+    """Legacy route for exam submission page."""
+    exam = find_exam_by_identifier(slug)
+    if not exam:
+        abort(404, description="Exam submission page not found.")
+    return render_template("index.html", exam=exam)
+
+
+@app.route("/<path:identifier>/status/<roll_number>", methods=["GET"])
 @app.route("/exam/<slug>/status/<roll_number>", methods=["GET"])
-def check_student_status(slug, roll_number):
+def check_student_status(roll_number, identifier=None, slug=None):
     """Check if a roll number has already submitted for this specific exam."""
+    exam_id_str = identifier or slug
     clean_roll = sanitize_roll_number(roll_number)
     if not clean_roll:
         return jsonify({"success": False, "message": "Invalid roll number"}), 400
 
+    exam = find_exam_by_identifier(exam_id_str)
+    if not exam:
+        return jsonify({"success": False, "message": "Exam not found"}), 404
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT s.version, s.original_filename, s.file_size, s.submitted_at, s.sha256, e.allow_multiple
-        FROM submissions s
-        JOIN exams e ON s.exam_id = e.id
-        WHERE e.slug = ? AND s.roll_number = ?
-    """, (slug, clean_roll))
+        SELECT version, original_filename, file_size, submitted_at, sha256
+        FROM submissions
+        WHERE exam_id = ? AND roll_number = ?
+    """, (exam["id"], clean_roll))
     row = cursor.fetchone()
     conn.close()
 
@@ -271,7 +302,7 @@ def check_student_status(slug, roll_number):
             "file_size": row["file_size"],
             "submitted_at": row["submitted_at"],
             "sha256": row["sha256"],
-            "allow_multiple": bool(row["allow_multiple"])
+            "allow_multiple": bool(exam["allow_multiple"])
         })
     return jsonify({
         "success": True,
@@ -280,36 +311,34 @@ def check_student_status(slug, roll_number):
     })
 
 
+@app.route("/<path:identifier>/submit", methods=["POST"])
 @app.route("/exam/<slug>/submit", methods=["POST"])
-def submit_exam_file(slug):
+def submit_exam_file(identifier=None, slug=None):
     """
     Handle direct exam file upload without login.
     Enforces exam-specific rules (allowed file types, single vs multiple submissions).
     Stores only a single latest file per student in the course folder.
     """
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM exams WHERE slug = ?", (slug,))
-    exam = cursor.fetchone()
+    exam_id_str = identifier or slug
+    exam = find_exam_by_identifier(exam_id_str)
 
     if not exam:
-        conn.close()
         return jsonify({"success": False, "error": "Exam not found."}), 404
 
     if not exam["is_active"]:
-        conn.close()
         return jsonify({"success": False, "error": "This exam submission portal is currently closed."}), 403
 
     raw_roll = request.form.get("roll_number", "")
     roll_number = sanitize_roll_number(raw_roll)
 
     if not roll_number:
-        conn.close()
         return jsonify({"success": False, "error": "Please enter a valid Roll Number (alphanumeric characters)."}), 400
 
     if len(roll_number) < 2 or len(roll_number) > 30:
-        conn.close()
         return jsonify({"success": False, "error": "Roll number length must be between 2 and 30 characters."}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
 
     # Check if student already submitted and if multiple submissions are allowed
     cursor.execute("""
@@ -346,7 +375,7 @@ def submit_exam_file(slug):
             "error": f"File type not supported. Allowed extensions for this exam: {allowed_desc}"
         }), 400
 
-    # Ensure course folder exists on disk: submissions/<course_folder>/
+    # Course folder: submissions/<course_folder>/
     course_folder = SUBMISSIONS_DIR / exam["folder_name"]
     course_folder.mkdir(parents=True, exist_ok=True)
 
@@ -359,14 +388,13 @@ def submit_exam_file(slug):
     stored_filename = f"{roll_number}{ext}"
     saved_path = course_folder / stored_filename
 
-    # If re-submitting, remove the old file first to ensure atomic replacement
+    # If re-submitting, remove previous file first
     if saved_path.exists():
         try:
             saved_path.unlink()
         except Exception as e:
             app.logger.warning(f"Error removing old submission file: {e}")
 
-    # Save uploaded file
     file.save(str(saved_path))
     file_size = saved_path.stat().st_size
 
@@ -383,7 +411,6 @@ def submit_exam_file(slug):
     version = 1
     if existing_sub:
         version = existing_sub["version"] + 1
-        # Update existing record
         cursor.execute("""
             UPDATE submissions SET
                 original_filename = ?,
@@ -442,12 +469,12 @@ def submit_exam_file(slug):
 
 
 # ==========================================
-# TEACHER AUTHENTICATION ROUTES
+# TEACHER AUTHENTICATION & TEACHER MANAGEMENT
 # ==========================================
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    """Teacher / Admin login page."""
+    """Teacher Login page."""
     if session.get("logged_in"):
         return redirect(url_for("admin_dashboard"))
 
@@ -473,7 +500,7 @@ def login():
                 return redirect(next_page)
             return redirect(url_for("admin_dashboard"))
         else:
-            error = "Invalid username or password. (Default: kishan / password123)"
+            error = "Invalid username or password."
 
     return render_template("login.html", error=error)
 
@@ -483,6 +510,46 @@ def logout():
     """Clear session and log out."""
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/admin/teachers/add", methods=["POST"])
+@login_required
+def add_teacher():
+    """Allow an instructor to register a new teacher account."""
+    username = request.form.get("username", "").strip().lower()
+    display_name = request.form.get("display_name", "").strip()
+    password = request.form.get("password", "").strip()
+
+    if not username or not password or not display_name:
+        flash("All fields are required to add a teacher.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if len(password) < 6:
+        flash("Password must be at least 6 characters.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    # Clean username
+    clean_username = re.sub(r"[^a-z0-9_-]", "", username)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE username = ?", (clean_username,))
+    if cursor.fetchone():
+        conn.close()
+        flash(f"Username '{clean_username}' already exists. Please choose a different username.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    pwd_hash = generate_password_hash(password)
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+        INSERT INTO users (username, password_hash, display_name, role, created_at)
+        VALUES (?, ?, ?, 'teacher', ?)
+    """, (clean_username, pwd_hash, display_name, now_str))
+    conn.commit()
+    conn.close()
+
+    flash(f"Teacher account '{clean_username}' ({display_name}) created successfully!", "success")
+    return redirect(url_for("admin_dashboard"))
 
 
 @app.route("/admin/change-password", methods=["POST"])
@@ -529,14 +596,13 @@ def change_password():
 def admin_dashboard():
     """
     Teacher dashboard:
-    1. Manage all course exams (create, toggle active).
-    2. View submissions for selected exam.
-    3. Bulk and Single downloads.
+    - View 1: Clean Course Overview grid (when ?exam is not specified).
+    - View 2: Detailed Course View with submissions and downloads (when ?exam=<slug>).
     """
     conn = get_db()
     cursor = conn.cursor()
 
-    # Get all exams
+    # Get all exams with submission counts
     cursor.execute("""
         SELECT e.*, 
                (SELECT COUNT(*) FROM submissions s WHERE s.exam_id = e.id) AS submission_count
@@ -545,32 +611,35 @@ def admin_dashboard():
     """)
     exams = [dict(row) for row in cursor.fetchall()]
 
-    # Determine selected exam
+    # Get all teachers for management modal
+    cursor.execute("SELECT id, username, display_name, role, created_at FROM users ORDER BY id ASC")
+    teachers = [dict(row) for row in cursor.fetchall()]
+
+    # Check if a specific course/exam is opened
     selected_slug = request.args.get("exam")
     selected_exam = None
+    submissions = []
+
     if selected_slug:
         for ex in exams:
-            if ex["slug"] == selected_slug:
+            if ex["slug"] == selected_slug or ex["course_code"].lower() == selected_slug.lower():
                 selected_exam = ex
                 break
 
-    if not selected_exam and exams:
-        selected_exam = exams[0]
-
-    submissions = []
-    if selected_exam:
-        cursor.execute("""
-            SELECT * FROM submissions
-            WHERE exam_id = ?
-            ORDER BY roll_number ASC
-        """, (selected_exam["id"],))
-        submissions = [dict(row) for row in cursor.fetchall()]
+        if selected_exam:
+            cursor.execute("""
+                SELECT * FROM submissions
+                WHERE exam_id = ?
+                ORDER BY roll_number ASC
+            """, (selected_exam["id"],))
+            submissions = [dict(row) for row in cursor.fetchall()]
 
     conn.close()
 
     return render_template(
         "admin.html",
         exams=exams,
+        teachers=teachers,
         current_exam=selected_exam,
         submissions=submissions,
         username=session.get("username"),
@@ -581,10 +650,7 @@ def admin_dashboard():
 @app.route("/admin/exams/create", methods=["POST"])
 @login_required
 def create_exam():
-    """
-    Create a new course exam submission page.
-    Automatically creates a dedicated course directory on the server.
-    """
+    """Create a new course exam submission page."""
     course_code = request.form.get("course_code", "").strip().upper()
     course_name = request.form.get("course_name", "").strip()
     exam_title = request.form.get("exam_title", "").strip()
@@ -592,14 +658,18 @@ def create_exam():
     instructions = request.form.get("instructions", "").strip()
     allowed_types = request.form.get("allowed_types", "zip").strip().lower()
     allow_multiple = 1 if request.form.get("allow_multiple") == "1" else 0
+    short_code = request.form.get("short_code", "").strip().lower()
 
     if not course_code or not exam_title:
         flash("Course Code and Exam Title are required.", "error")
         return redirect(url_for("admin_dashboard"))
 
-    # Generate slug: e.g. csl100-midsem-exam
-    base_slug = slugify(f"{course_code}-{exam_title}")
-    slug = base_slug
+    # Determine slug (use short_code if provided, else course_code)
+    if short_code:
+        slug = slugify(short_code)
+    else:
+        slug = slugify(course_code)
+
     folder_name = re.sub(r"[^\w-]", "_", f"{course_code}_{exam_title}")
 
     # Handle custom lab logo upload (if provided)
@@ -619,7 +689,10 @@ def create_exam():
     # Ensure unique slug
     cursor.execute("SELECT id FROM exams WHERE slug = ?", (slug,))
     if cursor.fetchone():
-        slug = f"{base_slug}-{int(time.time()) % 10000}"
+        slug = f"{slug}-{slugify(exam_title)}"
+        cursor.execute("SELECT id FROM exams WHERE slug = ?", (slug,))
+        if cursor.fetchone():
+            slug = f"{slug}-{int(time.time()) % 1000}"
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute("""
@@ -640,7 +713,7 @@ def create_exam():
     course_dir = SUBMISSIONS_DIR / folder_name
     course_dir.mkdir(parents=True, exist_ok=True)
 
-    flash(f"Exam submission page created for {course_code} - {exam_title}!", "success")
+    flash(f"Course exam page created for {course_code} - {exam_title}! Short link: /{slug}", "success")
     return redirect(url_for("admin_dashboard", exam=slug))
 
 
@@ -671,7 +744,7 @@ def toggle_exam_status(exam_id):
 @login_required
 def download_exam_all(exam_id):
     """
-    Bulk download all submissions for a specific exam as a single ZIP archive.
+    Bulk download all submissions for an exam as a single ZIP archive.
     Uses relative routing to prevent 404 behind proxy.
     """
     conn = get_db()
@@ -701,7 +774,6 @@ def download_exam_all(exam_id):
         for r in rows:
             path = Path(r["file_path"])
             if path.exists():
-                # Inside zip, store as <ROLL_NUMBER>.<ext>
                 arcname = r["stored_filename"]
                 zf.write(path, arcname=arcname)
 
@@ -718,9 +790,7 @@ def download_exam_all(exam_id):
 @app.route("/admin/download-file/<int:sub_id>", methods=["GET"])
 @login_required
 def download_single_file(sub_id):
-    """
-    Download a single student's submitted file directly.
-    """
+    """Download a single student's submitted file directly."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
@@ -747,5 +817,5 @@ def download_single_file(sub_id):
 
 
 if __name__ == "__main__":
-    print(f"Starting ACCL Lab Exam Portal on {HOST}:{PORT}...")
+    print(f"Starting Lab Exam Portal on {HOST}:{PORT}...")
     app.run(host=HOST, port=PORT, debug=False)
