@@ -15,22 +15,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const progressText = document.getElementById("progressText");
     const errorAlert = document.getElementById("errorAlert");
     const btnSubmit = document.getElementById("btnSubmit");
-    const btnText = btnSubmit.querySelector(".btn-text");
-    const btnLoader = btnSubmit.querySelector(".btn-loader");
+    const btnText = btnSubmit ? btnSubmit.querySelector(".btn-text") : null;
+    const btnLoader = btnSubmit ? btnSubmit.querySelector(".btn-loader") : null;
     const submissionCard = document.getElementById("submissionCard");
     const receiptCard = document.getElementById("receiptCard");
     const btnResubmit = document.getElementById("btnResubmit");
-    const serverClock = document.getElementById("serverClock");
 
-    // Live clock update
-    function updateClock() {
-        const now = new Date();
-        if (serverClock) {
-            serverClock.textContent = now.toLocaleTimeString();
-        }
-    }
-    setInterval(updateClock, 1000);
-    updateClock();
+    if (!form || !rollInput) return;
+
+    const examConfig = window.EXAM_CONFIG || { slug: "", allowMultiple: true };
+    const examSlug = examConfig.slug;
 
     // 1. Roll Number: Automatically convert to Uppercase Alphanumeric
     let debounceTimer = null;
@@ -46,7 +40,6 @@ document.addEventListener("DOMContentLoaded", () => {
         
         if (originalVal !== cleaned) {
             e.target.value = cleaned;
-            // Restore cursor position if possible
             e.target.setSelectionRange(cursorPosition, cursorPosition);
         } else {
             e.target.value = cleaned;
@@ -54,12 +47,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
         clearError();
 
-        // Debounced check for previous submission history
+        // Debounced check for existing submission
         clearTimeout(debounceTimer);
-        if (cleaned.length >= 3) {
+        if (cleaned.length >= 3 && examSlug) {
             debounceTimer = setTimeout(() => {
                 checkPriorSubmission(cleaned);
-            }, 500);
+            }, 400);
         } else {
             rollStatusTip.textContent = "";
         }
@@ -71,70 +64,86 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function checkPriorSubmission(roll) {
         try {
-            const res = await fetch(`api/status/${encodeURIComponent(roll)}`);
+            const res = await fetch(`exam/${encodeURIComponent(examSlug)}/status/${encodeURIComponent(roll)}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.has_submitted) {
-                    rollStatusTip.innerHTML = `⚠️ Prior submission found (<strong>v${data.version}</strong> at ${data.submitted_at}). Submitting again will update your <strong>latest</strong> file.`;
-                    rollStatusTip.style.color = "#b45309";
+                    if (examConfig.allowMultiple) {
+                        rollStatusTip.innerHTML = `ℹ️ Previous submission found (<strong>v${data.version}</strong> at ${data.submitted_at}). Uploading again will update your active latest file.`;
+                        rollStatusTip.style.color = "#b45309";
+                        btnSubmit.disabled = false;
+                    } else {
+                        rollStatusTip.innerHTML = `⛔ <strong>Already submitted</strong> at ${data.submitted_at}. Multiple submissions are not permitted for this exam.`;
+                        rollStatusTip.style.color = "#b91c1c";
+                        btnSubmit.disabled = true;
+                    }
                 } else {
-                    rollStatusTip.textContent = "✓ Ready for first submission";
+                    rollStatusTip.textContent = "✓ Ready for submission";
                     rollStatusTip.style.color = "#15803d";
+                    btnSubmit.disabled = false;
                 }
             }
         } catch (err) {
-            // Ignore background check failure
+            // Ignore background network glitch
         }
     }
 
     // 2. Drag and Drop File Upload
-    btnBrowse.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        fileInput.click();
-    });
-
-    dropZone.addEventListener("click", (e) => {
-        if (e.target !== btnRemoveFile && !filePreview.contains(e.target)) {
+    if (btnBrowse) {
+        btnBrowse.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             fileInput.click();
-        }
-    });
+        });
+    }
 
-    ["dragenter", "dragover"].forEach((eventName) => {
-        dropZone.addEventListener(eventName, (e) => {
+    if (dropZone) {
+        dropZone.addEventListener("click", (e) => {
+            if (e.target !== btnRemoveFile && !filePreview.contains(e.target)) {
+                fileInput.click();
+            }
+        });
+
+        ["dragenter", "dragover"].forEach((eventName) => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.add("dragover");
+            });
+        });
+
+        ["dragleave", "drop"].forEach((eventName) => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.remove("dragover");
+            });
+        });
+
+        dropZone.addEventListener("drop", (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                displayFilePreview(files[0]);
+            }
+        });
+    }
+
+    if (fileInput) {
+        fileInput.addEventListener("change", () => {
+            if (fileInput.files.length > 0) {
+                displayFilePreview(fileInput.files[0]);
+            }
+        });
+    }
+
+    if (btnRemoveFile) {
+        btnRemoveFile.addEventListener("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            dropZone.classList.add("dragover");
+            resetFileInput();
         });
-    });
-
-    ["dragleave", "drop"].forEach((eventName) => {
-        dropZone.addEventListener(eventName, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dropZone.classList.remove("dragover");
-        });
-    });
-
-    dropZone.addEventListener("drop", (e) => {
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            fileInput.files = files;
-            displayFilePreview(files[0]);
-        }
-    });
-
-    fileInput.addEventListener("change", () => {
-        if (fileInput.files.length > 0) {
-            displayFilePreview(fileInput.files[0]);
-        }
-    });
-
-    btnRemoveFile.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        resetFileInput();
-    });
+    }
 
     function displayFilePreview(file) {
         clearError();
@@ -181,7 +190,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (!fileInput.files || fileInput.files.length === 0) {
-            showError("Please select or drag your exam file (.zip).");
+            showError("Please select or drag your exam file.");
             return;
         }
 
@@ -205,7 +214,7 @@ document.addEventListener("DOMContentLoaded", () => {
         progressText.textContent = "Uploading... 0%";
 
         const xhr = new XMLHttpRequest();
-        xhr.open("POST", "submit", true);
+        xhr.open("POST", `exam/${encodeURIComponent(examSlug)}/submit`, true);
 
         xhr.upload.onprogress = (event) => {
             if (event.lengthComputable) {
@@ -248,7 +257,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // 4. Show Success Receipt Card
     function showSuccessReceipt(details) {
         document.getElementById("receiptRoll").textContent = details.roll_number;
-        document.getElementById("receiptVersion").textContent = `Submission #${details.version} (Latest)`;
         document.getElementById("receiptFilename").textContent = details.filename;
         document.getElementById("receiptSize").textContent = details.file_size;
         document.getElementById("receiptTime").textContent = details.submitted_at;
@@ -256,7 +264,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const subtitle = document.getElementById("receiptSubtitle");
         if (details.is_update) {
-            subtitle.innerHTML = `Your updated submission (<strong>#${details.version}</strong>) was received. This is now your <strong>active latest file</strong>.`;
+            subtitle.innerHTML = `Your updated submission (Attempt #${details.version}) was received. Your active latest file has been updated.`;
         } else {
             subtitle.textContent = "Your exam file has been successfully uploaded and recorded.";
         }
@@ -268,17 +276,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // 5. Submit Another Version Button
-    btnResubmit.addEventListener("click", () => {
-        receiptCard.style.display = "none";
-        submissionCard.style.display = "block";
-        resetFileInput();
-        progressContainer.style.display = "none";
-        clearError();
-        
-        // Check prior submission to update the status tip
-        const roll = sanitizeInput(rollInput.value);
-        if (roll) {
-            checkPriorSubmission(roll);
-        }
-    });
+    if (btnResubmit) {
+        btnResubmit.addEventListener("click", () => {
+            receiptCard.style.display = "none";
+            submissionCard.style.display = "block";
+            resetFileInput();
+            progressContainer.style.display = "none";
+            clearError();
+            
+            const roll = sanitizeInput(rollInput.value);
+            if (roll) {
+                checkPriorSubmission(roll);
+            }
+        });
+    }
 });

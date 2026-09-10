@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Login - ACCL Lab Exam Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .login-card {
+            max-width: 440px;
+            margin: 2rem auto;
+            text-align: center;
+        }
+        .logos-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .logo-img {
+            height: 52px;
+            object-fit: contain;
+        }
+        .login-title {
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 0.35rem;
+        }
+        .login-sub {
+            color: #64748b;
+            font-size: 0.9rem;
+            margin-bottom: 2rem;
+        }
+        .default-creds {
+            background: #f8fafc;
+            border: 1px dashed #cbd5e1;
+            padding: 0.75rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: #475569;
+            margin-top: 1.5rem;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="background-decor"></div>
+    <main class="container">
+        <div class="card login-card">
+            <div class="logos-row">
+                <img src="{{ url_for('static', filename='images/iitbhilai_logo.png') }}" alt="IIT Bhilai" class="logo-img">
+                <img src="{{ url_for('static', filename='images/accl_logo.png') }}" alt="ACCL Lab" class="logo-img">
+            </div>
+
+            <h1 class="login-title">Teacher Portal</h1>
+            <p class="login-sub">Advanced Computing & Communications Lab (ACCL)</p>
+
+            {% if error %}
+            <div class="alert alert-error" style="display: block; text-align: left;">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            <form method="POST" action="{{ url_for('login') }}">
+                <div class="form-group" style="text-align: left;">
+                    <label for="username">
+                        <span class="label-title">Username</span>
+                    </label>
+                    <input type="text" id="username" name="username" placeholder="Username (e.g. kishan)" required autofocus style="text-transform: none;">
+                </div>
+
+                <div class="form-group" style="text-align: left;">
+                    <label for="password">
+                        <span class="label-title">Password</span>
+                    </label>
+                    <input type="password" id="password" name="password" placeholder="Password" required style="width: 100%; padding: 0.85rem 1.15rem; border: 2px solid var(--border-color); border-radius: var(--radius-md); font-size: 1rem;">
+                </div>
+
+                <button type="submit" class="btn-submit" style="margin-top: 1rem;">
+                    Log In to Dashboard
+                </button>
+            </form>
+
+            <div class="default-creds">
+                <strong>Default Credentials:</strong><br>
+                Username: <code>kishan</code> | Password: <code>password123</code><br>
+                <em>(Password is changeable once logged into the dashboard)</em>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <p>Developed & Maintained by ACCL, IIT Bhilai</p>
+        </footer>
+    </main>
+</body>
+</html>

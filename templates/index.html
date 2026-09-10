@@ -3,34 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lab Exam File Submission Portal</title>
-    <link rel="stylesheet" href="static/style.css">
+    <title>{{ exam.course_code }} - {{ exam.exam_title }} | Submission Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="background-decor"></div>
     <main class="container">
-        <!-- Header -->
+        <!-- Header with IIT Bhilai Logo & ACCL Creator Attribution -->
         <header class="header">
-            <div class="badge">ACCL Research Lab • IIT Bhilai</div>
-            <h1>Lab Exam Submission Portal</h1>
-            <p class="subtitle">Direct submission portal for student laboratory examinations. No login required.</p>
+            <div class="header-branding">
+                <div class="logos-container">
+                    {% if exam.logo_filename and exam.logo_filename != 'iitbhilai_logo.png' %}
+                        <img src="{{ url_for('static', filename='uploads/' + exam.logo_filename) }}" alt="Course Logo" class="brand-logo">
+                    {% else %}
+                        <img src="{{ url_for('static', filename='images/iitbhilai_logo.png') }}" alt="IIT Bhilai" class="brand-logo">
+                    {% endif %}
+                    <div class="creator-tag">
+                        <img src="{{ url_for('static', filename='images/accl_logo.png') }}" alt="ACCL" class="accl-mini-logo">
+                        <span>Created by <strong>ACCL</strong> • IIT Bhilai</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="badge">{{ exam.course_code }} • {{ exam.course_name }}</div>
+            <h1>{{ exam.exam_title }}</h1>
+            <p class="subtitle">Instructor: {{ exam.teacher_name }}</p>
         </header>
+
+        <!-- Course Information & Instructions Card -->
+        <section class="card course-info-card">
+            <div class="course-meta-grid">
+                <div class="meta-item">
+                    <span class="meta-lbl">Course Code</span>
+                    <span class="meta-val">{{ exam.course_code }}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-lbl">Course Name</span>
+                    <span class="meta-val">{{ exam.course_name }}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-lbl">Allowed Files</span>
+                    <span class="meta-val">
+                        {% if exam.allowed_types == 'zip' %}
+                            .ZIP archives only
+                        {% elif exam.allowed_types in ('any', '*', 'all') %}
+                            Any file format
+                        {% else %}
+                            .{{ exam.allowed_types|replace(',', ', .') }}
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-lbl">Submission Mode</span>
+                    <span class="meta-val">
+                        {% if exam.allow_multiple %}
+                            <span class="badge-policy badge-multi">Multiple (Latest Kept)</span>
+                        {% else %}
+                            <span class="badge-policy badge-single">Single Submission Only</span>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+
+            {% if exam.instructions %}
+            <div class="instructions-box">
+                <div class="inst-title">📋 Exam Instructions:</div>
+                <div class="inst-content">{{ exam.instructions|nl2br }}</div>
+            </div>
+            {% endif %}
+        </section>
 
         <!-- Main Submission Card -->
         <section class="card" id="submissionCard">
+            {% if not exam.is_active %}
+            <div class="alert alert-error" style="display: block; text-align: center; font-weight: 600;">
+                ⛔ This exam submission portal is currently CLOSED by the instructor.
+            </div>
+            {% else %}
             <form id="submissionForm" enctype="multipart/form-data" novalidate>
                 <!-- Roll Number Section -->
                 <div class="form-group">
                     <label for="rollNumber">
-                        <span class="label-title">Roll Number</span>
-                        <span class="label-hint">Alphanumeric (auto-capitalized)</span>
+                        <span class="label-title">Student Roll Number</span>
+                        <span class="label-hint">Auto-capitalized alphanumeric</span>
                     </label>
                     <div class="input-wrapper">
                         <input 
                             type="text" 
                             id="rollNumber" 
                             name="roll_number" 
-                            placeholder="e.g. CS21B001 or 12040120"
+                            placeholder="e.g. B26DS003 or CS21B001"
                             autocomplete="off"
                             autocapitalize="characters"
                             spellcheck="false"
@@ -45,17 +107,37 @@
                 <!-- File Upload Section -->
                 <div class="form-group">
                     <label>
-                        <span class="label-title">Exam File (.zip)</span>
-                        <span class="label-hint">Multiple submissions allowed (latest is considered)</span>
+                        <span class="label-title">Exam File Attachment</span>
+                        <span class="label-hint">
+                            {% if exam.allow_multiple %}
+                                Latest file will replace previous submission
+                            {% else %}
+                                Single submission only (cannot be modified)
+                            {% endif %}
+                        </span>
                     </label>
                     <div class="drop-zone" id="dropZone">
-                        <input type="file" id="examFile" name="exam_file" accept=".zip,.tar.gz,.tgz,.7z,.rar,.tar" required>
+                        <input 
+                            type="file" 
+                            id="examFile" 
+                            name="exam_file" 
+                            {% if exam.allowed_types == 'zip' %}
+                                accept=".zip"
+                            {% elif exam.allowed_types not in ('any', '*', 'all') %}
+                                accept=".{{ exam.allowed_types|replace(',', ',.') }}"
+                            {% endif %}
+                            required
+                        >
                         <div class="drop-content" id="dropContent">
                             <div class="upload-icon">📦</div>
-                            <div class="drop-title">Drag & drop your <strong>.zip</strong> exam file here</div>
+                            <div class="drop-title">
+                                Drag & drop your exam file here
+                            </div>
                             <div class="drop-or">or</div>
                             <button type="button" class="btn-browse" id="btnBrowse">Browse File</button>
-                            <div class="drop-limit">Accepts .zip archives (Max 150 MB)</div>
+                            <div class="drop-limit">
+                                Allowed: <strong>{{ exam.allowed_types|upper }}</strong> (Max 200 MB)
+                            </div>
                         </div>
                         <div class="file-preview" id="filePreview" style="display: none;">
                             <div class="file-info">
@@ -67,14 +149,6 @@
                             </div>
                             <button type="button" class="btn-remove" id="btnRemoveFile" title="Remove file">✕</button>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Info Alert -->
-                <div class="info-box">
-                    <span class="info-icon">ℹ️</span>
-                    <div>
-                        <strong>Notice:</strong> You may submit multiple times if you make updates. Each new submission will be saved and only your <strong>latest submitted file</strong> will be evaluated.
                     </div>
                 </div>
 
@@ -95,6 +169,7 @@
                     <span class="btn-loader" style="display: none;">⏳ Uploading...</span>
                 </button>
             </form>
+            {% endif %}
         </section>
 
         <!-- Success Receipt Card (Shown after successful upload) -->
@@ -107,16 +182,16 @@
 
             <div class="receipt-body">
                 <div class="receipt-item">
+                    <span class="receipt-label">Course</span>
+                    <span class="receipt-value" id="receiptCourse">{{ exam.course_code }} - {{ exam.exam_title }}</span>
+                </div>
+                <div class="receipt-item">
                     <span class="receipt-label">Roll Number</span>
                     <span class="receipt-value highlight" id="receiptRoll">--</span>
                 </div>
                 <div class="receipt-item">
                     <span class="receipt-label">Status</span>
-                    <span class="receipt-value status-badge" id="receiptStatus">Latest Considered</span>
-                </div>
-                <div class="receipt-item">
-                    <span class="receipt-label">Submission Version</span>
-                    <span class="receipt-value" id="receiptVersion">Submission #1</span>
+                    <span class="receipt-value status-badge" id="receiptStatus">Active Latest File</span>
                 </div>
                 <div class="receipt-item">
                     <span class="receipt-label">File Name</span>
@@ -136,20 +211,32 @@
                 </div>
             </div>
 
+            {% if exam.allow_multiple %}
             <div class="receipt-actions">
                 <button type="button" class="btn-secondary" id="btnResubmit">
-                    Submit Another Version (Updates Latest)
+                    Submit Another Version (Replaces Previous)
                 </button>
             </div>
+            {% endif %}
         </section>
 
-        <!-- Footer -->
+        <!-- Footer with ACCL Branding -->
         <footer class="footer">
-            <p>Advanced Computing & Communication Lab (ACCL) • Department of CSE & EE • IIT Bhilai</p>
-            <p class="footer-sub">Server Time: <span id="serverClock">--:--:--</span> • Local Intranet Portal</p>
+            <div class="accl-footer-banner">
+                <img src="{{ url_for('static', filename='images/accl_logo.png') }}" alt="ACCL Logo" class="accl-mini-logo">
+                <span>Advanced Computing & Communications Laboratory (ACCL) • Department of CSE & EE • IIT Bhilai</span>
+            </div>
+            <p class="footer-sub">Direct Submission Portal • Local Intranet • No Login Required for Students</p>
         </footer>
     </main>
 
-    <script src="static/script.js"></script>
+    <script>
+        window.EXAM_CONFIG = {
+            slug: "{{ exam.slug }}",
+            allowMultiple: {{ 'true' if exam.allow_multiple else 'false' }},
+            allowedTypes: "{{ exam.allowed_types }}"
+        };
+    </script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
