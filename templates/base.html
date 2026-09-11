@@ -307,8 +307,11 @@
     function switchToHttps(e) {
       if (e) e.preventDefault();
       const host = window.location.hostname;
-      const path = window.location.pathname;
+      let path = window.location.pathname;
       const search = window.location.search;
+      if (!path.startsWith('/lms') && !path.startsWith('/hoodle')) {
+        path = '/lms' + (path.startsWith('/') ? path : '/' + path);
+      }
       window.location.href = `https://${host}${path}${search}`;
     }
 

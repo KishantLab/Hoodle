@@ -188,7 +188,7 @@ function onQrCodeSuccess(decodedText, decodedResult) {
 
   stopCameraScanner();
 
-  const prefix = window.location.pathname.startsWith("/lms") ? "/lms" : "";
+  const prefix = window.location.pathname.startsWith("/lms") ? "/lms" : (window.location.pathname.startsWith("/hoodle") ? "/hoodle" : "");
 
   if (decodedText.startsWith("http://") || decodedText.startsWith("https://")) {
     window.location.href = decodedText;
