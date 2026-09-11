@@ -8,16 +8,17 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/lms.css') }}">
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/accl_logo.png') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/hoodle_mark.svg') }}">
+  <link rel="alternate icon" type="image/png" href="{{ url_for('static', filename='images/hoodle_app_icon.png') }}">
   {% block extra_head %}{% endblock %}
 </head>
 <body>
-
   <!-- Top Navigation Bar -->
   <header class="lms-navbar">
     <div class="navbar-primary-row">
-      <!-- Left: Brand (Dual Logos + Hoodle Wordmark) -->
+      <!-- Left: Brand (Hoodle Logo + Dual Lab Logos + Hoodle Wordmark) -->
       <a href="{{ url_for('dashboard') }}" class="brand-section">
+        <img src="{{ url_for('static', filename='images/hoodle_mark.svg') }}" alt="Hoodle Logo" class="brand-logo hoodle-mark-logo" style="width: 36px; height: 36px; border-radius: 9px; box-shadow: 0 2px 8px rgba(37,99,235,0.25); margin-right: 0.4rem; flex-shrink: 0;">
         <div class="brand-logos-cluster">
           <img src="{{ url_for('static', filename='images/accl_logo.png') }}" alt="ACCL Lab" class="brand-logo accl-logo">
           <div class="brand-logos-divider"></div>
@@ -54,7 +55,7 @@
       </div>
     </div>
 
-    <!-- Row 2: Clean Nav Pills (Courses, Attendance Scanner, Directory) -->
+    <!-- Row 2: Clean Nav Pills (Courses, Attendance Scanner, Directory, Brand) -->
     {% if current_user %}
       <nav class="navbar-nav-strip">
         <a href="{{ url_for('dashboard') }}" class="nav-pill {% if request.path == '/dashboard' or request.path == '/' %}active{% endif %}">
@@ -72,6 +73,10 @@
             ⚙️ User Directory
           </a>
         {% endif %}
+
+        <a href="{{ url_for('brand_assets') }}" class="nav-pill {% if '/brand' in request.path %}active{% endif %}" title="Hoodle Logo & Brand Assets">
+          🎨 Brand Assets
+        </a>
       </nav>
     {% endif %}
   </header>

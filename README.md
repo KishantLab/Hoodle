@@ -2,14 +2,17 @@
 
 <div align="center">
 
-![Hoodle Banner](static/images/accl_logo.png)
+<img src="static/images/hoodle_banner.png" alt="Hoodle Banner" style="max-width: 100%; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+
+<br><br>
 
 **Accelerated Classroom & Lab Learning (Hoodle)**  
 *Developed by **Kishan Tamboli (PhD)** • **Accelerated Computing Research Lab (ACCL)** • **Indian Institute of Technology Bhilai***
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Flask 3.0](https://img.shields.io/badge/framework-Flask%203.0-green.svg)](https://palletsprojects.com/p/flask/)
-[![Tests](https://img.shields.io/badge/tests-19%20passing-brightgreen.svg)](test_lms.py)
+[![Tests](https://img.shields.io/badge/tests-20%20passing-brightgreen.svg)](test_lms.py)
+[![Brand Kit](https://img.shields.io/badge/brand-Hoodle%20Kit%20(SVG%2FPNG)-blueviolet.svg)](static/images/hoodle_brand_kit.zip)
 [![License](https://img.shields.io/badge/license-ACCL%20IIT%20Bhilai-red.svg)](README.md)
 
 </div>
@@ -123,6 +126,17 @@ Every course in Hoodle provides a Google Classroom-style tab navigation:
 | **Faculty / Instructor (`teacher`)** | Create and manage courses, author coursework, grade submissions, configure weights, export gradebooks, manage class rosters. |
 | **Co-Teacher / TA (`ta`)** | Course-level teaching privileges: grade coursework, inspect submissions, view and manage attendance logs. |
 | **Student (`student`)** | Join courses with 6-character class codes, view personal grades and weighted total out of 100, scan attendance QR codes, turn in work, access personal locker. Classmate submission privacy is strictly preserved. |
+
+---
+
+### 9. 🎨 Official Brand Identity & Downloadable Logo Kit
+- **Official Visual Identity Portal (`/brand`)**:
+  - Dedicated brand page providing direct 1-click downloads for instructors, students, developers, and event organizers.
+  - **Scalable Vector Logo (`hoodle_logo.svg`)**: Infinite-resolution brand lockup with typography and ACCL lab credentials for print, posters, and web.
+  - **High-Resolution Raster Emblem (`hoodle_logo.png`)**: 1024×1024 px academic mortarboard, stylized 'H', open book wings, and neural computing network nodes.
+  - **Horizontal Presentation Banner (`hoodle_banner.png`)**: 16:9 HD banner for presentations, publications, slide decks, and GitHub repositories.
+  - **Dark Squircle App Icon (`hoodle_app_icon.png` & `hoodle_mark.svg`)**: Mobile homescreen icon, PWA badge, and web favicon.
+  - **Downloadable Brand Kit (`/brand/download/kit`)**: Bundled `.zip` archive containing all SVG, PNG, and partner logos (ACCL Lab, IIT Bhilai) along with official color specifications (`#1D4ED8`, `#06B6D4`, `#F59E0B`, `#0F172A`).
 
 ---
 
@@ -298,6 +312,7 @@ test_admin_user_directory ........................................... ok
 test_announcements_and_comments ..................................... ok
 test_assignment_submission_and_receipt ............................... ok
 test_attendance_projector_and_apis .................................. ok
+test_brand_assets_and_logo_downloads ................................. ok
 test_bulk_manual_attendance_and_csv_export ........................... ok
 test_canvas_weighted_grading_and_bulk_import ........................ ok
 test_coteacher_attendance_log_access ................................. ok
@@ -315,7 +330,7 @@ test_student_login_and_dashboard .................................... ok
 test_student_registration ........................................... ok
 
 ----------------------------------------------------------------------
-Ran 19 tests in 56.951s - ALL OK
+Ran 20 tests in 58.644s - ALL OK
 ```
 
 ---

@@ -3041,6 +3041,59 @@ def download_submission(sub_id):
     )
 
 
+# --- Hoodle Brand Assets & Logo Downloads ---
+
+@app.route("/brand")
+def brand_assets():
+    current_user = get_current_user()
+    return render_template("brand_assets.html", current_user=current_user)
+
+
+@app.route("/brand/download/<asset_name>")
+def download_brand_asset(asset_name):
+    allowed_assets = {
+        "logo-png": ("hoodle_logo.png", "Hoodle_Logo_Emblem.png", "image/png"),
+        "logo-svg": ("hoodle_logo.svg", "Hoodle_Logo_Full.svg", "image/svg+xml"),
+        "banner-png": ("hoodle_banner.png", "Hoodle_Brand_Banner.png", "image/png"),
+        "app-icon-png": ("hoodle_app_icon.png", "Hoodle_App_Icon.png", "image/png"),
+        "mark-svg": ("hoodle_mark.svg", "Hoodle_Mark_Icon.svg", "image/svg+xml"),
+        "kit": ("hoodle_brand_kit.zip", "Hoodle_Brand_Kit.zip", "application/zip"),
+    }
+    if asset_name not in allowed_assets:
+        abort(404, "Brand asset not found")
+
+    file_rel, download_name, mimetype = allowed_assets[asset_name]
+    file_path = os.path.join(app.root_path, "static", "images", file_rel)
+
+    # Generate ZIP on the fly if missing
+    if asset_name == "kit" and not os.path.exists(file_path):
+        import zipfile
+        img_dir = os.path.join(app.root_path, "static", "images")
+        try:
+            with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as z:
+                for fn in ("hoodle_logo.png", "hoodle_logo.svg", "hoodle_banner.png", "hoodle_app_icon.png", "hoodle_mark.svg"):
+                    p = os.path.join(img_dir, fn)
+                    if os.path.exists(p):
+                        z.write(p, fn)
+                for pfn in ("accl_logo.png", "iitbhilai_logo.png"):
+                    p = os.path.join(img_dir, pfn)
+                    if os.path.exists(p):
+                        z.write(p, f"partner_logos/{pfn}")
+                z.writestr("BRAND_GUIDELINES.txt", "HOODLE LMS BRAND ASSETS\nACCL Lab, IIT Bhilai\nColors: #1D4ED8, #06B6D4, #F59E0B, #0F172A\n")
+        except Exception as e:
+            app.logger.warning("Failed to generate brand kit zip: %s", e)
+
+    if not os.path.exists(file_path):
+        abort(404, "Brand asset file missing")
+
+    return send_file(
+        file_path,
+        mimetype=mimetype,
+        as_attachment=True,
+        download_name=download_name
+    )
+
+
 # --- Admin & Faculty User Management ---
 
 @app.route("/admin/users")

@@ -836,6 +836,36 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertEqual(prev_data["filename"], "Research_Paper.pdf")
         self.assertIn(f"/locker/view/{lock_id}", prev_data["url"])
 
+    def test_brand_assets_and_logo_downloads(self):
+        """Test brand assets page renders and logo assets are downloadable."""
+        # 1. Test /brand page renders 200
+        res = self.client.get("/brand")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Hoodle Brand Assets", res.data)
+        self.assertIn(b"Download Complete Brand Kit", res.data)
+
+        # 2. Test downloading logo PNG
+        res_png = self.client.get("/brand/download/logo-png")
+        self.assertEqual(res_png.status_code, 200)
+        self.assertIn("image/png", res_png.content_type)
+        self.assertIn("attachment", res_png.headers.get("Content-Disposition", ""))
+
+        # 3. Test downloading logo SVG
+        res_svg = self.client.get("/brand/download/logo-svg")
+        self.assertEqual(res_svg.status_code, 200)
+        self.assertIn("svg", res_svg.content_type)
+        self.assertIn("Hoodle_Logo_Full.svg", res_svg.headers.get("Content-Disposition", ""))
+
+        # 4. Test downloading brand kit ZIP
+        res_kit = self.client.get("/brand/download/kit")
+        self.assertEqual(res_kit.status_code, 200)
+        self.assertIn("zip", res_kit.content_type)
+        self.assertIn("Hoodle_Brand_Kit.zip", res_kit.headers.get("Content-Disposition", ""))
+
+        # 5. Test invalid asset name returns 404
+        res_404 = self.client.get("/brand/download/non-existent-asset")
+        self.assertEqual(res_404.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()
