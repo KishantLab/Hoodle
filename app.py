@@ -10,6 +10,7 @@ import re
 import sys
 import time
 import shutil
+import subprocess
 import sqlite3
 import hashlib
 import zipfile
@@ -50,12 +51,27 @@ def hash_password(password):
 
 # --- Directory & Environment Configuration ---
 BASE_DIR = Path(__file__).resolve().parent
+
+# Automatically load .env into os.environ if present
+_env_file = BASE_DIR / ".env"
+if _env_file.exists():
+    try:
+        with open(_env_file, "r", encoding="utf-8") as _ef:
+            for _line in _ef:
+                _line = _line.strip()
+                if _line and not _line.startswith("#") and "=" in _line:
+                    _k, _v = _line.split("=", 1)
+                    os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
+    except Exception:
+        pass
+
 STORAGE_DIR = Path(os.environ.get("STORAGE_DIR", BASE_DIR / "storage"))
 LOCKERS_DIR = STORAGE_DIR / "lockers"
 SUBMISSIONS_DIR = STORAGE_DIR / "submissions"
 ATTACHMENTS_DIR = STORAGE_DIR / "attachments"
 STATIC_DIR = BASE_DIR / "static"
 UPLOADS_DIR = STATIC_DIR / "uploads"
+BACKUPS_DIR = Path(os.environ.get("BACKUPS_DIR", BASE_DIR / "backups"))
 DB_PATH = Path(os.environ.get("DB_PATH", BASE_DIR / "accl_lms.db"))
 
 PORT = int(os.environ.get("PORT", 8095))
@@ -65,7 +81,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "accl_lms_classroom_secret_2026_super_
 DEFAULT_LOCKER_QUOTA = 500 * 1024 * 1024  # 500 MB default private storage quota
 
 # Create directories if they do not exist
-for d in (STORAGE_DIR, LOCKERS_DIR, SUBMISSIONS_DIR, ATTACHMENTS_DIR, STATIC_DIR, UPLOADS_DIR):
+for d in (STORAGE_DIR, LOCKERS_DIR, SUBMISSIONS_DIR, ATTACHMENTS_DIR, STATIC_DIR, UPLOADS_DIR, BACKUPS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
@@ -75,10 +91,37 @@ app.config["STORAGE_DIR"] = STORAGE_DIR
 app.config["LOCKERS_DIR"] = LOCKERS_DIR
 app.config["SUBMISSIONS_DIR"] = SUBMISSIONS_DIR
 app.config["ATTACHMENTS_DIR"] = ATTACHMENTS_DIR
+app.config["BACKUPS_DIR"] = BACKUPS_DIR
 app.config["DB_PATH"] = DB_PATH
+
+# Strict Session Security against XSS and session hijacking
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_NAME"] = "hoodle_session"
+app.config["PERMANENT_SESSION_LIFETIME"] = 86400 * 14  # 14 days
 
 # Enable proper reverse-proxy handling (Nginx /lms/)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+
+@app.after_request
+def set_security_headers(response):
+    """Inject defensive HTTP security headers against clickjacking, sniffing, and XSS."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """Official Hoodle URL favicon route."""
+    return send_from_directory(
+        os.path.join(app.root_path, "static", "images"),
+        "hoodle_icon.png",
+        mimetype="image/png"
+    )
 
 
 # --- Template Filters & Utilities ---
@@ -511,17 +554,6 @@ def init_db():
                     100, '2026-09-20 18:00:00', '2026-09-20 15:00:00', '2026-09-20 18:00:00', 'zip', 1, 1, 0, 'Lab 1, Lab 2, Lab 3, CC-101', ?, ?)
         """, (course_id, t2_id, teacher_id, now_str))
 
-    # Upgrade any scrypt hashes for cross-version compatibility
-    c.execute("SELECT id, username, password_hash FROM users")
-    for u in c.fetchall():
-        if u["password_hash"].startswith("scrypt"):
-            if u["username"] == "admin":
-                c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password("admin@accl"), u["id"]))
-            elif u["username"] == "kishan":
-                c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password("password123"), u["id"]))
-            elif u["username"] == "student1":
-                c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password("student123"), u["id"]))
-
     conn.commit()
     conn.close()
 
@@ -860,10 +892,9 @@ def register():
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         confirm_password = request.form.get("confirm_password", "")
-        role = request.form.get("role", "student")
-
-        if role not in ("student", "teacher"):
-            role = "student"
+        # Security hardening: Public self-registration strictly assigns the Student role.
+        # Faculty and Instructor accounts must be created by Administrators.
+        role = "student"
 
         if not full_name or not roll_number or not password:
             flash("Full Name, Roll Number, and Password are required.", "danger")
@@ -925,6 +956,71 @@ def logout():
     session.clear()
     flash("You have been signed out.", "info")
     return redirect(url_for("login"))
+
+
+@app.route("/change-password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    """Allows any logged-in student, teacher, or admin to securely update their own password."""
+    if request.method == "POST":
+        current_pwd = request.form.get("current_password", "")
+        new_pwd = request.form.get("new_password", "").strip()
+        confirm_pwd = request.form.get("confirm_password", "").strip()
+
+        if not current_pwd or not new_pwd:
+            flash("All password fields are required.", "danger")
+            return render_template("set_password.html", is_self_change=True)
+
+        if new_pwd != confirm_pwd:
+            flash("New passwords do not match.", "danger")
+            return render_template("set_password.html", is_self_change=True)
+
+        if len(new_pwd) < 6:
+            flash("New password must be at least 6 characters.", "danger")
+            return render_template("set_password.html", is_self_change=True)
+
+        conn = get_db()
+        user = conn.execute("SELECT password_hash FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+        if not user or not check_password_hash(user["password_hash"], current_pwd):
+            conn.close()
+            flash("Incorrect current password.", "danger")
+            return render_template("set_password.html", is_self_change=True)
+
+        new_hash = hash_password(new_pwd)
+        conn.execute("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", (new_hash, session["user_id"]))
+        conn.commit()
+        conn.close()
+
+        flash("Your password has been changed successfully.", "success")
+        return redirect(url_for("dashboard"))
+
+    return render_template("set_password.html", is_self_change=True)
+
+
+@app.route("/set-password", methods=["GET", "POST"])
+@login_required
+def set_password():
+    """Handles mandatory password updates upon first login or administrative reset."""
+    if request.method == "POST":
+        new_pwd = request.form.get("new_password", "").strip()
+        confirm_pwd = request.form.get("confirm_password", "").strip()
+
+        if not new_pwd or len(new_pwd) < 6:
+            return render_template("set_password.html", error="Password must be at least 6 characters.")
+
+        if new_pwd != confirm_pwd:
+            return render_template("set_password.html", error="Passwords do not match.")
+
+        new_hash = hash_password(new_pwd)
+        conn = get_db()
+        conn.execute("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", (new_hash, session["user_id"]))
+        conn.commit()
+        conn.close()
+
+        flash("Password updated successfully.", "success")
+        return redirect(url_for("dashboard"))
+
+    return render_template("set_password.html", is_self_change=False)
 
 
 # --- Main Dashboard & Course Hub ---
@@ -1210,7 +1306,7 @@ def course_stream(course_id):
 
 
 @app.route("/courses/<int:course_id>/announcements", methods=["POST"])
-@login_required
+@teacher_required
 def post_announcement(course_id):
     content = request.form.get("content", "").strip()
     if not content:
@@ -1304,6 +1400,13 @@ def add_announcement_comment(announcement_id):
     if not ann:
         conn.close()
         abort(404)
+
+    # Check enrollment
+    if session.get("role") not in ("teacher", "admin"):
+        enr = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?", (ann["course_id"], session["user_id"])).fetchone()
+        if not enr:
+            conn.close()
+            abort(403, "Not enrolled in this course")
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute("""
@@ -1719,6 +1822,13 @@ def submit_coursework(course_id, coursework_id):
     user_id = user["id"]
     roll_number = user["roll_number"] or user["username"].upper()
 
+    # Strict authorization: user must be enrolled in the course or instructor/admin
+    enr = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, user_id)).fetchone()
+    if not enr and user["role"] not in ("teacher", "admin"):
+        conn.close()
+        flash("You must be enrolled in this course to submit work.", "danger")
+        return redirect(url_for("dashboard"))
+
     now = datetime.now()
     now_str = now.strftime("%Y-%m-%d %H:%M:%S")
     is_late = 0
@@ -1830,6 +1940,12 @@ def submit_coursework(course_id, coursework_id):
 @login_required
 def unsubmit_coursework(course_id, coursework_id):
     conn = get_db()
+    cw = conn.execute("SELECT * FROM coursework WHERE id = ? AND course_id = ?", (coursework_id, course_id)).fetchone()
+    if cw and cw["is_exam_mode"] == 1:
+        conn.close()
+        flash("Submissions cannot be unsubmitted during active exam lockdown mode.", "danger")
+        return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
+
     sub = conn.execute("SELECT * FROM submissions WHERE coursework_id = ? AND student_id = ?", (coursework_id, session["user_id"])).fetchone()
     if sub:
         if sub["status"] == "graded":
@@ -1896,6 +2012,13 @@ def exam_submit(course_id, coursework_id):
     user_id = user["id"]
     roll_number = user["roll_number"] or user["username"].upper()
 
+    # Enrollment check
+    enr = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, user_id)).fetchone()
+    if not enr and user["role"] not in ("teacher", "admin"):
+        conn.close()
+        flash("You are not enrolled in this course.", "danger")
+        return redirect(url_for("dashboard"))
+
     file = request.files.get("exam_file")
     if not file or not file.filename:
         conn.close()
@@ -1911,9 +2034,9 @@ def exam_submit(course_id, coursework_id):
         flash("STRICT REJECTION: Only .zip files are allowed for exam submissions.", "danger")
         return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
 
-    header = file.read(4)
+    is_valid_zip = zipfile.is_zipfile(file)
     file.seek(0)
-    if header != b"PK" and header != b"PK" and header != b"PK":
+    if not is_valid_zip:
         conn.close()
         flash("Invalid archive format: The file uploaded is not a valid ZIP archive.", "danger")
         return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
@@ -1999,17 +2122,34 @@ def exam_submit(course_id, coursework_id):
 def exam_receipt(receipt_token):
     conn = get_db()
     sub = conn.execute("""
-        SELECT s.*, cw.title as exam_title, cw.type as cw_type, c.code as course_code, c.title as course_title
+        SELECT s.*, cw.title as exam_title, cw.type as cw_type, c.code as course_code, c.title as course_title,
+               c.id as course_id, c.teacher_id
         FROM submissions s
         JOIN coursework cw ON s.coursework_id = cw.id
         JOIN courses c ON cw.course_id = c.id
         WHERE s.receipt_token = ?
     """, (receipt_token,)).fetchone()
-    conn.close()
 
     if not sub:
+        conn.close()
         abort(404, "Receipt not found")
 
+    user_id = session.get("user_id")
+    role = session.get("role")
+    is_owner = (sub["student_id"] == user_id)
+    is_admin = (role == "admin")
+    is_instructor = (sub["teacher_id"] == user_id)
+
+    if not (is_owner or is_admin or is_instructor):
+        co_t = conn.execute("""
+            SELECT 1 FROM course_enrollments
+            WHERE course_id = ? AND user_id = ? AND role IN ('teacher', 'ta', 'co-teacher')
+        """, (sub["course_id"], user_id)).fetchone()
+        if not co_t:
+            conn.close()
+            abort(403, "Access restricted: You cannot view other students' receipts.")
+
+    conn.close()
     return render_template("receipt_view.html", sub=sub)
 
 
@@ -2149,18 +2289,15 @@ def change_course_person_role(course_id, target_user_id):
         abort(404)
 
     if new_role == "teacher":
-        conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (target_user_id,))
+        if session.get("role") == "admin":
+            conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (target_user_id,))
         conn.execute("UPDATE course_enrollments SET role = 'ta' WHERE course_id = ? AND user_id = ?", (course_id, target_user_id))
-        label = "Teacher / Faculty"
+        label = "Teacher / Co-Instructor"
     elif new_role == "ta":
         conn.execute("UPDATE course_enrollments SET role = 'ta' WHERE course_id = ? AND user_id = ?", (course_id, target_user_id))
         label = "Co-Teacher"
     else:  # student
         conn.execute("UPDATE course_enrollments SET role = 'student' WHERE course_id = ? AND user_id = ?", (course_id, target_user_id))
-        # If demoted to student, also demote system role if they are not lead teacher of any course and not admin
-        other_lead = conn.execute("SELECT COUNT(*) FROM courses WHERE teacher_id = ?", (target_user_id,)).fetchone()[0]
-        if other_lead == 0 and target_user["role"] != "admin":
-            conn.execute("UPDATE users SET role = 'student' WHERE id = ?", (target_user_id,))
         label = "Student"
 
     conn.commit()
@@ -3477,9 +3614,11 @@ def locker_view(file_id):
     if not f or not os.path.exists(f["file_path"]):
         abort(404, "File not found")
 
+    safe_inline_exts = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
     ext = Path(f["original_filename"]).suffix.lower()
+    is_safe = ext in safe_inline_exts
     mimetype = "application/pdf" if ext == ".pdf" else None
-    return send_file(f["file_path"], mimetype=mimetype, as_attachment=False, download_name=f["original_filename"])
+    return send_file(f["file_path"], mimetype=mimetype, as_attachment=not is_safe, download_name=f["original_filename"])
 
 
 @app.route("/locker/delete/<int:file_id>", methods=["POST"])
@@ -3536,22 +3675,37 @@ def download_attachment(att_id):
     att = conn.execute("SELECT * FROM coursework_attachments WHERE id = ?", (att_id,)).fetchone()
     file_path = None
     original_filename = None
+    course_id = None
 
     if att and os.path.exists(att["file_path"]):
         file_path = att["file_path"]
         original_filename = att["original_filename"]
+        cw = conn.execute("SELECT course_id FROM coursework WHERE id = ?", (att["coursework_id"],)).fetchone()
+        if cw:
+            course_id = cw["course_id"]
     else:
         ann = conn.execute("SELECT * FROM announcements WHERE id = ?", (att_id,)).fetchone()
         if ann and ann["attachment_path"] and os.path.exists(ann["attachment_path"]):
             file_path = ann["attachment_path"]
             original_filename = ann["attachment_name"]
+            course_id = ann["course_id"]
 
-    conn.close()
     if not file_path:
+        conn.close()
         abort(404, "Attachment not found")
 
-    is_inline = request.path.startswith("/view/") or request.args.get("view") == "1" or request.args.get("inline") == "1"
+    # Authorization check: user must be enrolled in the course or instructor/admin
+    if course_id and session.get("role") not in ("teacher", "admin"):
+        enr = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, session["user_id"])).fetchone()
+        if not enr:
+            conn.close()
+            abort(403, "Access denied: You are not enrolled in the course for this attachment.")
+
+    conn.close()
+
+    safe_inline_exts = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
     ext = Path(original_filename).suffix.lower()
+    is_inline = (request.path.startswith("/view/") or request.args.get("view") == "1" or request.args.get("inline") == "1") and (ext in safe_inline_exts)
     mimetype = "application/pdf" if ext == ".pdf" else None
 
     return send_file(
@@ -3586,8 +3740,9 @@ def download_submission(sub_id):
     if not is_authorized:
         abort(403, "Unauthorized access to submission")
 
-    is_inline = request.path.startswith("/view/") or request.args.get("view") == "1" or request.args.get("inline") == "1"
+    safe_inline_exts = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
     ext = Path(sub["original_filename"]).suffix.lower()
+    is_inline = (request.path.startswith("/view/") or request.args.get("view") == "1" or request.args.get("inline") == "1") and (ext in safe_inline_exts)
     mimetype = "application/pdf" if ext == ".pdf" else None
 
     return send_file(
@@ -3719,7 +3874,7 @@ def admin_create_teacher():
 def admin_change_role(user_id):
     curr_user = get_current_user()
     new_role = request.form.get("role", "student").strip().lower()
-    target_redirect = request.referrer or (url_for("admin_users") if curr_user["role"] == "admin" else url_for("dashboard"))
+    target_redirect = request.referrer or (url_for("admin_users") if curr_user and curr_user["role"] == "admin" else url_for("dashboard"))
     if new_role not in ("student", "teacher", "admin"):
         flash("Invalid role.", "danger")
         return redirect(target_redirect)
@@ -3728,7 +3883,21 @@ def admin_change_role(user_id):
         flash("Only an administrator can assign the Administrator role.", "danger")
         return redirect(target_redirect)
 
+    if user_id == session.get("user_id") and new_role != "admin":
+        flash("Administrators cannot demote their own account.", "danger")
+        return redirect(target_redirect)
+
     conn = get_db()
+    target_user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not target_user:
+        conn.close()
+        abort(404)
+
+    if target_user["role"] == "admin" and curr_user["role"] != "admin":
+        conn.close()
+        flash("Cannot change the role of an Administrator.", "danger")
+        return redirect(target_redirect)
+
     conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, user_id))
     conn.commit()
     conn.close()
@@ -3739,6 +3908,7 @@ def admin_change_role(user_id):
 @app.route("/teacher/students/<int:user_id>/role", methods=["POST"])
 @teacher_required
 def teacher_change_student_role(user_id):
+    """Allows instructors to promote/demote students to/from teaching assistants."""
     curr_user = get_current_user()
     new_role = request.form.get("role", "student").strip().lower()
     target_redirect = request.referrer or url_for("dashboard")
@@ -3794,6 +3964,131 @@ def admin_delete_user(user_id):
     conn.close()
     flash("User deleted.", "info")
     return redirect(url_for("admin_users"))
+
+
+# --- Admin Disaster Recovery & Offsite Backup System ---
+
+@app.route("/admin/backup")
+@admin_required
+def admin_backup():
+    """Renders the Disaster Recovery & Offsite GPU2 Backup console."""
+    backup_dir = Path(app.config.get("BACKUPS_DIR", BASE_DIR / "backups"))
+    latest_file = backup_dir / "hoodle_backup_latest.tar.gz"
+
+    local_backups = []
+    if backup_dir.exists():
+        for p in sorted(backup_dir.glob("hoodle_backup_*.tar.gz"), key=os.path.getmtime, reverse=True):
+            if p.name == "hoodle_backup_latest.tar.gz":
+                continue
+            st = p.stat()
+            local_backups.append({
+                "filename": p.name,
+                "size_display": format_file_size(st.st_size),
+                "modified_display": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                "path": str(p)
+            })
+
+    latest_info = None
+    if latest_file.exists():
+        st = latest_file.stat()
+        latest_info = {
+            "size_display": format_file_size(st.st_size),
+            "modified_display": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            "exists": True
+        }
+
+    # Remote GPU2 connectivity check
+    gpu2_connected = False
+    try:
+        res = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=4", "kishan@gpu2", "ls -ld /data2/kishan/hoodle_backups"],
+            capture_output=True, text=True, timeout=5
+        )
+        if res.returncode == 0:
+            gpu2_connected = True
+    except Exception:
+        gpu2_connected = False
+
+    return render_template(
+        "admin_backup.html",
+        local_backups=local_backups,
+        latest_info=latest_info,
+        gpu2_connected=gpu2_connected,
+        remote_target="kishan@gpu2:/data2/kishan/hoodle_backups/"
+    )
+
+
+@app.route("/admin/backup/trigger", methods=["POST"])
+@admin_required
+def admin_backup_trigger():
+    """Triggers an immediate offsite backup to GPU2."""
+    script_path = BASE_DIR / "scripts" / "hoodle_backup.sh"
+    if not script_path.exists():
+        flash("Backup script not found on server.", "danger")
+        return redirect(url_for("admin_backup"))
+
+    try:
+        proc = subprocess.run(
+            ["bash", str(script_path)],
+            capture_output=True, text=True, timeout=180, cwd=str(BASE_DIR)
+        )
+        if proc.returncode == 0:
+            flash("✅ Offsite backup completed successfully! Database, submissions, lockers, and attachments synced to GPU2.", "success")
+        else:
+            flash(f"⚠️ Backup script finished with warnings or error: {proc.stderr[:300]}", "warning")
+    except subprocess.TimeoutExpired:
+        flash("Backup process timed out. Check backup log on server.", "warning")
+    except Exception as e:
+        flash(f"Failed to execute backup: {str(e)}", "danger")
+
+    return redirect(url_for("admin_backup"))
+
+
+@app.route("/admin/backup/restore", methods=["POST"])
+@admin_required
+def admin_backup_restore():
+    """Restores entire system from latest backup with safety confirmation."""
+    confirm_phrase = request.form.get("confirm_phrase", "").strip()
+    if confirm_phrase != "RESTORE-HOODLE":
+        flash("❌ Restoration cancelled: You must type 'RESTORE-HOODLE' exactly to confirm.", "danger")
+        return redirect(url_for("admin_backup"))
+
+    script_path = BASE_DIR / "scripts" / "hoodle_restore.sh"
+    if not script_path.exists():
+        flash("Restore script not found on server.", "danger")
+        return redirect(url_for("admin_backup"))
+
+    try:
+        proc = subprocess.run(
+            ["bash", str(script_path), "--from-gpu2"],
+            capture_output=True, text=True, timeout=300, cwd=str(BASE_DIR)
+        )
+        if proc.returncode == 0:
+            flash("🎉 System restored successfully from latest GPU2 backup! All databases and storage are synchronized.", "success")
+        else:
+            flash(f"⚠️ Restore script reported an issue: {proc.stderr[:300] or proc.stdout[:300]}", "danger")
+    except Exception as e:
+        flash(f"Restoration failed: {str(e)}", "danger")
+
+    return redirect(url_for("admin_backup"))
+
+
+@app.route("/admin/backup/download-latest")
+@admin_required
+def admin_backup_download_latest():
+    """Allows administrator to download the latest backup tar.gz archive directly."""
+    backup_dir = Path(app.config.get("BACKUPS_DIR", BASE_DIR / "backups"))
+    latest_file = backup_dir / "hoodle_backup_latest.tar.gz"
+    if not latest_file.exists():
+        flash("No backup archive found. Run a backup first.", "warning")
+        return redirect(url_for("admin_backup"))
+
+    return send_file(
+        str(latest_file),
+        mimetype="application/gzip",
+        as_attachment=True,
+        download_name=f"hoodle_backup_latest_{datetime.now().strftime('%Y%m%d')}.tar.gz"
+    )
 
 
 
@@ -4117,6 +4412,12 @@ def attend_submit(course_id):
     roll_number = user["roll_number"] or user["username"].upper()
     
     conn = get_db()
+    enr = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, user["id"])).fetchone()
+    if not enr and user["role"] not in ("teacher", "admin"):
+        conn.close()
+        flash("You are not enrolled in this course.", "danger")
+        return redirect(url_for("dashboard"))
+
     try:
         conn.execute("""
             INSERT INTO attendance_logs (

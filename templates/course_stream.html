@@ -64,7 +64,8 @@
 
   <!-- Right Column: Announcements Feed -->
   <main class="stream-feed-col">
-    <!-- Announcement Composer -->
+    <!-- Announcement Composer (Teachers & Admins Only) -->
+    {% if is_teacher_or_admin %}
     <div class="card announcement-composer-card">
       <form action="{{ url_for('post_announcement', course_id=course.id) }}" method="POST" enctype="multipart/form-data">
         <div class="form-group" style="margin-bottom: 0.75rem;">
@@ -82,6 +83,7 @@
         </div>
       </form>
     </div>
+    {% endif %}
 
     <!-- Feed Items -->
     {% if announcements %}

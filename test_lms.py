@@ -1057,6 +1057,55 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn(b"Successfully joined", res.data)
         self.logout()
 
+    def test_registration_forces_student_role(self):
+        """Verify public self-registration strictly assigns student role even if attacker specifies teacher/admin."""
+        self.logout()
+        res = self.client.post("/register", data={
+            "full_name": "Attacker Role Test",
+            "roll_number": "HACK999",
+            "email": "hack999@test.com",
+            "password": "password123",
+            "confirm_password": "password123",
+            "role": "teacher"  # Exploit attempt: try registering as teacher
+        }, follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+
+        conn = app.get_db()
+        user = conn.execute("SELECT role FROM users WHERE username = 'hack999'").fetchone()
+        conn.close()
+        self.assertIsNotNone(user)
+        self.assertEqual(user["role"], "student", "Registration must strictly force student role")
+
+    def test_favicon_route(self):
+        """Verify /favicon.ico route serves valid Hoodle PNG icon."""
+        res = self.client.get("/favicon.ico")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.mimetype, "image/png")
+
+    def test_security_headers(self):
+        """Verify defensive HTTP security headers are injected."""
+        res = self.client.get("/login")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(res.headers.get("X-Frame-Options"), "SAMEORIGIN")
+
+    def test_admin_backup_endpoints_restricted(self):
+        """Verify student cannot access or trigger admin backup/restore."""
+        self.login("student1", "student123")
+        res_get = self.client.get("/admin/backup", follow_redirects=True)
+        self.assertIn(b"Administrator privileges required", res_get.data)
+
+        res_post = self.client.post("/admin/backup/trigger", follow_redirects=True)
+        self.assertIn(b"Administrator privileges required", res_post.data)
+        self.logout()
+
+        # Admin can access
+        self.login("admin", "admin@accl")
+        res_admin = self.client.get("/admin/backup")
+        self.assertEqual(res_admin.status_code, 200)
+        self.assertIn(b"Offsite Backup &amp; Disaster Recovery", res_admin.data)
+        self.logout()
+
 
 if __name__ == "__main__":
     unittest.main()

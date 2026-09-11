@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}Backup & Disaster Recovery - Hoodle Admin{% endblock %}
+
+{% block content %}
+<div style="max-width: 1100px; margin: 0 auto;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <h1 style="font-size: 1.75rem; font-weight: 800; color: #1e3a8a; display: flex; align-items: center; gap: 0.6rem;">
+        <span>🛡️</span>
+        <span>Offsite Backup &amp; Disaster Recovery</span>
+      </h1>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">
+        Automated hot snapshots of SQLite database, student submissions, lockers, and course media with offsite sync to GPU2.
+      </p>
+    </div>
+
+    <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+      <form action="{{ url_for('admin_backup_trigger') }}" method="POST" style="margin: 0;">
+        <button type="submit" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.45rem; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);" onclick="this.innerHTML='⏳ Backing Up...'; this.disabled=true; this.form.submit();">
+          <span>🚀</span>
+          <span>Run Backup to GPU2 Now</span>
+        </button>
+      </form>
+
+      {% if latest_info %}
+        <a href="{{ url_for('admin_backup_download_latest') }}" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.45rem;">
+          <span>📥</span>
+          <span>Download Latest (.tar.gz)</span>
+        </a>
+      {% endif %}
+
+      <button type="button" class="btn btn-secondary" style="color: #b91c1c; border-color: #fca5a5; display: inline-flex; align-items: center; gap: 0.45rem;" onclick="openModal('restoreSafetyModal')">
+        <span>🔄</span>
+        <span>Restore from GPU2</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- System Status Overview Grid -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 1.75rem;">
+    <!-- Offsite Remote Target -->
+    <div class="card" style="padding: 1.25rem;">
+      <div style="font-size: 0.78rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-bottom: 0.4rem;">
+        Offsite Storage Target
+      </div>
+      <div style="font-weight: 800; font-size: 1.1rem; color: #1e3a8a; word-break: break-all; font-family: monospace;">
+        gpu2:/data2/kishan/
+      </div>
+      <div style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem;">
+        {% if gpu2_connected %}
+          <span style="color: #15803d; font-weight: 700;">● Online &amp; Passwordless</span>
+        {% else %}
+          <span style="color: #d97706; font-weight: 700;">● Direct SSH Configured</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Automated Daily Schedule -->
+    <div class="card" style="padding: 1.25rem;">
+      <div style="font-size: 0.78rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-bottom: 0.4rem;">
+        Automated Schedule
+      </div>
+      <div style="font-weight: 800; font-size: 1.1rem; color: #0284c7;">
+        Daily at 02:00 AM
+      </div>
+      <div style="margin-top: 0.5rem; font-size: 0.82rem; color: var(--text-muted);">
+        System cron job with 30-day retention
+      </div>
+    </div>
+
+    <!-- Latest Backup -->
+    <div class="card" style="padding: 1.25rem;">
+      <div style="font-size: 0.78rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-bottom: 0.4rem;">
+        Latest Local Snapshot
+      </div>
+      <div style="font-weight: 800; font-size: 1.1rem; color: #15803d;">
+        {% if latest_info %}
+          {{ latest_info.size_display }}
+        {% else %}
+          No Backup Yet
+        {% endif %}
+      </div>
+      <div style="margin-top: 0.5rem; font-size: 0.82rem; color: var(--text-muted);">
+        {% if latest_info %}
+          {{ latest_info.modified_display }}
+        {% else %}
+          Click "Run Backup to GPU2 Now" above
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Data Covered -->
+    <div class="card" style="padding: 1.25rem;">
+      <div style="font-size: 0.78rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-bottom: 0.4rem;">
+        Protected Assets
+      </div>
+      <div style="font-weight: 700; font-size: 0.92rem; color: var(--text-main); line-height: 1.4;">
+        ✅ SQLite Database (Hot Backup)<br>
+        ✅ Student Lockers &amp; Submissions<br>
+        ✅ Attachments &amp; Secrets (.env)
+      </div>
+    </div>
+  </div>
+
+  <!-- Local Backups Archive Table -->
+  <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 2rem;">
+    <div style="padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+      <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: #1e3a8a;">
+        Local Archive History (Last 30 Days)
+      </h2>
+      <span style="font-size: 0.85rem; color: var(--text-muted);">
+        {{ local_backups|length }} Archive(s)
+      </span>
+    </div>
+
+    {% if local_backups %}
+      <div style="overflow-x: auto;">
+        <table class="lms-table" style="margin: 0;">
+          <thead>
+            <tr>
+              <th>Archive Name</th>
+              <th>Created Timestamp</th>
+              <th>Archive Size</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in local_backups %}
+              <tr>
+                <td style="font-family: monospace; font-weight: 700; color: #1e3a8a;">
+                  {{ b.filename }}
+                </td>
+                <td style="color: var(--text-muted); font-size: 0.85rem;">
+                  {{ b.modified_display }}
+                </td>
+                <td style="font-weight: 600;">
+                  {{ b.size_display }}
+                </td>
+                <td>
+                  <span style="display: inline-flex; align-items: center; gap: 0.3rem; background: #ecfdf5; color: #047857; padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.78rem; font-weight: 700;">
+                    ✓ Verified &amp; Synced
+                  </span>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div style="padding: 2.5rem; text-align: center; color: var(--text-muted);">
+        <p style="margin: 0 0 1rem 0;">No local backup archives found yet.</p>
+        <form action="{{ url_for('admin_backup_trigger') }}" method="POST" style="display: inline;">
+          <button type="submit" class="btn btn-primary btn-sm">Create First Backup Now</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Bare Metal Disaster Recovery Guide -->
+  <div class="card" style="padding: 1.5rem; border-left: 4px solid #0284c7; background: #f8fafc;">
+    <h3 style="font-size: 1.05rem; font-weight: 800; color: #0f172a; margin-top: 0; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+      <span>💻</span>
+      <span>Terminal Bare-Metal Restoration Guide</span>
+    </h3>
+    <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 0.75rem; line-height: 1.5;">
+      If the server hard drive is replaced or re-formatted, install the fresh codebase and run the restoration script directly via SSH to pull everything back from GPU2:
+    </p>
+    <pre style="background: #0f172a; color: #38bdf8; padding: 1rem 1.25rem; border-radius: 8px; font-size: 0.85rem; overflow-x: auto; line-height: 1.6; margin: 0;">
+# 1. SSH into the production server
+ssh kishan@10.10.14.104
+
+# 2. Enter application directory
+cd /data/admin/ACCLLMS
+
+# 3. Pull latest backup from GPU2 and restore database &amp; files
+bash scripts/hoodle_restore.sh --from-gpu2
+
+# 4. Confirm system status
+sudo systemctl status accl-lms.service</pre>
+  </div>
+</div>
+
+<!-- Restore Safety Confirmation Modal -->
+<div class="modal-backdrop" id="restoreSafetyModal" style="display: none;">
+  <div class="modal-dialog" style="max-width: 520px;">
+    <div class="modal-header" style="border-bottom: 1px solid #fee2e2; background: #fff5f5;">
+      <h3 class="modal-title" style="color: #b91c1c; display: flex; align-items: center; gap: 0.4rem;">
+        <span>⚠️</span>
+        <span>Confirm Disaster Recovery Restoration</span>
+      </h3>
+      <button type="button" class="modal-close" onclick="closeModal('restoreSafetyModal')">&times;</button>
+    </div>
+
+    <form action="{{ url_for('admin_backup_restore') }}" method="POST">
+      <div class="modal-body" style="padding: 1.5rem;">
+        <div class="alert alert-warning" style="display: block; margin-bottom: 1.25rem; font-size: 0.88rem; line-height: 1.5;">
+          <strong>CAUTION:</strong> This operation pulls the latest verified backup from <code>gpu2:/data2/kishan/hoodle_backups/</code> and overwrites the live database, student lockers, and submissions.
+          <br><br>
+          A safety pre-restore snapshot of your current database will automatically be taken before any files are modified.
+        </div>
+
+        <p style="font-size: 0.9rem; margin-bottom: 0.75rem;">
+          To proceed, type <strong>RESTORE-HOODLE</strong> below to confirm:
+        </p>
+
+        <div class="form-group" style="margin-bottom: 0;">
+          <input type="text" name="confirm_phrase" class="form-control" placeholder="RESTORE-HOODLE" required autocomplete="off" style="font-family: monospace; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;">
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('restoreSafetyModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" style="background: #dc2626; border-color: #dc2626;" onclick="this.innerHTML='⏳ Restoring System...'; this.disabled=true; this.form.submit();">
+          Yes, Restore From GPU2
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

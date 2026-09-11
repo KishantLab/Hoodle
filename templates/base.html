@@ -8,8 +8,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/lms.css') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/hoodle_icon.png') }}">
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/hoodle_mark.svg') }}">
-  <link rel="alternate icon" type="image/png" href="{{ url_for('static', filename='images/hoodle_app_icon.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/hoodle_icon.png') }}">
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -46,6 +47,7 @@
                 <span class="role-badge role-{{ current_user.role }}">{{ current_user.role }}</span>
               </span>
             </div>
+            <a href="{{ url_for('change_password') }}" class="btn-signout" style="padding: 0.25rem 0.5rem; font-size: 0.78rem; text-decoration: none;" title="Change Password">🔑 Password</a>
             <a href="{{ url_for('logout') }}" class="btn-signout" title="Sign Out">Sign Out</a>
           </div>
         {% else %}
@@ -68,8 +70,11 @@
         {% endif %}
 
         {% if current_user.role == 'admin' %}
-          <a href="{{ url_for('admin_users') }}" class="nav-pill {% if '/admin' in request.path %}active{% endif %}">
+          <a href="{{ url_for('admin_users') }}" class="nav-pill {% if request.path == url_for('admin_users') %}active{% endif %}">
             ⚙️ User Directory
+          </a>
+          <a href="{{ url_for('admin_backup') }}" class="nav-pill {% if request.path == url_for('admin_backup') %}active{% endif %}" title="Disaster Recovery & GPU2 Backup">
+            🛡️ Backup &amp; Recovery
           </a>
           <a href="{{ url_for('brand_assets') }}" class="nav-pill {% if '/brand' in request.path %}active{% endif %}" title="Hoodle Logo & Brand Assets">
             🎨 Brand Assets
