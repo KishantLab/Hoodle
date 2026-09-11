@@ -10,6 +10,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BACKUP_DIR="${APP_DIR}/backups"
 LOG_FILE="${BACKUP_DIR}/backup.log"
+CONFIG_ENV="${BACKUP_DIR}/backup_config.env"
+
+# Source persistent admin configuration if available
+if [ -f "${CONFIG_ENV}" ]; then
+    # shellcheck disable=SC1090
+    source "${CONFIG_ENV}"
+fi
 
 REMOTE_HOST="${REMOTE_HOST:-gpu2}"
 REMOTE_USER="${REMOTE_USER:-kishan}"
@@ -161,12 +168,12 @@ log "✅ Archive successfully created and verified! Total Size: ${ARCHIVE_SIZE}"
 # Update Latest Copy
 cp -f "${ARCHIVE_PATH}" "${LATEST_PATH}"
 
-# 10. Sync Offsite to GPU2
+# 10. Sync Offsite to Remote Server
 log "🌐 Syncing backup offsite to ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/..."
 if rsync -avz -e "ssh -o BatchMode=yes -o ConnectTimeout=15" \
     "${ARCHIVE_PATH}" "${LATEST_PATH}" \
     "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/"; then
-    log "✅ Offsite synchronization to GPU2 succeeded!"
+    log "✅ Offsite synchronization to ${REMOTE_HOST} succeeded!"
 else
     log "⚠️ Warning: Rsync failed. Attempting fallback scp..."
     scp -o BatchMode=yes -o ConnectTimeout=15 "${ARCHIVE_PATH}" "${LATEST_PATH}" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/" || {
@@ -174,11 +181,11 @@ else
     }
 fi
 
-# 11. Retention & Pruning (> 30 days)
+# 11. Retention & Pruning (> retention days)
 log "🧹 Pruning local backups older than ${RETENTION_DAYS} days..."
 find "${BACKUP_DIR}" -maxdepth 1 -name "hoodle_backup_*.tar.gz" -mtime "+${RETENTION_DAYS}" -exec rm -f {} + || true
 
-log "🧹 Pruning remote GPU2 backups older than ${RETENTION_DAYS} days..."
+log "🧹 Pruning remote ${REMOTE_HOST} backups older than ${RETENTION_DAYS} days..."
 ssh -o BatchMode=yes -o ConnectTimeout=15 "${REMOTE_USER}@${REMOTE_HOST}" \
     "find ${REMOTE_DIR} -maxdepth 1 -name 'hoodle_backup_*.tar.gz' -mtime +${RETENTION_DAYS} -delete" 2>/dev/null || true
 

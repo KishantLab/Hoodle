@@ -10,6 +10,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BACKUP_DIR="${APP_DIR}/backups"
 LOG_FILE="${BACKUP_DIR}/restore.log"
+CONFIG_ENV="${BACKUP_DIR}/backup_config.env"
+
+# Source persistent admin configuration if available
+if [ -f "${CONFIG_ENV}" ]; then
+    # shellcheck disable=SC1090
+    source "${CONFIG_ENV}"
+fi
 
 REMOTE_HOST="${REMOTE_HOST:-gpu2}"
 REMOTE_USER="${REMOTE_USER:-kishan}"
@@ -30,24 +37,24 @@ log "======================================================================"
 
 TARGET_ARCHIVE="$1"
 
-if [ -z "${TARGET_ARCHIVE}" ] || [ "${TARGET_ARCHIVE}" == "--from-gpu2" ] || [ "${TARGET_ARCHIVE}" == "--latest" ]; then
-    log "📥 Fetching latest verified backup from GPU2: ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/hoodle_backup_latest.tar.gz..."
-    LOCAL_FETCHED="${BACKUP_DIR}/hoodle_backup_latest_from_gpu2.tar.gz"
+if [ -z "${TARGET_ARCHIVE}" ] || [ "${TARGET_ARCHIVE}" == "--from-remote" ] || [ "${TARGET_ARCHIVE}" == "--from-gpu2" ] || [ "${TARGET_ARCHIVE}" == "--latest" ]; then
+    log "📥 Fetching latest verified backup from Remote Server: ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/hoodle_backup_latest.tar.gz..."
+    LOCAL_FETCHED="${BACKUP_DIR}/hoodle_backup_latest_from_remote.tar.gz"
     
     if rsync -avz -e "ssh -o BatchMode=yes -o ConnectTimeout=15" \
         "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/hoodle_backup_latest.tar.gz" \
         "${LOCAL_FETCHED}"; then
-        log "✅ Downloaded latest backup archive from GPU2."
+        log "✅ Downloaded latest backup archive from remote server (${REMOTE_HOST})."
         TARGET_ARCHIVE="${LOCAL_FETCHED}"
     else
-        log "⚠️ Rsync failed. Attempting fallback scp from GPU2..."
+        log "⚠️ Rsync failed. Attempting fallback scp from ${REMOTE_HOST}..."
         if scp -o BatchMode=yes -o ConnectTimeout=15 \
             "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/hoodle_backup_latest.tar.gz" \
             "${LOCAL_FETCHED}"; then
-            log "✅ Downloaded latest backup archive from GPU2 via scp."
+            log "✅ Downloaded latest backup archive from ${REMOTE_HOST} via scp."
             TARGET_ARCHIVE="${LOCAL_FETCHED}"
         elif [ -f "${BACKUP_DIR}/hoodle_backup_latest.tar.gz" ]; then
-            log "⚠️ Could not reach GPU2 directly. Falling back to local latest backup: ${BACKUP_DIR}/hoodle_backup_latest.tar.gz"
+            log "⚠️ Could not reach ${REMOTE_HOST} directly. Falling back to local latest backup: ${BACKUP_DIR}/hoodle_backup_latest.tar.gz"
             TARGET_ARCHIVE="${BACKUP_DIR}/hoodle_backup_latest.tar.gz"
         else
             log "❌ ERROR: No remote or local backup archive found to restore!"

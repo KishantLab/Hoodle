@@ -3968,17 +3968,74 @@ def admin_delete_user(user_id):
 
 # --- Admin Disaster Recovery & Offsite Backup System ---
 
+def load_backup_config():
+    backup_dir = Path(app.config.get("BACKUPS_DIR", BASE_DIR / "backups"))
+    config_file = backup_dir / "backup_config.json"
+    defaults = {
+        "remote_host": os.getenv("REMOTE_BACKUP_HOST", "gpu2"),
+        "remote_user": os.getenv("REMOTE_BACKUP_USER", "kishan"),
+        "remote_dir": os.getenv("REMOTE_BACKUP_DIR", "/data2/kishan/hoodle_backups"),
+        "retention_days": int(os.getenv("REMOTE_BACKUP_RETENTION_DAYS", "30")),
+    }
+    if config_file.exists():
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return {
+                    "remote_host": str(data.get("remote_host", defaults["remote_host"])).strip(),
+                    "remote_user": str(data.get("remote_user", defaults["remote_user"])).strip(),
+                    "remote_dir": str(data.get("remote_dir", defaults["remote_dir"])).strip(),
+                    "retention_days": int(data.get("retention_days", defaults["retention_days"])),
+                }
+        except Exception:
+            pass
+    return defaults
+
+
+def save_backup_config(config):
+    backup_dir = Path(app.config.get("BACKUPS_DIR", BASE_DIR / "backups"))
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    config_json = backup_dir / "backup_config.json"
+    config_env = backup_dir / "backup_config.env"
+    with open(config_json, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+    with open(config_env, "w", encoding="utf-8") as f:
+        f.write("# Hoodle LMS Dynamic Backup Configuration\n")
+        f.write(f'REMOTE_HOST="{config["remote_host"]}"\n')
+        f.write(f'REMOTE_USER="{config["remote_user"]}"\n')
+        f.write(f'REMOTE_DIR="{config["remote_dir"]}"\n')
+        f.write(f'RETENTION_DAYS="{config["retention_days"]}"\n')
+
+
+def check_remote_backup_ssh(config):
+    target = f"{config['remote_user']}@{config['remote_host']}"
+    cmd = [
+        "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+        target,
+        f"mkdir -p {config['remote_dir']} 2>/dev/null; df -h {config['remote_dir']} 2>/dev/null | tail -1"
+    ]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=7)
+        if res.returncode == 0 and res.stdout.strip():
+            parts = res.stdout.strip().split()
+            free_space = parts[3] if len(parts) >= 4 else "Available"
+            return True, free_space
+    except Exception:
+        pass
+    return False, None
+
+
 @app.route("/admin/backup")
 @admin_required
 def admin_backup():
-    """Renders the Disaster Recovery & Offsite GPU2 Backup console."""
+    """Renders the Disaster Recovery & Offsite Backup console."""
     backup_dir = Path(app.config.get("BACKUPS_DIR", BASE_DIR / "backups"))
     latest_file = backup_dir / "hoodle_backup_latest.tar.gz"
 
     local_backups = []
     if backup_dir.exists():
         for p in sorted(backup_dir.glob("hoodle_backup_*.tar.gz"), key=os.path.getmtime, reverse=True):
-            if p.name == "hoodle_backup_latest.tar.gz":
+            if p.name in ("hoodle_backup_latest.tar.gz", "hoodle_backup_latest_from_remote.tar.gz", "hoodle_backup_latest_from_gpu2.tar.gz"):
                 continue
             st = p.stat()
             local_backups.append({
@@ -3997,45 +4054,72 @@ def admin_backup():
             "exists": True
         }
 
-    # Remote GPU2 connectivity check
-    gpu2_connected = False
-    try:
-        res = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=4", "kishan@gpu2", "ls -ld /data2/kishan/hoodle_backups"],
-            capture_output=True, text=True, timeout=5
-        )
-        if res.returncode == 0:
-            gpu2_connected = True
-    except Exception:
-        gpu2_connected = False
+    backup_config = load_backup_config()
+    remote_connected, remote_free_space = check_remote_backup_ssh(backup_config)
 
     return render_template(
         "admin_backup.html",
         local_backups=local_backups,
         latest_info=latest_info,
-        gpu2_connected=gpu2_connected,
-        remote_target="kishan@gpu2:/data2/kishan/hoodle_backups/"
+        backup_config=backup_config,
+        remote_connected=remote_connected,
+        remote_free_space=remote_free_space,
+        gpu2_connected=remote_connected
     )
+
+
+@app.route("/admin/backup/settings", methods=["POST"])
+@admin_required
+def admin_backup_settings():
+    """Allows administrators to dynamically configure the remote backup server, SSH credentials, path, and retention."""
+    remote_host = request.form.get("remote_host", "").strip()
+    remote_user = request.form.get("remote_user", "").strip()
+    remote_dir = request.form.get("remote_dir", "").strip()
+    try:
+        retention_days = max(1, int(request.form.get("retention_days", 30)))
+    except (ValueError, TypeError):
+        retention_days = 30
+
+    if not remote_host or not remote_user or not remote_dir:
+        flash("Remote host, SSH username, and directory path cannot be empty.", "danger")
+        return redirect(url_for("admin_backup"))
+
+    config = {
+        "remote_host": remote_host,
+        "remote_user": remote_user,
+        "remote_dir": remote_dir,
+        "retention_days": retention_days
+    }
+    save_backup_config(config)
+
+    ok, free_space = check_remote_backup_ssh(config)
+    if ok:
+        flash(f"✅ Backup destination updated! Connected to {remote_user}@{remote_host}:{remote_dir} ({free_space} free space).", "success")
+    else:
+        flash(f"⚠️ Backup destination updated, but could not connect to {remote_user}@{remote_host}. Verify passwordless SSH keys are configured.", "warning")
+
+    return redirect(url_for("admin_backup"))
 
 
 @app.route("/admin/backup/trigger", methods=["POST"])
 @admin_required
 def admin_backup_trigger():
-    """Triggers an immediate offsite backup to GPU2."""
+    """Triggers an immediate offsite backup to the configured remote server."""
     script_path = BASE_DIR / "scripts" / "hoodle_backup.sh"
     if not script_path.exists():
         flash("Backup script not found on server.", "danger")
         return redirect(url_for("admin_backup"))
 
+    backup_config = load_backup_config()
     try:
         proc = subprocess.run(
             ["bash", str(script_path)],
             capture_output=True, text=True, timeout=180, cwd=str(BASE_DIR)
         )
         if proc.returncode == 0:
-            flash("✅ Offsite backup completed successfully! Database, submissions, lockers, and attachments synced to GPU2.", "success")
+            flash(f"✅ Offsite backup completed successfully! Database, submissions, lockers, and attachments synced to {backup_config['remote_host']}:{backup_config['remote_dir']}.", "success")
         else:
-            flash(f"⚠️ Backup script finished with warnings or error: {proc.stderr[:300]}", "warning")
+            flash(f"⚠️ Backup script finished with warnings: {proc.stderr[:300] or proc.stdout[:300]}", "warning")
     except subprocess.TimeoutExpired:
         flash("Backup process timed out. Check backup log on server.", "warning")
     except Exception as e:
@@ -4047,7 +4131,7 @@ def admin_backup_trigger():
 @app.route("/admin/backup/restore", methods=["POST"])
 @admin_required
 def admin_backup_restore():
-    """Restores entire system from latest backup with safety confirmation."""
+    """Restores entire system from latest remote backup with safety confirmation."""
     confirm_phrase = request.form.get("confirm_phrase", "").strip()
     if confirm_phrase != "RESTORE-HOODLE":
         flash("❌ Restoration cancelled: You must type 'RESTORE-HOODLE' exactly to confirm.", "danger")
@@ -4058,13 +4142,14 @@ def admin_backup_restore():
         flash("Restore script not found on server.", "danger")
         return redirect(url_for("admin_backup"))
 
+    backup_config = load_backup_config()
     try:
         proc = subprocess.run(
-            ["bash", str(script_path), "--from-gpu2"],
+            ["bash", str(script_path), "--from-remote"],
             capture_output=True, text=True, timeout=300, cwd=str(BASE_DIR)
         )
         if proc.returncode == 0:
-            flash("🎉 System restored successfully from latest GPU2 backup! All databases and storage are synchronized.", "success")
+            flash(f"🎉 System restored successfully from latest backup on {backup_config['remote_host']}! All databases and storage are synchronized.", "success")
         else:
             flash(f"⚠️ Restore script reported an issue: {proc.stderr[:300] or proc.stdout[:300]}", "danger")
     except Exception as e:

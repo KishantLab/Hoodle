@@ -13,6 +13,7 @@ accl_lms.db
 # Storage Directories & Uploads
 storage/
 submissions/
+backups/
 *.zip
 !static/images/*.zip
 *.tar.gz

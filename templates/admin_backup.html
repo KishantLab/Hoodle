@@ -11,15 +11,20 @@
         <span>Offsite Backup &amp; Disaster Recovery</span>
       </h1>
       <p style="color: var(--text-muted); font-size: 0.9rem;">
-        Automated hot snapshots of SQLite database, student submissions, lockers, and course media with offsite sync to GPU2.
+        Automated hot snapshots of SQLite database, student lockers, submissions, and attachments synced offsite to remote servers.
       </p>
     </div>
 
     <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+      <button type="button" class="btn btn-secondary" onclick="openModal('backupSettingsModal')" style="display: inline-flex; align-items: center; gap: 0.45rem;">
+        <span>⚙️</span>
+        <span>Remote Server Settings</span>
+      </button>
+
       <form action="{{ url_for('admin_backup_trigger') }}" method="POST" style="margin: 0;">
         <button type="submit" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.45rem; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);" onclick="this.innerHTML='⏳ Backing Up...'; this.disabled=true; this.form.submit();">
           <span>🚀</span>
-          <span>Run Backup to GPU2 Now</span>
+          <span>Run Backup Now</span>
         </button>
       </form>
 
@@ -32,7 +37,7 @@
 
       <button type="button" class="btn btn-secondary" style="color: #b91c1c; border-color: #fca5a5; display: inline-flex; align-items: center; gap: 0.45rem;" onclick="openModal('restoreSafetyModal')">
         <span>🔄</span>
-        <span>Restore from GPU2</span>
+        <span>Restore from Remote Server</span>
       </button>
     </div>
   </div>
@@ -41,17 +46,22 @@
   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 1.75rem;">
     <!-- Offsite Remote Target -->
     <div class="card" style="padding: 1.25rem;">
-      <div style="font-size: 0.78rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-bottom: 0.4rem;">
-        Offsite Storage Target
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+        <div style="font-size: 0.78rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">
+          Remote Backup Destination
+        </div>
+        <button type="button" onclick="openModal('backupSettingsModal')" style="background: none; border: none; font-size: 0.78rem; color: var(--primary); cursor: pointer; font-weight: 600;">
+          Edit ⚙️
+        </button>
       </div>
-      <div style="font-weight: 800; font-size: 1.1rem; color: #1e3a8a; word-break: break-all; font-family: monospace;">
-        gpu2:/data2/kishan/
+      <div style="font-weight: 800; font-size: 1.05rem; color: #1e3a8a; word-break: break-all; font-family: monospace;">
+        {{ backup_config.remote_user }}@{{ backup_config.remote_host }}:{{ backup_config.remote_dir }}
       </div>
       <div style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem;">
-        {% if gpu2_connected %}
-          <span style="color: #15803d; font-weight: 700;">● Online &amp; Passwordless</span>
+        {% if remote_connected %}
+          <span style="color: #15803d; font-weight: 700;">● Online &amp; Reachable ({{ remote_free_space }} Free)</span>
         {% else %}
-          <span style="color: #d97706; font-weight: 700;">● Direct SSH Configured</span>
+          <span style="color: #d97706; font-weight: 700;">● Unreachable (Check SSH Keys)</span>
         {% endif %}
       </div>
     </div>
@@ -65,7 +75,7 @@
         Daily at 02:00 AM
       </div>
       <div style="margin-top: 0.5rem; font-size: 0.82rem; color: var(--text-muted);">
-        System cron job with 30-day retention
+        Automated cron with {{ backup_config.retention_days }}-day retention
       </div>
     </div>
 
@@ -85,7 +95,7 @@
         {% if latest_info %}
           {{ latest_info.modified_display }}
         {% else %}
-          Click "Run Backup to GPU2 Now" above
+          Click "Run Backup Now" above
         {% endif %}
       </div>
     </div>
@@ -103,11 +113,21 @@
     </div>
   </div>
 
+  <!-- Retention Policy Informational Banner -->
+  <div class="card" style="padding: 1.15rem 1.35rem; margin-bottom: 1.75rem; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: var(--radius-sm); display: flex; align-items: flex-start; gap: 1rem;">
+    <div style="font-size: 1.6rem; line-height: 1;">💡</div>
+    <div style="flex: 1; font-size: 0.86rem; color: #0369a1; line-height: 1.55;">
+      <strong style="color: #0c4a6e; font-size: 0.92rem;">What does "{{ backup_config.retention_days }}-Day Retention" mean?</strong><br>
+      Every night at 02:00 AM, Hoodle LMS creates a complete hot snapshot archive (database, files, lockers, submissions). 
+      <strong>{{ backup_config.retention_days }}-Day Retention</strong> means the system keeps daily snapshots for the past {{ backup_config.retention_days }} days (providing you with {{ backup_config.retention_days }} individual rollback points in history). Any backup older than {{ backup_config.retention_days }} days is automatically deleted (pruned) locally and on the remote machine so your storage disks never run out of space.
+    </div>
+  </div>
+
   <!-- Local Backups Archive Table -->
   <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 2rem;">
     <div style="padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
       <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: #1e3a8a;">
-        Local Archive History (Last 30 Days)
+        Local Archive History (Past {{ backup_config.retention_days }} Days)
       </h2>
       <span style="font-size: 0.85rem; color: var(--text-muted);">
         {{ local_backups|length }} Archive(s)
@@ -161,10 +181,10 @@
   <div class="card" style="padding: 1.5rem; border-left: 4px solid #0284c7; background: #f8fafc;">
     <h3 style="font-size: 1.05rem; font-weight: 800; color: #0f172a; margin-top: 0; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
       <span>💻</span>
-      <span>Terminal Bare-Metal Restoration Guide</span>
+      <span>Terminal Bare-Metal Disaster Recovery Guide</span>
     </h3>
     <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 0.75rem; line-height: 1.5;">
-      If the server hard drive is replaced or re-formatted, install the fresh codebase and run the restoration script directly via SSH to pull everything back from GPU2:
+      If the server hard drive is replaced or re-formatted, install the fresh codebase and run the restoration script directly to restore everything from your remote backup server:
     </p>
     <pre style="background: #0f172a; color: #38bdf8; padding: 1rem 1.25rem; border-radius: 8px; font-size: 0.85rem; overflow-x: auto; line-height: 1.6; margin: 0;">
 # 1. SSH into the production server
@@ -173,15 +193,66 @@ ssh kishan@10.10.14.104
 # 2. Enter application directory
 cd /data/admin/ACCLLMS
 
-# 3. Pull latest backup from GPU2 and restore database &amp; files
-bash scripts/hoodle_restore.sh --from-gpu2
+# 3. Pull latest backup from remote backup server and restore database &amp; files
+bash scripts/hoodle_restore.sh --from-remote
 
 # 4. Confirm system status
 sudo systemctl status accl-lms.service</pre>
   </div>
 </div>
 
-<!-- Restore Safety Confirmation Modal -->
+<!-- Modal: Remote Backup Machine & Path Settings -->
+<div class="modal-backdrop" id="backupSettingsModal" style="display: none;">
+  <div class="modal-dialog" style="max-width: 540px;">
+    <div class="modal-header">
+      <h3 class="modal-title" style="display: flex; align-items: center; gap: 0.5rem;">
+        <span>⚙️</span>
+        <span>Remote Backup Server Configuration</span>
+      </h3>
+      <button type="button" class="modal-close" onclick="closeModal('backupSettingsModal')">&times;</button>
+    </div>
+
+    <form action="{{ url_for('admin_backup_settings') }}" method="POST">
+      <div class="modal-body" style="padding: 1.5rem;">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.45;">
+          Configure where Hoodle LMS automatically synchronizes offsite daily backups. Ensure passwordless SSH keys are set up between the LMS host and the destination.
+        </p>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Remote SSH Hostname or IP</label>
+          <input type="text" name="remote_host" class="form-control" value="{{ backup_config.remote_host }}" placeholder="e.g. gpu2 or 10.10.14.105" required autocomplete="off">
+          <small style="color: var(--text-muted); font-size: 0.75rem;">Hostname defined in ~/.ssh/config or direct IP address.</small>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Remote SSH Username</label>
+          <input type="text" name="remote_user" class="form-control" value="{{ backup_config.remote_user }}" placeholder="e.g. kishan" required autocomplete="off">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Remote Directory Path</label>
+          <input type="text" name="remote_dir" class="form-control" value="{{ backup_config.remote_dir }}" placeholder="e.g. /data2/kishan/hoodle_backups" required autocomplete="off">
+          <small style="color: var(--text-muted); font-size: 0.75rem;">Absolute directory path on the remote machine where backups will be stored.</small>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0.5rem;">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Backup Retention Period (Days)</label>
+          <input type="number" name="retention_days" class="form-control" value="{{ backup_config.retention_days }}" min="1" max="365" required>
+          <small style="color: var(--text-muted); font-size: 0.75rem;">Archives older than this number of days are automatically purged.</small>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem; border-top: 1px solid var(--border); padding: 1rem 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('backupSettingsModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" onclick="this.innerHTML='⏳ Testing & Saving...'; this.disabled=true; this.form.submit();">
+          Save &amp; Test Connection
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Restore Safety Confirmation -->
 <div class="modal-backdrop" id="restoreSafetyModal" style="display: none;">
   <div class="modal-dialog" style="max-width: 520px;">
     <div class="modal-header" style="border-bottom: 1px solid #fee2e2; background: #fff5f5;">
@@ -195,9 +266,9 @@ sudo systemctl status accl-lms.service</pre>
     <form action="{{ url_for('admin_backup_restore') }}" method="POST">
       <div class="modal-body" style="padding: 1.5rem;">
         <div class="alert alert-warning" style="display: block; margin-bottom: 1.25rem; font-size: 0.88rem; line-height: 1.5;">
-          <strong>CAUTION:</strong> This operation pulls the latest verified backup from <code>gpu2:/data2/kishan/hoodle_backups/</code> and overwrites the live database, student lockers, and submissions.
+          <strong>CAUTION:</strong> This operation pulls the latest verified backup from <code>{{ backup_config.remote_user }}@{{ backup_config.remote_host }}:{{ backup_config.remote_dir }}/</code> and restores the live database, student lockers, submissions, and attachments.
           <br><br>
-          A safety pre-restore snapshot of your current database will automatically be taken before any files are modified.
+          A safety pre-restore rollback snapshot of your current database will automatically be taken before any files are modified.
         </div>
 
         <p style="font-size: 0.9rem; margin-bottom: 0.75rem;">
@@ -212,7 +283,7 @@ sudo systemctl status accl-lms.service</pre>
       <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
         <button type="button" class="btn btn-secondary" onclick="closeModal('restoreSafetyModal')">Cancel</button>
         <button type="submit" class="btn btn-primary" style="background: #dc2626; border-color: #dc2626;" onclick="this.innerHTML='⏳ Restoring System...'; this.disabled=true; this.form.submit();">
-          Yes, Restore From GPU2
+          Yes, Restore System from Remote
         </button>
       </div>
     </form>

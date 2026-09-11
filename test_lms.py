@@ -1106,6 +1106,26 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn(b"Offsite Backup &amp; Disaster Recovery", res_admin.data)
         self.logout()
 
+    def test_admin_backup_dynamic_settings(self):
+        """Verify administrator can dynamically update remote backup host, user, path, and retention."""
+        self.login("admin", "admin@accl")
+        res = self.client.post("/admin/backup/settings", data={
+            "remote_host": "backup-server.local",
+            "remote_user": "accladmin",
+            "remote_dir": "/storage/accl_backups",
+            "retention_days": "45"
+        }, follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"backup-server.local", res.data)
+
+        # Check config file was persisted
+        config = app.load_backup_config()
+        self.assertEqual(config["remote_host"], "backup-server.local")
+        self.assertEqual(config["remote_user"], "accladmin")
+        self.assertEqual(config["remote_dir"], "/storage/accl_backups")
+        self.assertEqual(config["retention_days"], 45)
+        self.logout()
+
 
 if __name__ == "__main__":
     unittest.main()
