@@ -837,14 +837,30 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn(f"/locker/view/{lock_id}", prev_data["url"])
 
     def test_brand_assets_and_logo_downloads(self):
-        """Test brand assets page renders and logo assets are downloadable."""
-        # 1. Test /brand page renders 200
+        """Test brand assets page and downloads are restricted strictly to administrators."""
+        self.logout()
+
+        # 1. Unauthenticated request to /brand redirects to login
+        res_anon = self.client.get("/brand")
+        self.assertEqual(res_anon.status_code, 302)
+        self.assertIn("/login", res_anon.headers.get("Location", ""))
+
+        # 2. Student access to /brand is rejected (redirected to dashboard)
+        self.login("student1", "student123")
+        res_student = self.client.get("/brand", follow_redirects=True)
+        self.assertIn(b"Administrator privileges required", res_student.data)
+        res_down_student = self.client.get("/brand/download/logo-png", follow_redirects=True)
+        self.assertIn(b"Administrator privileges required", res_down_student.data)
+        self.logout()
+
+        # 3. Admin access succeeds
+        self.login("admin", "admin@accl")
         res = self.client.get("/brand")
         self.assertEqual(res.status_code, 200)
         self.assertIn(b"Hoodle Brand Assets", res.data)
         self.assertIn(b"Download Complete Brand Kit", res.data)
 
-        # 2. Test downloading logo & icon PNG (Transparent)
+        # 4. Test downloading logo & icon PNG (Transparent)
         res_png = self.client.get("/brand/download/logo-png")
         self.assertEqual(res_png.status_code, 200)
         self.assertIn("image/png", res_png.content_type)
@@ -854,21 +870,22 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertEqual(res_icon.status_code, 200)
         self.assertIn("image/png", res_icon.content_type)
 
-        # 3. Test downloading logo SVG
+        # 5. Test downloading logo SVG
         res_svg = self.client.get("/brand/download/logo-svg")
         self.assertEqual(res_svg.status_code, 200)
         self.assertIn("svg", res_svg.content_type)
         self.assertIn("Hoodle_Logo_Full.svg", res_svg.headers.get("Content-Disposition", ""))
 
-        # 4. Test downloading brand kit ZIP
+        # 6. Test downloading brand kit ZIP
         res_kit = self.client.get("/brand/download/kit")
         self.assertEqual(res_kit.status_code, 200)
         self.assertIn("zip", res_kit.content_type)
         self.assertIn("Hoodle_Brand_Kit.zip", res_kit.headers.get("Content-Disposition", ""))
 
-        # 5. Test invalid asset name returns 404
+        # 7. Test invalid asset name returns 404
         res_404 = self.client.get("/brand/download/non-existent-asset")
         self.assertEqual(res_404.status_code, 404)
+        self.logout()
 
     def test_exam_live_submissions_telemetry_api(self):
         """Test the live 1-second exam submissions telemetry API."""

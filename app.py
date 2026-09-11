@@ -3160,12 +3160,14 @@ def download_submission(sub_id):
 # --- Hoodle Brand Assets & Logo Downloads ---
 
 @app.route("/brand")
+@admin_required
 def brand_assets():
     current_user = get_current_user()
     return render_template("brand_assets.html", current_user=current_user)
 
 
 @app.route("/brand/download/<asset_name>")
+@admin_required
 def download_brand_asset(asset_name):
     allowed_assets = {
         "icon-png": ("hoodle_icon.png", "Hoodle_Icon_Transparent.png", "image/png"),

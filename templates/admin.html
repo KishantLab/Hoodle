@@ -329,6 +329,7 @@
                 
                 {% if is_admin %}
                 <button type="button" class="btn-sm btn-outline" onclick="openModal('teachersModal')">👥 Manage Teachers</button>
+                <a href="{{ url_for('brand_assets') }}" class="btn-sm btn-outline" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem;">🎨 Brand Assets</a>
                 {% endif %}
                 
                 <button type="button" class="btn-sm btn-outline" onclick="openModal('passwordModal')">🔑 Change Password</button>
