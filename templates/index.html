@@ -13,10 +13,10 @@
         <header class="header">
             <div class="header-branding">
                 <div class="logos-container">
-                    {% if exam.logo_filename and exam.logo_filename != 'iitbhilai_logo.png' %}
+                    {% if exam.logo_filename and exam.logo_filename not in ('iitbhilai_logo.png', 'hoodle_icon.png') %}
                         <img src="{{ url_for('static', filename='uploads/' + exam.logo_filename) }}" alt="Course Logo" class="brand-logo">
                     {% else %}
-                        <img src="{{ url_for('static', filename='images/iitbhilai_logo.png') }}" alt="IIT Bhilai" class="brand-logo">
+                        <img src="{{ url_for('static', filename='images/hoodle_icon.png') }}" alt="Hoodle" class="brand-logo">
                     {% endif %}
                 </div>
             </div>

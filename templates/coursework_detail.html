@@ -81,7 +81,75 @@
 
     <!-- For Teachers: Submissions Grading Table -->
     {% if current_user.role in ('teacher', 'admin') and cw.type != 'material' %}
-      <div class="card" style="margin-top: 2rem;">
+      {% if cw.is_exam_mode %}
+        <!-- Live Exam Lockdown Telemetry Panel (Auto-Refreshing Every 1s) -->
+        <div class="exam-telemetry-banner">
+          <div class="exam-telemetry-top">
+            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+              <div class="telemetry-beacon">
+                <span class="pulse-dot-red"></span>
+                <span>🔴 LIVE EXAM TELEMETRY</span>
+              </div>
+              <span style="font-size: 0.85rem; color: #cbd5e1; font-weight: 600;">
+                ⚡ Auto-refreshing every 1 second
+              </span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <div style="font-size: 0.85rem; color: #94a3b8; font-weight: 600;">
+                ⏳ Time Remaining: <strong id="telemetryCountdown" style="color: #38bdf8; font-size: 1rem;">--:--:--</strong>
+              </div>
+              <button type="button" id="telemetryToggleBtn" onclick="toggleTelemetryPolling()" class="btn btn-sm" style="background: rgba(255,255,255,0.12); color: white; border: 1px solid rgba(255,255,255,0.2); font-size: 0.75rem;">
+                ⏸ Pause
+              </button>
+            </div>
+          </div>
+
+          <!-- 4 Stat Cards: Total, On-Time, Late, Pending -->
+          <div class="telemetry-stats-grid">
+            <div class="telemetry-stat-card">
+              <div class="telemetry-stat-val" style="color: #60a5fa;">
+                <span id="telemetryTotalSubs">{{ stats.total_submissions }}</span><span style="font-size: 1rem; color: #94a3b8; font-weight: 500;"> / {{ all_submissions|length }}</span>
+              </div>
+              <div class="telemetry-stat-lbl">Total Submissions</div>
+            </div>
+
+            <div class="telemetry-stat-card" style="border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.08);">
+              <div class="telemetry-stat-val" style="color: #34d399;" id="telemetryOnTimeSubs">
+                {{ stats.on_time }}
+              </div>
+              <div class="telemetry-stat-lbl" style="color: #6ee7b7;">✓ On-Time Submissions</div>
+            </div>
+
+            <div class="telemetry-stat-card" style="border-color: rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.08);">
+              <div class="telemetry-stat-val" style="color: #fbbf24;" id="telemetryLateSubs">
+                {{ stats.late }}
+              </div>
+              <div class="telemetry-stat-lbl" style="color: #fde68a;">Late Submissions</div>
+            </div>
+
+            <div class="telemetry-stat-card">
+              <div class="telemetry-stat-val" style="color: #94a3b8;" id="telemetryPendingSubs">
+                {{ stats.assigned }}
+              </div>
+              <div class="telemetry-stat-lbl">Pending Submissions</div>
+            </div>
+          </div>
+
+          <!-- Progress Bar -->
+          <div style="margin-top: 0.5rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.35rem; font-weight: 600;">
+              <span>Class Submission Progress</span>
+              <span id="telemetryProgressText">{{ (stats.total_submissions * 100 // all_submissions|length) if all_submissions|length > 0 else 0 }}% Turned In</span>
+            </div>
+            <div class="telemetry-progress-track">
+              <div id="telemetryProgressBar" class="telemetry-progress-fill" style="width: {{ (stats.total_submissions * 100 // all_submissions|length) if all_submissions|length > 0 else 0 }}%;"></div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="card" style="margin-top: 1.5rem;">
         <div class="card-header roster-header-row">
           <div>
             <h2 class="card-title" style="font-size: 1.2rem;">Student Submissions Roster</h2>
@@ -103,7 +171,7 @@
               <tr>
                 <th>Roll Number</th>
                 <th>Student</th>
-                <th>Status & Timing</th>
+                <th>Status &amp; Timing</th>
                 <th>Submission File</th>
                 <th>Grade / Score</th>
                 <th>Action</th>
@@ -111,13 +179,13 @@
             </thead>
             <tbody>
               {% for sub in all_submissions %}
-                <tr>
-                  <td style="font-family: monospace; font-weight: 700;">{{ sub.roll_number or 'N/A' }}</td>
-                  <td>
+                <tr id="sub-row-{{ sub.student_id }}">
+                  <td class="sub-roll-cell" style="font-family: monospace; font-weight: 700;">{{ sub.roll_number or 'N/A' }}</td>
+                  <td class="sub-student-cell">
                     <div style="font-weight: 600;">{{ sub.display_name }}</div>
                     <div style="font-size: 0.75rem; color: var(--text-muted);">{{ sub.email }}</div>
                   </td>
-                  <td>
+                  <td class="sub-status-cell">
                     {% if sub.submission_id %}
                       {% if sub.status == 'graded' %}
                         <span class="badge badge-graded">Graded</span>
@@ -127,15 +195,17 @@
 
                       {% if sub.is_late %}
                         <span class="badge badge-late">+{{ sub.late_minutes }}m Late</span>
+                      {% else %}
+                        <span class="badge" style="background: #ecfdf5; color: #065f46; font-weight: 700; border: 1px solid #a7f3d0;">✓ On-Time</span>
                       {% endif %}
                       <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;">
                         {{ sub.submitted_at | format_dt }}
                       </div>
                     {% else %}
-                      <span class="badge badge-assigned">Assigned</span>
+                      <span class="badge badge-assigned">Assigned / Pending</span>
                     {% endif %}
                   </td>
-                  <td>
+                  <td class="sub-file-cell">
                     {% if sub.submission_id %}
                       <div style="display: flex; flex-direction: column; gap: 0.25rem;">
                         <div style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
@@ -154,7 +224,7 @@
                       <span style="color: var(--text-light); font-size: 0.85rem;">No submission</span>
                     {% endif %}
                   </td>
-                  <td>
+                  <td class="sub-grade-cell">
                     {% if sub.submission_id %}
                       <form action="{{ url_for('grade_submission', course_id=course.id, coursework_id=cw.id, submission_id=sub.submission_id) }}" method="POST" style="display: flex; gap: 0.4rem; align-items: center; min-width: 220px;">
                         <input type="number" step="0.5" name="grade" value="{{ sub.grade if sub.grade is not none else '' }}" placeholder="0-{{ cw.points }}" class="form-control" style="width: 75px; padding: 0.35rem 0.5rem; font-size: 0.85rem;" required>
@@ -166,7 +236,7 @@
                       <span style="color: var(--text-light); font-size: 0.85rem;">-</span>
                     {% endif %}
                   </td>
-                  <td>
+                  <td class="sub-action-cell">
                     {% if sub.submission_id %}
                       <a href="{{ url_for('exam_receipt', receipt_token=sub.receipt_token) }}" target="_blank" class="btn btn-secondary btn-sm" style="font-size: 0.75rem;" title="View Digital Receipt">
                         Receipt
@@ -303,4 +373,143 @@
     </div>
   {% endif %}
 </div>
+
+{% if current_user.role in ('teacher', 'admin') and cw.is_exam_mode %}
+<script>
+let telemetryTimer = null;
+let telemetryPaused = false;
+let knownSubmissions = {};
+
+// Seed known submissions from initial render
+{% for sub in all_submissions %}
+  {% if sub.submission_id %}
+    knownSubmissions[{{ sub.student_id }}] = true;
+  {% endif %}
+{% endfor %}
+
+function toggleTelemetryPolling() {
+  const btn = document.getElementById("telemetryToggleBtn");
+  telemetryPaused = !telemetryPaused;
+  if (telemetryPaused) {
+    if (telemetryTimer) clearInterval(telemetryTimer);
+    if (btn) {
+      btn.textContent = "▶ Resume";
+      btn.style.background = "#2563eb";
+    }
+  } else {
+    if (btn) {
+      btn.textContent = "⏸ Pause";
+      btn.style.background = "rgba(255,255,255,0.12)";
+    }
+    fetchLiveTelemetry();
+    telemetryTimer = setInterval(fetchLiveTelemetry, 1000);
+  }
+}
+
+async function fetchLiveTelemetry() {
+  if (telemetryPaused) return;
+  try {
+    const res = await fetch("{{ url_for('api_live_submissions', course_id=course.id, coursework_id=cw.id) }}");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.success) return;
+
+    // 1. Update Stat Numbers
+    const totalEl = document.getElementById("telemetryTotalSubs");
+    if (totalEl) totalEl.textContent = data.total_submissions;
+
+    const onTimeEl = document.getElementById("telemetryOnTimeSubs");
+    if (onTimeEl) onTimeEl.textContent = data.on_time_count;
+
+    const lateEl = document.getElementById("telemetryLateSubs");
+    if (lateEl) lateEl.textContent = data.late_count;
+
+    const pendingEl = document.getElementById("telemetryPendingSubs");
+    if (pendingEl) pendingEl.textContent = data.pending_count;
+
+    // Progress Bar
+    const pct = data.total_enrolled > 0 ? Math.round((data.total_submissions / data.total_enrolled) * 100) : 0;
+    const progBar = document.getElementById("telemetryProgressBar");
+    if (progBar) progBar.style.width = pct + "%";
+    const progTxt = document.getElementById("telemetryProgressText");
+    if (progTxt) progTxt.textContent = `${pct}% Turned In (${data.total_submissions}/${data.total_enrolled})`;
+
+    // Countdown
+    if (data.time_remaining_sec !== null) {
+      const cd = document.getElementById("telemetryCountdown");
+      if (cd) {
+        if (data.time_remaining_sec <= 0) {
+          cd.textContent = "Exam Concluded";
+          cd.style.color = "#ef4444";
+        } else {
+          const h = Math.floor(data.time_remaining_sec / 3600);
+          const m = Math.floor((data.time_remaining_sec % 3600) / 60);
+          const s = data.time_remaining_sec % 60;
+          cd.textContent = (h > 0 ? `${h}h ` : "") + `${m}m ${s < 10 ? '0' : ''}${s}s`;
+        }
+      }
+    }
+
+    // 2. Update Student Rows Live
+    data.submissions.forEach(sub => {
+      const row = document.getElementById(`sub-row-${sub.student_id}`);
+      if (!row) return;
+
+      // Pulse animation if new submission arrived
+      if (!knownSubmissions[sub.student_id] && sub.submission_id) {
+        knownSubmissions[sub.student_id] = true;
+        row.classList.add("new-submission-pulse");
+        setTimeout(() => row.classList.remove("new-submission-pulse"), 3500);
+      }
+
+      // Update Status Cell
+      const statusCell = row.querySelector(".sub-status-cell");
+      if (statusCell && sub.submission_id) {
+        let badgeHtml = sub.status === "graded" 
+          ? '<span class="badge badge-graded">Graded</span>'
+          : '<span class="badge badge-turned-in">Turned In</span>';
+        if (sub.is_late) {
+          badgeHtml += ` <span class="badge badge-late">+${sub.late_minutes}m Late</span>`;
+        } else {
+          badgeHtml += ' <span class="badge" style="background:#ecfdf5; color:#065f46; font-weight:700; border:1px solid #a7f3d0;">✓ On-Time</span>';
+        }
+        if (sub.submitted_at) {
+          badgeHtml += `<div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.2rem;">${sub.submitted_at}</div>`;
+        }
+        statusCell.innerHTML = badgeHtml;
+      }
+
+      // Update File Cell
+      const fileCell = row.querySelector(".sub-file-cell");
+      if (fileCell && sub.submission_id && sub.filename) {
+        let fileHtml = `<div style="display:flex; flex-direction:column; gap:0.25rem;">
+          <div style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">`;
+        if (sub.is_pdf) {
+          fileHtml += `<button type="button" class="btn btn-secondary btn-sm" onclick="openPdfViewer('/view/submission/${sub.submission_id}', '${sub.filename}', '/download/submission/${sub.submission_id}')" style="font-size:0.75rem; padding:0.2rem 0.45rem; color:#b91c1c; font-weight:700;">👁 View PDF</button>`;
+        }
+        fileHtml += `<a href="/download/submission/${sub.submission_id}" style="color:var(--primary); text-decoration:none; font-weight:600; font-size:0.85rem;" title="Download ${sub.filename}">⬇️ ${sub.filename}</a>
+          </div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${sub.file_size || 0} bytes</div>
+        </div>`;
+        fileCell.innerHTML = fileHtml;
+      }
+
+      // Update Action Cell (Receipt)
+      const actionCell = row.querySelector(".sub-action-cell");
+      if (actionCell && sub.submission_id && sub.receipt_token) {
+        actionCell.innerHTML = `<a href="/receipt/${sub.receipt_token}" target="_blank" class="btn btn-secondary btn-sm" style="font-size:0.75rem;" title="View Digital Receipt">Receipt</a>`;
+      }
+    });
+
+  } catch (e) {
+    console.warn("Live telemetry poll error:", e);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  fetchLiveTelemetry();
+  telemetryTimer = setInterval(fetchLiveTelemetry, 1000);
+});
+</script>
+{% endif %}
 {% endblock %}

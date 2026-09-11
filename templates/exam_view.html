@@ -37,6 +37,18 @@
     </div>
   </div>
 
+  {% if current_user.role in ('teacher', 'admin') %}
+    <div style="background: #eff6ff; border: 1.5px solid #3b82f6; border-radius: var(--radius-md); padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+      <div style="display: flex; align-items: center; gap: 0.6rem; color: #1e40af; font-weight: 600; font-size: 0.92rem;">
+        <span style="font-size: 1.2rem;">🔴</span>
+        <span><strong>Instructor Proctor Mode:</strong> Live student submissions telemetry is active.</span>
+      </div>
+      <a href="{{ url_for('coursework_detail', course_id=course.id, coursework_id=exam.id) }}" class="btn btn-primary btn-sm" style="font-weight: 700;">
+        Open Live Telemetry &amp; Submissions Roster →
+      </a>
+    </div>
+  {% endif %}
+
   <!-- Exam Instructions -->
   <div class="card" style="margin-bottom: 2rem;">
     <h2 class="card-title" style="font-size: 1.15rem; color: #b91c1c; display: flex; align-items: center; gap: 0.5rem;">

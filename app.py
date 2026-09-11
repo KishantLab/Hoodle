@@ -1392,14 +1392,25 @@ def coursework_detail(course_id, coursework_id):
             ORDER BY u.roll_number ASC
         """, (coursework_id, course_id)).fetchall()
 
+        on_time = 0
+        late = 0
         for s in all_submissions:
             if s["submission_id"]:
                 if s["status"] == "graded":
                     stats["graded"] += 1
                 else:
                     stats["turned_in"] += 1
+                if s["is_late"]:
+                    late += 1
+                else:
+                    on_time += 1
             else:
                 stats["assigned"] += 1
+
+        stats["total_submissions"] = stats["turned_in"] + stats["graded"]
+        stats["on_time"] = on_time
+        stats["late"] = late
+        stats["total_enrolled"] = len(all_submissions)
 
         private_comments = []
         locker_files = []
@@ -1417,6 +1428,111 @@ def coursework_detail(course_id, coursework_id):
         stats=stats,
         active_tab="classwork"
     )
+
+
+# --- Live Exam Submission Telemetry API ---
+
+@app.route("/api/courses/<int:course_id>/coursework/<int:coursework_id>/live-submissions")
+@login_required
+def api_live_submissions(course_id, coursework_id):
+    conn = get_db()
+    user_id = session["user_id"]
+    role = session.get("role")
+
+    is_teacher = role in ("teacher", "admin")
+    if not is_teacher:
+        enr = conn.execute(
+            "SELECT role FROM course_enrollments WHERE course_id = ? AND user_id = ? AND role = 'ta'",
+            (course_id, user_id)
+        ).fetchone()
+        if enr:
+            is_teacher = True
+
+    if not is_teacher:
+        conn.close()
+        return jsonify({"success": False, "error": "Access denied: Instructor role required"}), 403
+
+    cw = conn.execute(
+        "SELECT * FROM coursework WHERE id = ? AND course_id = ?",
+        (coursework_id, course_id)
+    ).fetchone()
+    if not cw:
+        conn.close()
+        return jsonify({"success": False, "error": "Coursework not found"}), 404
+
+    subs = conn.execute("""
+        SELECT u.id as student_id, u.display_name, u.roll_number, u.email,
+               s.id as submission_id, s.status, s.original_filename, s.file_size,
+               s.submitted_at, s.is_late, s.late_minutes, s.grade, s.feedback,
+               s.sha256, s.receipt_token, s.lab_name
+        FROM course_enrollments ce
+        JOIN users u ON ce.user_id = u.id
+        LEFT JOIN submissions s ON s.coursework_id = ? AND s.student_id = u.id
+        WHERE ce.course_id = ? AND ce.role = 'student'
+        ORDER BY u.roll_number ASC
+    """, (coursework_id, course_id)).fetchall()
+    conn.close()
+
+    total_enrolled = len(subs)
+    turned_in = 0
+    graded = 0
+    assigned = 0
+    on_time = 0
+    late = 0
+
+    items = []
+    for s in subs:
+        sub_id = s["submission_id"]
+        if sub_id:
+            if s["status"] == "graded":
+                graded += 1
+            else:
+                turned_in += 1
+            if s["is_late"]:
+                late += 1
+            else:
+                on_time += 1
+        else:
+            assigned += 1
+
+        items.append({
+            "student_id": s["student_id"],
+            "roll_number": s["roll_number"] or "N/A",
+            "display_name": s["display_name"],
+            "email": s["email"],
+            "submission_id": sub_id,
+            "status": s["status"] if sub_id else "assigned",
+            "submitted_at": s["submitted_at"],
+            "is_late": bool(s["is_late"]) if sub_id else False,
+            "late_minutes": s["late_minutes"] if sub_id else 0,
+            "original_filename": s["original_filename"] if sub_id else None,
+            "file_size": s["file_size"] if sub_id else 0,
+            "receipt_token": s["receipt_token"] if sub_id else None,
+            "grade": s["grade"] if sub_id else None,
+            "feedback": s["feedback"] if sub_id else None,
+            "is_pdf": (s["original_filename"].lower().endswith(".pdf")) if (sub_id and s["original_filename"]) else False
+        })
+
+    total_subs = turned_in + graded
+
+    # Timer calculation
+    now = datetime.now()
+    end_dt = parse_iso_datetime(cw["end_time"]) if cw["end_time"] else None
+    time_remaining_sec = max(0, int((end_dt - now).total_seconds())) if end_dt else None
+
+    return jsonify({
+        "success": True,
+        "is_exam_mode": bool(cw["is_exam_mode"]),
+        "total_enrolled": total_enrolled,
+        "total_submissions": total_subs,
+        "on_time_count": on_time,
+        "late_count": late,
+        "pending_count": assigned,
+        "turned_in_count": turned_in,
+        "graded_count": graded,
+        "time_remaining_sec": time_remaining_sec,
+        "submissions": items
+    })
 
 
 # --- Assignment Submission ---
@@ -3077,11 +3193,9 @@ def download_brand_asset(asset_name):
                     p = os.path.join(img_dir, fn)
                     if os.path.exists(p):
                         z.write(p, fn)
-                for pfn in ("accl_logo.png", "iitbhilai_logo.png"):
-                    p = os.path.join(img_dir, pfn)
-                    if os.path.exists(p):
-                        z.write(p, f"partner_logos/{pfn}")
-                z.writestr("BRAND_GUIDELINES.txt", "HOODLE LMS BRAND ASSETS\nACCL Lab, IIT Bhilai\nColors: #1D4ED8, #06B6D4, #F59E0B, #0F172A\n")
+                if os.path.exists(os.path.join(img_dir, "accl_logo.png")):
+                    z.write(os.path.join(img_dir, "accl_logo.png"), "partner_logos/accl_logo.png")
+                z.writestr("BRAND_GUIDELINES.txt", "HOODLE LMS BRAND ASSETS\nACCL Research Lab\nColors: #1F216C, #2F2483, #38BDF8, #F59E0B\n")
         except Exception as e:
             app.logger.warning("Failed to generate brand kit zip: %s", e)
 

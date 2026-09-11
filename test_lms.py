@@ -870,6 +870,46 @@ class ACCLLMSTestCase(unittest.TestCase):
         res_404 = self.client.get("/brand/download/non-existent-asset")
         self.assertEqual(res_404.status_code, 404)
 
+    def test_exam_live_submissions_telemetry_api(self):
+        """Test the live 1-second exam submissions telemetry API."""
+        conn = app.get_db()
+        course = conn.execute("SELECT id FROM courses LIMIT 1").fetchone()
+        cw = conn.execute("""
+            SELECT id FROM coursework 
+            WHERE course_id = ? AND is_exam_mode = 1 
+            LIMIT 1
+        """, (course["id"],)).fetchone()
+        
+        if not cw:
+            # Create an exam coursework
+            conn.execute("""
+                INSERT INTO coursework (course_id, title, type, points, is_exam_mode, start_time, end_time, allowed_types, created_by, created_at)
+                VALUES (?, 'Final Lab Exam', 'exam', 100, 1, datetime('now', '-10 minutes'), datetime('now', '+50 minutes'), 'zip', 1, datetime('now'))
+            """, (course["id"],))
+            cw_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.commit()
+        else:
+            cw_id = cw["id"]
+        conn.close()
+
+        # 1. Test teacher access -> 200 OK with on-time and total submission metrics
+        self.login("kishan", "password123")
+        res = self.client.get(f"/api/courses/{course['id']}/coursework/{cw_id}/live-submissions")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data["success"])
+        self.assertIn("total_submissions", data)
+        self.assertIn("on_time_count", data)
+        self.assertIn("late_count", data)
+        self.assertIn("pending_count", data)
+        self.assertIn("submissions", data)
+
+        # 2. Test student access -> 403 Forbidden (student privacy preservation)
+        self.logout()
+        self.login("student1", "student123")
+        res_st = self.client.get(f"/api/courses/{course['id']}/coursework/{cw_id}/live-submissions")
+        self.assertEqual(res_st.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Flask 3.0](https://img.shields.io/badge/framework-Flask%203.0-green.svg)](https://palletsprojects.com/p/flask/)
-[![Tests](https://img.shields.io/badge/tests-20%20passing-brightgreen.svg)](test_lms.py)
+[![Tests](https://img.shields.io/badge/tests-21%20passing-brightgreen.svg)](test_lms.py)
 [![Brand Kit](https://img.shields.io/badge/brand-Hoodle%20Kit%20(SVG%2FPNG)-blueviolet.svg)](static/images/hoodle_brand_kit.zip)
 [![License](https://img.shields.io/badge/license-ACCL%20IIT%20Bhilai-red.svg)](README.md)
 
@@ -87,6 +87,10 @@ Every course in Hoodle provides a Google Classroom-style tab navigation:
   - Real-time countdown timer synchronized with server time.
   - Lockdown automatically lifts when the exam end time passes.
   - Submissions are permanently locked; students cannot unsubmit or overwrite work once the exam concludes.
+- **Live 1-Second Exam Submissions Telemetry Monitor (`/api/.../live-submissions`)**:
+  - Real-time proctor dashboard for instructors and TAs with automated 1-second background polling.
+  - Live metric cards: **Total Submissions** (with enrolled progress bar), **On-Time Submissions** (`✓ On-Time`), **Late Submissions**, and **Pending/Assigned**.
+  - Dynamic roster table highlighting newly arrived student submissions in real time with green pulse animations.
 
 ---
 
@@ -319,6 +323,7 @@ test_coteacher_attendance_log_access ................................. ok
 test_course_join_by_code ............................................ ok
 test_default_accounts_exist ......................................... ok
 test_dynamic_token_rotation ......................................... ok
+test_exam_live_submissions_telemetry_api ............................. ok
 test_exam_lockdown_auto_expire_and_locked_submission ................. ok
 test_gradebook_and_csv_export ....................................... ok
 test_in_app_pdf_opener_and_inline_routes ............................ ok
@@ -330,7 +335,7 @@ test_student_login_and_dashboard .................................... ok
 test_student_registration ........................................... ok
 
 ----------------------------------------------------------------------
-Ran 20 tests in 58.644s - ALL OK
+Ran 21 tests in 62.545s - ALL OK
 ```
 
 ---

@@ -22,9 +22,13 @@
     </div>
 
     <div class="card receipt-card" style="padding: 2.5rem; background: white; border-radius: var(--radius-lg); position: relative;">
-      <!-- Header with IIT Bhilai Logo -->
+      <!-- Header with Hoodle and ACCL Logos -->
       <div style="text-align: center; border-bottom: 2px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 1.5rem;">
-        <img src="{{ url_for('static', filename='images/iitbhilai_logo.png') }}" alt="IIT Bhilai" style="height: 65px; margin-bottom: 0.5rem;">
+        <div style="display: flex; justify-content: center; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
+          <img src="{{ url_for('static', filename='images/hoodle_mark.svg') }}" alt="Hoodle" style="height: 58px; object-fit: contain;">
+          <div style="width: 1.5px; height: 40px; background: #cbd5e1;"></div>
+          <img src="{{ url_for('static', filename='images/accl_logo.png') }}" alt="ACCL Lab" style="height: 50px; object-fit: contain;">
+        </div>
         <h2 style="font-size: 1.4rem; font-weight: 800; color: #1e3a8a;">Accelerated Computing Research Lab (ACCL)</h2>
         <div style="font-size: 0.9rem; color: var(--text-muted); font-weight: 600;">Indian Institute of Technology Bhilai (IIT Bhilai)</div>
         <div style="margin-top: 0.75rem; display: inline-block; background: #e0e7ff; color: #3730a3; padding: 0.35rem 1rem; border-radius: 9999px; font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">
