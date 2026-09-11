@@ -1353,6 +1353,120 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertEqual(course["theme_color"], "emerald")
         self.logout()
 
+    def test_quick_join_authenticated_user(self):
+        """Verify authenticated student using /j/<join_code> is enrolled and redirected to stream."""
+        conn = app.get_db()
+        course = conn.execute("SELECT * FROM courses WHERE id = 1").fetchone()
+        join_code = course["join_code"]
+        conn.close()
+
+        # Login as student
+        self.login("student1", "student123")
+        res = self.client.get(f"/j/{join_code}", follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+
+        # Verify enrolled in DB
+        conn = app.get_db()
+        enroll = conn.execute("SELECT * FROM course_enrollments WHERE course_id = 1 AND user_id = 3").fetchone()
+        conn.close()
+        self.assertIsNotNone(enroll)
+        self.assertEqual(enroll["role"], "student")
+        self.logout()
+
+    def test_quick_join_unauthenticated_user(self):
+        """Verify unauthenticated user using /j/<join_code> is redirected to login with pending code stored."""
+        conn = app.get_db()
+        course = conn.execute("SELECT * FROM courses WHERE id = 1").fetchone()
+        join_code = course["join_code"]
+        conn.close()
+
+        res = self.client.get(f"/j/{join_code}", follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Classroom Invitation", res.data)
+        with self.client.session_transaction() as sess:
+            self.assertEqual(sess.get("pending_join_code"), join_code.upper())
+
+    def test_login_with_pending_join_code(self):
+        """Verify logging in with pending_join_code completes enrollment and forwards to course stream."""
+        conn = app.get_db()
+        course = conn.execute("SELECT * FROM courses WHERE id = 1").fetchone()
+        join_code = course["join_code"]
+        # Ensure student1 is not yet enrolled
+        conn.execute("DELETE FROM course_enrollments WHERE course_id = 1 AND user_id = 3")
+        conn.commit()
+        conn.close()
+
+        # Visit short link as guest
+        self.client.get(f"/j/{join_code}", follow_redirects=True)
+
+        # Now log in as student1
+        res = self.client.post("/login", data={
+            "identifier": "student1",
+            "password": "student123"
+        }, follow_redirects=True)
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"You have been enrolled in", res.data)
+
+        # Verify DB enrollment
+        conn = app.get_db()
+        enroll = conn.execute("SELECT * FROM course_enrollments WHERE course_id = 1 AND user_id = 3").fetchone()
+        conn.close()
+        self.assertIsNotNone(enroll)
+        self.logout()
+
+    def test_register_with_pending_join_code(self):
+        """Verify registering a new account with pending_join_code auto-logs in, enrolls, and opens course."""
+        conn = app.get_db()
+        course = conn.execute("SELECT * FROM courses WHERE id = 1").fetchone()
+        join_code = course["join_code"]
+        conn.close()
+
+        # Visit short link as guest
+        self.client.get(f"/j/{join_code}", follow_redirects=True)
+
+        # Register new student
+        res = self.client.post("/register", data={
+            "full_name": "Test ShortLink Student",
+            "roll_number": "B26TEST999",
+            "email": "testshortlink@iitbhilai.ac.in",
+            "password": "password123",
+            "confirm_password": "password123"
+        }, follow_redirects=True)
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Welcome to", res.data)
+
+        # Verify DB: student created and enrolled
+        conn = app.get_db()
+        user = conn.execute("SELECT * FROM users WHERE roll_number = 'B26TEST999'").fetchone()
+        self.assertIsNotNone(user)
+        enroll = conn.execute("SELECT * FROM course_enrollments WHERE course_id = 1 AND user_id = ?", (user["id"],)).fetchone()
+        self.assertIsNotNone(enroll)
+        conn.close()
+        self.logout()
+
+    def test_short_jump_routes(self):
+        """Verify short jump routes /c/<id>, /cw/<id>, and /p."""
+        self.login("kishan", "password123")
+
+        # Test /c/1
+        res = self.client.get("/c/1", follow_redirects=False)
+        self.assertEqual(res.status_code, 302)
+        self.assertIn("/courses/1", res.location)
+
+        # Test /cw/1
+        res = self.client.get("/cw/1", follow_redirects=False)
+        self.assertEqual(res.status_code, 302)
+        self.assertIn("/courses/1/coursework/1", res.location)
+
+        # Test /p
+        res = self.client.get("/p", follow_redirects=False)
+        self.assertEqual(res.status_code, 302)
+        self.assertIn("/dashboard", res.location)
+
+        self.logout()
+
 
 
 if __name__ == "__main__":

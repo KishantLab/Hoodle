@@ -15,6 +15,9 @@
         <strong>{{ course.join_code }}</strong>
         <span>📋</span>
       </div>
+      <button type="button" class="btn btn-sm" onclick="openShareModal()" style="background: rgba(255, 255, 255, 0.2); color: white; border: 1px solid rgba(255, 255, 255, 0.35); backdrop-filter: blur(4px); font-weight: 700; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.8rem; border-radius: 9999px; cursor: pointer;">
+        <span>🔗 Share / QR</span>
+      </button>
       <button type="button" class="btn btn-sm" onclick="openModal('classSettingsModal')" style="background: rgba(255, 255, 255, 0.2); color: white; border: 1px solid rgba(255, 255, 255, 0.35); backdrop-filter: blur(4px); font-weight: 700; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.8rem; border-radius: 9999px; cursor: pointer;">
         <span>⚙️ Class Settings</span>
       </button>
@@ -46,13 +49,21 @@
   <aside class="stream-sidebar">
     {% if is_teacher_or_admin or (current_user and current_user.role in ('teacher', 'admin')) or (course and course.teacher_id == current_user.id) %}
       <div class="card stream-info-card">
-        <div class="stream-card-label">Class Code</div>
+        <div class="stream-card-label">Class Code &amp; Short Link</div>
         <div class="stream-code-box" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')" title="Click to copy class code">
           <span>{{ course.join_code }}</span>
           <span style="font-size: 0.85rem; opacity: 0.75;">📋</span>
         </div>
-        <p class="stream-card-hint">
-          Share this code with students to allow them to self-enroll.
+        <div style="margin-top: 0.65rem; display: flex; flex-direction: column; gap: 0.4rem;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="copyQuickInvite('{{ course.join_code }}', this)" style="width: 100%; font-size: 0.78rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; font-weight: 700;">
+            <span>🔗 Copy Short Link</span>
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="openShareModal()" style="width: 100%; font-size: 0.78rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; font-weight: 700;">
+            <span>📢 Share / QR Code</span>
+          </button>
+        </div>
+        <p class="stream-card-hint" style="margin-top: 0.5rem;">
+          Students click the short link to automatically join.
         </p>
       </div>
     {% endif %}
@@ -303,6 +314,180 @@
     </form>
   </div>
 </div>
+{% endif %}
+
+<!-- Share Class & Student Invite Modal -->
+{% if is_teacher_or_admin or (current_user and current_user.role in ('teacher', 'admin')) or (course and course.teacher_id == current_user.id) %}
+<div id="shareClassModal" class="modal-backdrop" style="display: none;">
+  <div class="modal-card" style="max-width: 580px; padding: 1.75rem;">
+    <div class="modal-header" style="margin-bottom: 1.25rem;">
+      <div>
+        <h3 class="modal-title" style="font-size: 1.25rem; font-weight: 800; color: #1e3a8a;">
+          📢 Share Class &amp; Invite Students
+        </h3>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.2rem;">
+          Students click the short link or scan the QR code to join this class automatically.
+        </p>
+      </div>
+      <button type="button" class="modal-close" onclick="closeModal('shareClassModal')">&times;</button>
+    </div>
+
+    <!-- Active Short Link Display & 1-Click Copy -->
+    <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
+      <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: #1e40af; letter-spacing: 0.05em; margin-bottom: 0.4rem;">
+        🔗 Student 1-Click Join Link (Short &amp; Direct)
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.5rem; background: white; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid #cbd5e1;">
+        <input type="text" id="shareLinkInput" readonly style="flex: 1; border: none; outline: none; font-family: monospace; font-size: 0.92rem; font-weight: 700; color: #1e40af; background: transparent;" value="">
+        <button type="button" class="btn btn-primary btn-sm" onclick="copyShareInput(this)" style="padding: 0.35rem 0.8rem; font-weight: 700;">
+          📋 Copy Link
+        </button>
+      </div>
+    </div>
+
+    <!-- Network Access Presets -->
+    <div style="margin-bottom: 1.25rem;">
+      <label class="form-label" style="font-size: 0.82rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+        🌐 Target Network Connection:
+      </label>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.35rem;">
+        <button type="button" id="presetBtnVpn" class="btn btn-secondary btn-sm network-preset-btn" onclick="setShareTarget('vpn')" style="text-align: left; padding: 0.5rem 0.75rem;">
+          <div style="font-weight: 700; font-size: 0.82rem;">🌐 VPN Access</div>
+          <div style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">100.87.0.15:8095</div>
+        </button>
+        <button type="button" id="presetBtnLan" class="btn btn-secondary btn-sm network-preset-btn" onclick="setShareTarget('lan')" style="text-align: left; padding: 0.5rem 0.75rem;">
+          <div style="font-weight: 700; font-size: 0.82rem;">🏢 Campus Network</div>
+          <div style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">10.10.14.104:8095</div>
+        </button>
+        <button type="button" id="presetBtnPublic" class="btn btn-secondary btn-sm network-preset-btn" onclick="setShareTarget('public')" style="text-align: left; padding: 0.5rem 0.75rem;">
+          <div style="font-weight: 700; font-size: 0.82rem;">🔒 Public HTTPS</div>
+          <div style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">accllogin.../lms</div>
+        </button>
+        <button type="button" id="presetBtnLocal" class="btn btn-secondary btn-sm network-preset-btn" onclick="setShareTarget('local')" style="text-align: left; padding: 0.5rem 0.75rem;">
+          <div style="font-weight: 700; font-size: 0.82rem;">🏷️ Local Domain</div>
+          <div style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">hoodle.local</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Classroom Projection QR Code & Announcement -->
+    <div style="display: grid; grid-template-columns: 160px 1fr; gap: 1.25rem; align-items: center; background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+        <div id="shareQrCode" style="background: white; padding: 6px; border-radius: 8px; border: 1px solid #e2e8f0; display: inline-flex; align-items: center; justify-content: center; width: 140px; height: 140px;"></div>
+        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.35rem; font-weight: 600;">📱 Scan to Join</div>
+      </div>
+      <div>
+        <div style="font-size: 0.82rem; font-weight: 700; color: #1e3a8a; margin-bottom: 0.35rem;">
+          📢 Class Invitation Message
+        </div>
+        <div style="font-size: 0.76rem; color: var(--text-muted); margin-bottom: 0.4rem;">
+          Copy and share with students via messaging or email:
+        </div>
+        <textarea id="shareMsgText" rows="3" readonly style="width: 100%; font-size: 0.78rem; border-radius: 6px; border: 1px solid #cbd5e1; padding: 0.4rem 0.5rem; resize: none; background: white; color: var(--text-main); font-family: inherit; margin-bottom: 0.5rem;"></textarea>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="copyAnnouncementMsg(this)" style="font-size: 0.78rem;">
+          📋 Copy Announcement
+        </button>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end;">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('shareClassModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const COURSE_JOIN_CODE = "{{ course.join_code }}";
+const COURSE_TITLE = "{{ course.code }}: {{ course.title }}";
+let qrcodeInstance = null;
+
+function getBaseUrlForTarget(target) {
+  const origin = window.location.origin;
+  const pathPrefix = window.location.pathname.startsWith('/lms') ? '/lms' : (window.location.pathname.startsWith('/hoodle') ? '/hoodle' : '');
+
+  if (target === 'vpn') {
+    return 'http://100.87.0.15:8095';
+  } else if (target === 'lan') {
+    return 'http://10.10.14.104:8095';
+  } else if (target === 'public') {
+    return 'https://accllogin.tail77fd8b.ts.net/lms';
+  } else if (target === 'local') {
+    return 'http://hoodle.local';
+  }
+  return origin + pathPrefix;
+}
+
+function setShareTarget(target) {
+  const base = getBaseUrlForTarget(target);
+  const joinUrl = `${base.replace(/\/$/, '')}/j/${COURSE_JOIN_CODE}`;
+
+  const inputEl = document.getElementById('shareLinkInput');
+  const msgEl = document.getElementById('shareMsgText');
+  if (inputEl) inputEl.value = joinUrl;
+  if (msgEl) msgEl.value = `Join ${COURSE_TITLE} on Hoodle LMS:\n${joinUrl}\nClass Code: ${COURSE_JOIN_CODE}`;
+
+  // Highlight active preset
+  document.querySelectorAll('.network-preset-btn').forEach(b => {
+    b.style.borderColor = 'var(--border)';
+    b.style.background = 'white';
+    b.style.color = 'var(--text-main)';
+  });
+  const activeBtnId = target === 'vpn' ? 'presetBtnVpn' : (target === 'lan' ? 'presetBtnLan' : (target === 'public' ? 'presetBtnPublic' : (target === 'local' ? 'presetBtnLocal' : '')));
+  const activeBtn = document.getElementById(activeBtnId);
+  if (activeBtn) {
+    activeBtn.style.borderColor = 'var(--primary)';
+    activeBtn.style.background = '#eff6ff';
+    activeBtn.style.color = 'var(--primary)';
+  }
+
+  // Render QR Code
+  const qrContainer = document.getElementById('shareQrCode');
+  if (qrContainer) {
+    qrContainer.innerHTML = '';
+    if (typeof QRCode !== 'undefined') {
+      try {
+        new QRCode(qrContainer, {
+          text: joinUrl,
+          width: 128,
+          height: 128,
+          colorDark: "#1e3a8a",
+          colorLight: "#ffffff",
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      } catch (err) {
+        console.error("QR Code error:", err);
+      }
+    }
+  }
+}
+
+function openShareModal() {
+  openModal('shareClassModal');
+  let defaultTarget = 'current';
+  if (window.location.hostname === '100.87.0.15') defaultTarget = 'vpn';
+  else if (window.location.hostname === '10.10.14.104') defaultTarget = 'lan';
+  else if (window.location.hostname.includes('tail77fd8b.ts.net')) defaultTarget = 'public';
+  else if (window.location.hostname === 'hoodle.local') defaultTarget = 'local';
+
+  setTimeout(() => setShareTarget(defaultTarget), 50);
+}
+
+function copyShareInput(btn) {
+  const input = document.getElementById('shareLinkInput');
+  if (input) copyToClipboard(input.value, btn, 'Link Copied!');
+}
+
+function copyAnnouncementMsg(btn) {
+  const textarea = document.getElementById('shareMsgText');
+  if (textarea) copyToClipboard(textarea.value, btn, 'Message Copied!');
+}
+
+function copyQuickInvite(code, btn) {
+  const pathPrefix = window.location.pathname.startsWith('/lms') ? '/lms' : (window.location.pathname.startsWith('/hoodle') ? '/hoodle' : '');
+  const url = `${window.location.origin}${pathPrefix}/j/${code}`;
+  copyToClipboard(url, btn, 'Short Link Copied!');
+}
+</script>
 {% endif %}
 {% endblock %}
 

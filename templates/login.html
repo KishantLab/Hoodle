@@ -20,6 +20,17 @@
       <p style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">Accelerated Classroom &amp; Lab Learning • ACCL Lab</p>
     </div>
 
+    {% if session.get('pending_join_code') %}
+    <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.75rem;">
+      <div style="font-size: 1.6rem; line-height: 1;">🎓</div>
+      <div style="flex: 1;">
+        <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: #1e40af; letter-spacing: 0.05em;">Classroom Invitation</div>
+        <div style="font-size: 0.95rem; font-weight: 800; color: #1e3a8a;">{{ session.get('pending_course_name', 'Course Classroom') }}</div>
+        <div style="font-size: 0.78rem; color: #2563eb; margin-top: 2px;">Sign in or register below to enter this class automatically.</div>
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Toggle between Sign In and Registration -->
     <div style="display: flex; background: #f1f5f9; border-radius: var(--radius-md); padding: 4px; margin-bottom: 1.5rem;">
       <button id="tabSignIn" onclick="switchAuthTab('signin')" class="btn btn-sm" style="flex: 1; border-radius: 6px; background: {% if not register_active %}white{% else %}transparent{% endif %}; font-weight: 700; color: {% if not register_active %}var(--primary){% else %}var(--text-muted){% endif %};">

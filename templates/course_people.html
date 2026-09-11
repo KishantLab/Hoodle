@@ -51,9 +51,12 @@
         </div>
       </div>
 
-      <div style="display: flex; gap: 0.5rem;">
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('{{ course.join_code }}', this, 'Copied!')">
           📋 Copy Code
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="copyPeopleInviteLink('{{ course.join_code }}', this)">
+          🔗 Copy Invite Link
         </button>
         <form action="{{ url_for('reset_join_code', course_id=course.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Generate a new class code? Existing enrolled students will not be affected.');">
           <button type="submit" class="btn btn-secondary btn-sm" title="Generate new code">
@@ -344,4 +347,12 @@
     </form>
   </div>
 </div>
+
+<script>
+function copyPeopleInviteLink(code, btn) {
+  const pathPrefix = window.location.pathname.startsWith('/lms') ? '/lms' : (window.location.pathname.startsWith('/hoodle') ? '/hoodle' : '');
+  const url = `${window.location.origin}${pathPrefix}/j/${code}`;
+  copyToClipboard(url, btn, 'Invite Link Copied!');
+}
+</script>
 {% endblock %}

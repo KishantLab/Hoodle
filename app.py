@@ -871,6 +871,25 @@ def login():
             session["role"] = user["role"]
             session["roll_number"] = user["roll_number"]
 
+            # Handle pending course join code from short link
+            pending_code = session.pop("pending_join_code", None)
+            session.pop("pending_course_name", None)
+            if pending_code:
+                conn = get_db()
+                target_course = conn.execute("SELECT * FROM courses WHERE UPPER(join_code) = ? AND is_archived = 0", (pending_code.upper(),)).fetchone()
+                if target_course:
+                    existing_enroll = conn.execute("SELECT * FROM course_enrollments WHERE course_id = ? AND user_id = ?", (target_course["id"], user["id"])).fetchone()
+                    if not existing_enroll:
+                        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        conn.execute("INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at) VALUES (?, ?, 'student', ?)", (target_course["id"], user["id"], now_str))
+                        conn.commit()
+                        flash(f"Welcome! You have been enrolled in {target_course['code']}: {target_course['title']}.", "success")
+                    else:
+                        flash(f"Welcome back! Opening {target_course['code']}: {target_course['title']}.", "info")
+                    conn.close()
+                    return redirect(url_for("course_stream", course_id=target_course["id"]))
+                conn.close()
+
             flash(f"Welcome back, {user['display_name']}!", "success")
             next_url = request.args.get("next")
             if next_url and next_url.startswith("/"):
@@ -945,6 +964,30 @@ def register():
 
         conn.commit()
         conn.close()
+
+        # Auto-login and auto-enroll newly registered student if joining via short link
+        pending_code = session.get("pending_join_code")
+        if pending_code and new_user_id:
+            session["user_id"] = new_user_id
+            session["username"] = username
+            session["display_name"] = full_name
+            session["role"] = role
+            session["roll_number"] = roll_number
+
+            session.pop("pending_join_code", None)
+            session.pop("pending_course_name", None)
+
+            conn = get_db()
+            target_course = conn.execute("SELECT * FROM courses WHERE UPPER(join_code) = ? AND is_archived = 0", (pending_code.upper(),)).fetchone()
+            if target_course:
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                conn.execute("INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at) VALUES (?, ?, 'student', ?)", (target_course["id"], new_user_id, now_str))
+                conn.commit()
+                flash(f"Account created! Welcome to {target_course['code']}: {target_course['title']}.", "success")
+                conn.close()
+                return redirect(url_for("course_stream", course_id=target_course["id"]))
+            conn.close()
+            return redirect(url_for("dashboard"))
 
         flash("Registration successful! You may now sign in.", "success")
         return redirect(url_for("login"))
@@ -1226,6 +1269,84 @@ def join_course():
     role_label = "Co-Teacher" if enrollment_role == "ta" else "Student"
     flash(f"Successfully joined {course['code']}: {course['title']} as {role_label}!", "success")
     return redirect(url_for("course_stream", course_id=course["id"]))
+
+
+@app.route("/j/<join_code>")
+@app.route("/join/<join_code>")
+def quick_join(join_code):
+    """Shorter 1-click course invite link for students."""
+    join_code = (join_code or "").strip().upper()
+    conn = get_db()
+    course = conn.execute("SELECT * FROM courses WHERE UPPER(join_code) = ? AND is_archived = 0", (join_code,)).fetchone()
+    conn.close()
+
+    if not course:
+        flash("Invalid or expired class invitation link. Please check with your instructor.", "danger")
+        return redirect(url_for("dashboard") if "user_id" in session else url_for("login"))
+
+    # If the user is already authenticated:
+    if "user_id" in session:
+        user_id = session["user_id"]
+        conn = get_db()
+        existing = conn.execute("""
+            SELECT * FROM course_enrollments WHERE course_id = ? AND user_id = ?
+        """, (course["id"], user_id)).fetchone()
+
+        if not existing:
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute("""
+                INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at)
+                VALUES (?, ?, 'student', ?)
+            """, (course["id"], user_id, now_str))
+            conn.commit()
+            flash(f"Welcome! You have successfully enrolled in {course['code']}: {course['title']}.", "success")
+        else:
+            flash(f"Opening {course['code']}: {course['title']}.", "info")
+        conn.close()
+        return redirect(url_for("course_stream", course_id=course["id"]))
+
+    # Guest / student not logged in: store pending code in session and prompt sign-in
+    session["pending_join_code"] = join_code
+    session["pending_course_name"] = f"{course['code']}: {course['title']}"
+    flash(f"You've been invited to join {course['code']}: {course['title']}. Please sign in or register below.", "info")
+    return redirect(url_for("login", join=join_code))
+
+
+@app.route("/c/<int:course_id>")
+def short_course_link(course_id):
+    """Short URL jump to course stream."""
+    return redirect(url_for("course_stream", course_id=course_id))
+
+
+@app.route("/e/<int:coursework_id>")
+def short_exam_link(coursework_id):
+    """Short URL jump directly into an exam."""
+    conn = get_db()
+    cw = conn.execute("SELECT course_id FROM coursework WHERE id = ?", (coursework_id,)).fetchone()
+    conn.close()
+    if not cw:
+        abort(404, "Exam not found")
+    return redirect(url_for("exam_view", course_id=cw["course_id"], coursework_id=coursework_id))
+
+
+@app.route("/cw/<int:coursework_id>")
+def short_coursework_link(coursework_id):
+    """Short URL jump directly into an assignment / lab."""
+    conn = get_db()
+    cw = conn.execute("SELECT course_id FROM coursework WHERE id = ?", (coursework_id,)).fetchone()
+    conn.close()
+    if not cw:
+        abort(404, "Coursework not found")
+    return redirect(url_for("coursework_detail", course_id=cw["course_id"], coursework_id=coursework_id))
+
+
+@app.route("/p")
+@app.route("/go")
+def short_portal_link():
+    """Short URL jump directly to dashboard or login."""
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+    return redirect(url_for("login"))
 
 
 @app.route("/courses/<int:course_id>/reset-join-code", methods=["POST"])
