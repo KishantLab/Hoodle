@@ -1280,6 +1280,21 @@ def course_stream(course_id):
             flash("You are not enrolled in this course.", "danger")
             return redirect(url_for("dashboard"))
 
+    # Determine if current user has instructor, co-teacher, TA, or admin privileges for this course
+    curr_user = get_current_user()
+    is_teacher_or_admin = False
+    if curr_user and curr_user["role"] in ("teacher", "admin"):
+        is_teacher_or_admin = True
+    elif course["teacher_id"] == user_id:
+        is_teacher_or_admin = True
+    else:
+        co_t = conn.execute("""
+            SELECT 1 FROM course_enrollments
+            WHERE course_id = ? AND user_id = ? AND role IN ('teacher', 'ta', 'co-teacher')
+        """, (course_id, user_id)).fetchone()
+        if co_t:
+            is_teacher_or_admin = True
+
     announcements_raw = conn.execute("""
         SELECT a.*, u.display_name as author_name, u.role as author_role
         FROM announcements a
@@ -1302,7 +1317,13 @@ def course_stream(course_id):
         announcements.append(item)
 
     conn.close()
-    return render_template("course_stream.html", course=course, announcements=announcements, active_tab="stream")
+    return render_template(
+        "course_stream.html",
+        course=course,
+        announcements=announcements,
+        is_teacher_or_admin=is_teacher_or_admin,
+        active_tab="stream"
+    )
 
 
 @app.route("/courses/<int:course_id>/announcements", methods=["POST"])
@@ -1455,12 +1476,27 @@ def course_classwork(course_id):
         else:
             topic_map[None]["cw_items"].append(item)
 
+    curr_user = get_current_user()
+    is_teacher_or_admin = False
+    if curr_user and curr_user["role"] in ("teacher", "admin"):
+        is_teacher_or_admin = True
+    elif course["teacher_id"] == user_id:
+        is_teacher_or_admin = True
+    else:
+        co_t = conn.execute("""
+            SELECT 1 FROM course_enrollments
+            WHERE course_id = ? AND user_id = ? AND role IN ('teacher', 'ta', 'co-teacher')
+        """, (course_id, user_id)).fetchone()
+        if co_t:
+            is_teacher_or_admin = True
+
     conn.close()
     return render_template(
         "course_classwork.html",
         course=course,
         topics=topics,
         topic_map=topic_map,
+        is_teacher_or_admin=is_teacher_or_admin,
         active_tab="classwork"
     )
 

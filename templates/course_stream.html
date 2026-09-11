@@ -9,7 +9,7 @@
   <div class="course-subtitle">{{ course.section or 'Section A' }}</div>
   <div class="course-meta">
     <span>👨‍🏫 {{ course.teacher_name }}</span>
-    {% if is_teacher_or_admin %}
+    {% if is_teacher_or_admin or (current_user and current_user.role in ('teacher', 'admin')) or (course and course.teacher_id == current_user.id) %}
       <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')" title="Click to copy class code">
         <span>Class Code:</span>
         <strong>{{ course.join_code }}</strong>
@@ -41,7 +41,7 @@
 <div class="stream-layout-grid">
   <!-- Left Column: Course Quick Info Sidebar -->
   <aside class="stream-sidebar">
-    {% if is_teacher_or_admin %}
+    {% if is_teacher_or_admin or (current_user and current_user.role in ('teacher', 'admin')) or (course and course.teacher_id == current_user.id) %}
       <div class="card stream-info-card">
         <div class="stream-card-label">Class Code</div>
         <div class="stream-code-box" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')" title="Click to copy class code">
@@ -64,20 +64,47 @@
 
   <!-- Right Column: Announcements Feed -->
   <main class="stream-feed-col">
-    <!-- Announcement Composer (Teachers & Admins Only) -->
-    {% if is_teacher_or_admin %}
-    <div class="card announcement-composer-card">
-      <form action="{{ url_for('post_announcement', course_id=course.id) }}" method="POST" enctype="multipart/form-data">
-        <div class="form-group" style="margin-bottom: 0.75rem;">
-          <textarea name="content" rows="3" class="form-control stream-textarea" placeholder="Announce something to your class..." required></textarea>
+    <!-- Announcement Composer (Instructors & Admins) -->
+    {% if is_teacher_or_admin or (current_user and current_user.role in ('teacher', 'admin')) or (course and course.teacher_id == current_user.id) %}
+    <div class="card announcement-composer-card" style="padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; border: 1px solid #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-radius: var(--radius-md); background: white;">
+      <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.85rem;">
+        <div class="announcement-avatar" style="width: 38px; height: 38px; font-size: 1rem; background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; box-shadow: 0 2px 5px rgba(37,99,235,0.25);">
+          {{ current_user.display_name[0] | upper }}
         </div>
-        <div class="composer-actions-row">
-          <label class="attach-file-btn">
-            <span>📎 Attach File:</span>
-            <input type="file" name="attachment" onchange="if(this.files[0]) document.getElementById('attachedFileName').textContent = this.files[0].name;">
-            <span class="attachment-name-display" id="attachedFileName" style="font-size: 0.75rem; color: var(--primary); font-weight: 600;"></span>
-          </label>
-          <button type="submit" class="btn btn-primary btn-sm composer-post-btn">
+        <div>
+          <div style="font-weight: 750; font-size: 0.98rem; color: #1e3a8a;">
+            Post Announcement to Class
+          </div>
+          <div style="font-size: 0.78rem; color: var(--text-muted);">
+            Share lecture notes, reminders, problem sets, or updates with all enrolled students
+          </div>
+        </div>
+      </div>
+
+      <form action="{{ url_for('post_announcement', course_id=course.id) }}" method="POST" enctype="multipart/form-data">
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <textarea name="content" rows="3" class="form-control stream-textarea" placeholder="Announce something to your class (type message, instructions, or exam reminders)..." required style="min-height: 90px; font-size: 0.92rem; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); line-height: 1.5;"></textarea>
+        </div>
+        <div class="composer-actions-row" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; border-top: 1px solid #f1f5f9; padding-top: 0.85rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <label class="btn btn-secondary btn-sm" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; margin: 0; font-weight: 600;">
+              <span>📎 Attach File</span>
+              <input type="file" name="attachment" style="display: none;" onchange="
+                if(this.files[0]) {
+                  document.getElementById('attachedFileName').textContent = '📄 ' + this.files[0].name;
+                  document.getElementById('clearAttachBtn').style.display = 'inline-block';
+                }
+              ">
+            </label>
+            <span class="attachment-name-display" id="attachedFileName" style="font-size: 0.82rem; color: #1d4ed8; font-weight: 600; font-family: monospace;"></span>
+            <button type="button" id="clearAttachBtn" style="display: none; background: #fee2e2; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 4px; font-size: 0.75rem; cursor: pointer; padding: 0.15rem 0.45rem; font-weight: 700;" onclick="
+              document.getElementById('attachedFileName').textContent = '';
+              this.style.display = 'none';
+              this.parentElement.querySelector('input[type=file]').value = '';
+            " title="Remove attachment">✕ Remove</button>
+          </div>
+
+          <button type="submit" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 700; padding: 0.5rem 1.25rem; font-size: 0.9rem; box-shadow: 0 2px 8px rgba(37,99,235,0.3); border-radius: 6px;">
             <span>📢 Post Announcement</span>
           </button>
         </div>
