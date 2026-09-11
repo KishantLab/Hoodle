@@ -6,19 +6,19 @@
 <div class="dashboard-container" style="max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem 4rem;">
   
   <!-- Header Banner -->
-  <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #1e3a8a 100%); color: white; border-radius: var(--radius-lg); padding: 2.5rem 2rem; margin-bottom: 2rem; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.3); position: relative; overflow: hidden;">
-    <div style="position: absolute; right: -20px; bottom: -30px; opacity: 0.12; pointer-events: none;">
-      <img src="{{ url_for('static', filename='images/hoodle_mark.svg') }}" style="width: 320px; height: 320px;">
+  <div style="background: linear-gradient(135deg, #1e293b 0%, #1e3a8a 50%, #2f2483 100%); color: white; border-radius: var(--radius-lg); padding: 2.5rem 2rem; margin-bottom: 2rem; box-shadow: 0 10px 25px -5px rgba(30, 58, 138, 0.25); position: relative; overflow: hidden;">
+    <div style="position: absolute; right: 20px; bottom: -20px; opacity: 0.15; pointer-events: none;">
+      <img src="{{ url_for('static', filename='images/hoodle_mark.svg') }}" style="width: 240px; height: 240px; object-fit: contain;">
     </div>
     <div style="max-width: 720px; position: relative; z-index: 1;">
-      <div style="display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); padding: 0.35rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; color: #38bdf8; margin-bottom: 1rem;">
+      <div style="display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(56, 189, 248, 0.18); border: 1px solid rgba(56, 189, 248, 0.35); padding: 0.35rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; color: #38bdf8; margin-bottom: 1rem;">
         <span>🎓 Official Visual Identity</span>
       </div>
       <h1 style="font-size: 2.25rem; font-weight: 800; line-height: 1.2; margin-bottom: 0.75rem; letter-spacing: -0.5px;">
         Hoodle Brand Assets &amp; Logo Kit
       </h1>
       <p style="font-size: 1.05rem; line-height: 1.6; color: #cbd5e1; margin-bottom: 1.75rem;">
-        Official vector logos, high-resolution raster emblems, app icons, and brand specifications for Hoodle LMS. Developed for the Accelerated Computing and Communication Lab (ACCL), IIT Bhilai.
+        Icon-based visual identity with transparent background, designed to match the academic aesthetic of IIT Bhilai and the ACCL Research Lab.
       </p>
       <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;">
         <a href="{{ url_for('download_brand_asset', asset_name='kit') }}" class="btn btn-primary" style="background: #2563eb; padding: 0.75rem 1.5rem; font-weight: 700; font-size: 0.95rem; border-radius: 8px; display: inline-flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);">
@@ -35,102 +35,81 @@
   <!-- Asset Gallery Grid -->
   <div id="logo-gallery" style="margin-bottom: 3rem;">
     <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-dark); margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
-      <span>🎨 Brand Assets &amp; Downloads</span>
+      <span>🎨 Official Logos &amp; Downloadable Icons</span>
     </h2>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
       
-      <!-- Card 1: Vector SVG Brand Lockup -->
+      <!-- Card 1: Standalone Transparent Icon (PNG) -->
       <div class="card" style="padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: white;">
         <div>
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem 1rem; text-align: center; margin-bottom: 1.25rem; min-height: 180px; display: flex; align-items: center; justify-content: center;">
-            <img src="{{ url_for('static', filename='images/hoodle_logo.svg') }}" alt="Hoodle Vector Logo" style="max-width: 100%; max-height: 140px; object-fit: contain;">
+          <!-- Transparent checkerboard preview box -->
+          <div style="background-color: #f8fafc; background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 14px 14px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem 1rem; text-align: center; margin-bottom: 1.25rem; min-height: 200px; display: flex; align-items: center; justify-content: center;">
+            <img src="{{ url_for('static', filename='images/hoodle_icon.png') }}" alt="Hoodle Transparent Icon" style="max-height: 150px; max-width: 150px; object-fit: contain;">
           </div>
           <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.35rem;">
-            <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-dark);">Full Brand Logo (Vector SVG)</h3>
-            <span style="font-size: 0.75rem; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 700;">SVG • Scalable</span>
+            <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-dark);">Hoodle Icon (Transparent PNG)</h3>
+            <span style="font-size: 0.75rem; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 700;">PNG • Transparent</span>
           </div>
           <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.25rem;">
-            Infinite resolution vector mark with Hoodle wordmark, academic mortarboard, circuit traces, and IIT Bhilai ACCL lab credentials. Perfect for high-res web and print.
+            Clean standalone icon emblem on a 100% transparent alpha background. Mortarboard cap, open book, and stylized 'H' circuit trace in light academic tones.
           </p>
         </div>
         <div style="display: flex; gap: 0.5rem;">
-          <a href="{{ url_for('download_brand_asset', asset_name='logo-svg') }}" class="btn btn-outline" style="flex: 1; text-align: center; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;">
+          <a href="{{ url_for('download_brand_asset', asset_name='icon-png') }}" class="btn btn-outline" style="flex: 1; text-align: center; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;">
             <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-            Download SVG
+            Download PNG
           </a>
-          <a href="{{ url_for('static', filename='images/hoodle_logo.svg') }}" target="_blank" class="btn" style="background: #f1f5f9; color: var(--text-dark); font-weight: 600;" title="View Raw">
+          <a href="{{ url_for('static', filename='images/hoodle_icon.png') }}" target="_blank" class="btn" style="background: #f1f5f9; color: var(--text-dark); font-weight: 600;">
             Preview
           </a>
         </div>
       </div>
 
-      <!-- Card 2: High-Resolution Emblem (PNG) -->
+      <!-- Card 2: Standalone Transparent Vector Icon (SVG) -->
       <div class="card" style="padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: white;">
         <div>
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem 1rem; text-align: center; margin-bottom: 1.25rem; min-height: 180px; display: flex; align-items: center; justify-content: center;">
-            <img src="{{ url_for('static', filename='images/hoodle_logo.png') }}" alt="Hoodle Emblem PNG" style="max-width: 140px; max-height: 140px; object-fit: contain; border-radius: 8px;">
+          <!-- Transparent checkerboard preview box -->
+          <div style="background-color: #f8fafc; background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 14px 14px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem 1rem; text-align: center; margin-bottom: 1.25rem; min-height: 200px; display: flex; align-items: center; justify-content: center;">
+            <img src="{{ url_for('static', filename='images/hoodle_mark.svg') }}" alt="Hoodle Transparent Vector SVG" style="max-height: 150px; max-width: 150px; object-fit: contain;">
           </div>
           <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.35rem;">
-            <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-dark);">Primary Emblem (PNG)</h3>
-            <span style="font-size: 0.75rem; background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; font-weight: 700;">PNG • 1024×1024</span>
+            <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-dark);">Hoodle Icon (Vector SVG)</h3>
+            <span style="font-size: 0.75rem; background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; font-weight: 700;">SVG • Infinite DPI</span>
           </div>
           <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.25rem;">
-            Vibrant isolated emblem uniting the letter 'H', open research book, academic mortarboard, and neural compute network nodes in royal indigo and electric cyan.
-          </p>
-        </div>
-        <div>
-          <a href="{{ url_for('download_brand_asset', asset_name='logo-png') }}" class="btn btn-outline" style="width: 100%; text-align: center; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;">
-            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-            Download PNG (1024px)
-          </a>
-        </div>
-      </div>
-
-      <!-- Card 3: Horizontal Brand Banner (PNG) -->
-      <div class="card" style="padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: white;">
-        <div>
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; text-align: center; margin-bottom: 1.25rem; min-height: 180px; display: flex; align-items: center; justify-content: center;">
-            <img src="{{ url_for('static', filename='images/hoodle_banner.png') }}" alt="Hoodle Banner" style="max-width: 100%; max-height: 140px; object-fit: contain; border-radius: 6px;">
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.35rem;">
-            <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-dark);">Brand Banner Lockup (PNG)</h3>
-            <span style="font-size: 0.75rem; background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 4px; font-weight: 700;">16:9 • Ultra-HD</span>
-          </div>
-          <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.25rem;">
-            Horizontal presentation banner featuring the winged emblem and geometric typography. Ideal for headers, slide decks, papers, and GitHub repositories.
-          </p>
-        </div>
-        <div>
-          <a href="{{ url_for('download_brand_asset', asset_name='banner-png') }}" class="btn btn-outline" style="width: 100%; text-align: center; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;">
-            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-            Download Banner PNG
-          </a>
-        </div>
-      </div>
-
-      <!-- Card 4: Dark App Icon Badge (Squircle) -->
-      <div class="card" style="padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: white;">
-        <div>
-          <div style="background: #0b1120; border: 1px solid #1e293b; border-radius: 8px; padding: 1.5rem 1rem; text-align: center; margin-bottom: 1.25rem; min-height: 180px; display: flex; align-items: center; justify-content: center;">
-            <img src="{{ url_for('static', filename='images/hoodle_app_icon.png') }}" alt="Hoodle App Icon" style="max-width: 130px; max-height: 130px; object-fit: contain; border-radius: 26px; box-shadow: 0 8px 20px rgba(0,0,0,0.5);">
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.35rem;">
-            <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-dark);">Dark App Icon (Squircle)</h3>
-            <span style="font-size: 0.75rem; background: #f3e8ff; color: #6b21a8; padding: 2px 8px; border-radius: 4px; font-weight: 700;">PNG + SVG</span>
-          </div>
-          <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.25rem;">
-            Neon circuit board emblem on deep midnight obsidian squircle. Perfect for mobile homescreen icons, PWA manifests, and dark-mode favicons.
+            Infinite resolution vector mark on transparent background. Scalable to any dimension without quality loss for sharp web navigation, print publications, and app headers.
           </p>
         </div>
         <div style="display: flex; gap: 0.5rem;">
-          <a href="{{ url_for('download_brand_asset', asset_name='app-icon-png') }}" class="btn btn-outline" style="flex: 1; text-align: center; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;">
-            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-            Icon (PNG)
-          </a>
           <a href="{{ url_for('download_brand_asset', asset_name='mark-svg') }}" class="btn btn-outline" style="flex: 1; text-align: center; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;">
             <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-            Vector (SVG)
+            Download SVG
+          </a>
+          <a href="{{ url_for('static', filename='images/hoodle_mark.svg') }}" target="_blank" class="btn" style="background: #f1f5f9; color: var(--text-dark); font-weight: 600;">
+            Preview
+          </a>
+        </div>
+      </div>
+
+      <!-- Card 3: Full Brand Logo with Typography (SVG) -->
+      <div class="card" style="padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: white;">
+        <div>
+          <div style="background-color: #f8fafc; background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 14px 14px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem 1rem; text-align: center; margin-bottom: 1.25rem; min-height: 200px; display: flex; align-items: center; justify-content: center;">
+            <img src="{{ url_for('static', filename='images/hoodle_logo.svg') }}" alt="Hoodle Full Brand Logo" style="max-width: 100%; max-height: 120px; object-fit: contain;">
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.35rem;">
+            <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-dark);">Full Brand Lockup (SVG)</h3>
+            <span style="font-size: 0.75rem; background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 4px; font-weight: 700;">Vector • Lockup</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.25rem;">
+            Horizontal vector logo pairing the emblem with the "Hoodle" wordmark and "Accelerated Classroom &amp; Lab Learning • ACCL IIT Bhilai" badge.
+          </p>
+        </div>
+        <div>
+          <a href="{{ url_for('download_brand_asset', asset_name='logo-svg') }}" class="btn btn-outline" style="width: 100%; text-align: center; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;">
+            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+            Download Full Logo (SVG)
           </a>
         </div>
       </div>
@@ -141,35 +120,45 @@
   <!-- Official Color Palette Section -->
   <div class="card" style="padding: 2rem; border-radius: var(--radius-lg); margin-bottom: 2.5rem; background: white;">
     <h2 style="font-size: 1.3rem; font-weight: 800; color: var(--text-dark); margin-bottom: 0.5rem;">
-      🎨 Official Brand Color Palette
+      🎨 Light Academic Color Palette
     </h2>
     <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">
-      Use these official hex codes for digital interfaces, publications, and collateral. Click any color chip to copy the HEX code.
+      Harmonized with IIT Bhilai and ACCL brand guidelines. Click any color chip to copy the HEX code.
     </p>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem;">
       
-      <!-- Color 1 -->
-      <div onclick="copyHex('#1D4ED8', this)" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-        <div style="height: 70px; background: #1D4ED8;"></div>
+      <!-- Color 1: ACCL Navy -->
+      <div onclick="copyHex('#1F216C', this)" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+        <div style="height: 70px; background: #1F216C;"></div>
         <div style="padding: 0.75rem;">
-          <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-dark);">Royal Blue</div>
-          <div style="font-size: 0.8rem; font-family: monospace; color: #1D4ED8; font-weight: 600;">#1D4ED8</div>
+          <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-dark);">ACCL Navy</div>
+          <div style="font-size: 0.8rem; font-family: monospace; color: #1F216C; font-weight: 600;">#1F216C</div>
           <div class="copy-hint" style="font-size: 0.7rem; color: #94a3b8; margin-top: 4px;">Click to copy</div>
         </div>
       </div>
 
-      <!-- Color 2 -->
-      <div onclick="copyHex('#06B6D4', this)" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-        <div style="height: 70px; background: #06B6D4;"></div>
+      <!-- Color 2: IIT Bhilai Indigo -->
+      <div onclick="copyHex('#2F2483', this)" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+        <div style="height: 70px; background: #2F2483;"></div>
         <div style="padding: 0.75rem;">
-          <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-dark);">Electric Cyan</div>
-          <div style="font-size: 0.8rem; font-family: monospace; color: #0284c7; font-weight: 600;">#06B6D4</div>
+          <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-dark);">IIT Bhilai Indigo</div>
+          <div style="font-size: 0.8rem; font-family: monospace; color: #2F2483; font-weight: 600;">#2F2483</div>
           <div class="copy-hint" style="font-size: 0.7rem; color: #94a3b8; margin-top: 4px;">Click to copy</div>
         </div>
       </div>
 
-      <!-- Color 3 -->
+      <!-- Color 3: Electric Sky Cyan -->
+      <div onclick="copyHex('#38BDF8', this)" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+        <div style="height: 70px; background: #38BDF8;"></div>
+        <div style="padding: 0.75rem;">
+          <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-dark);">Sky Cyan</div>
+          <div style="font-size: 0.8rem; font-family: monospace; color: #0284c7; font-weight: 600;">#38BDF8</div>
+          <div class="copy-hint" style="font-size: 0.7rem; color: #94a3b8; margin-top: 4px;">Click to copy</div>
+        </div>
+      </div>
+
+      <!-- Color 4: Academic Amber Gold -->
       <div onclick="copyHex('#F59E0B', this)" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
         <div style="height: 70px; background: #F59E0B;"></div>
         <div style="padding: 0.75rem;">
@@ -179,17 +168,7 @@
         </div>
       </div>
 
-      <!-- Color 4 -->
-      <div onclick="copyHex('#0F172A', this)" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-        <div style="height: 70px; background: #0F172A;"></div>
-        <div style="padding: 0.75rem;">
-          <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-dark);">Midnight Navy</div>
-          <div style="font-size: 0.8rem; font-family: monospace; color: #0F172A; font-weight: 600;">#0F172A</div>
-          <div class="copy-hint" style="font-size: 0.7rem; color: #94a3b8; margin-top: 4px;">Click to copy</div>
-        </div>
-      </div>
-
-      <!-- Color 5 -->
+      <!-- Color 5: Canvas White -->
       <div onclick="copyHex('#F8FAFC', this)" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
         <div style="height: 70px; background: #F8FAFC; border-bottom: 1px solid #e2e8f0;"></div>
         <div style="padding: 0.75rem;">

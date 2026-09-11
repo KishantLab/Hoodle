@@ -844,11 +844,15 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn(b"Hoodle Brand Assets", res.data)
         self.assertIn(b"Download Complete Brand Kit", res.data)
 
-        # 2. Test downloading logo PNG
+        # 2. Test downloading logo & icon PNG (Transparent)
         res_png = self.client.get("/brand/download/logo-png")
         self.assertEqual(res_png.status_code, 200)
         self.assertIn("image/png", res_png.content_type)
         self.assertIn("attachment", res_png.headers.get("Content-Disposition", ""))
+
+        res_icon = self.client.get("/brand/download/icon-png")
+        self.assertEqual(res_icon.status_code, 200)
+        self.assertIn("image/png", res_icon.content_type)
 
         # 3. Test downloading logo SVG
         res_svg = self.client.get("/brand/download/logo-svg")

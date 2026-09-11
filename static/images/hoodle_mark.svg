@@ -1,56 +1,69 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 210" width="100%" height="100%">
   <defs>
-    <linearGradient id="markGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1d4ed8" />
-      <stop offset="60%" stop-color="#2563eb" />
-      <stop offset="100%" stop-color="#06b6d4" />
+    <!-- Gradients matching IIT Bhilai & ACCL Light Theme -->
+    <linearGradient id="markCapGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#24346e" />
+      <stop offset="60%" stop-color="#2a3f85" />
+      <stop offset="100%" stop-color="#1d2856" />
     </linearGradient>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a" />
-      <stop offset="100%" stop-color="#1e293b" />
+    <linearGradient id="markCyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="60%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0ea5e9" />
     </linearGradient>
-    <linearGradient id="goldMark" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="markGoldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#f59e0b" />
-      <stop offset="100%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
     </linearGradient>
   </defs>
 
-  <!-- Squircle Rounded Container Background -->
-  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#bgGrad)" stroke="#334155" stroke-width="3" />
+  <!-- STANDALONE ICON (Transparent Background - No Container Box) -->
+  <g transform="translate(0, 0)">
+    <!-- Mortarboard Academic Cap Top -->
+    <polygon points="100,14 178,44 100,74 22,44" fill="url(#markCapGrad)" stroke="#1d2856" stroke-width="2" stroke-linejoin="round" />
+    <!-- Cap Under-Rim -->
+    <polygon points="44,52 100,74 156,52 146,67 100,85 54,67" fill="#1e3a8a" opacity="0.95" />
+    <!-- Cap Golden Edge Accent -->
+    <polyline points="25,44 100,72 175,44" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 
-  <!-- Inner Subtle Border Accent -->
-  <rect x="14" y="14" width="228" height="228" rx="50" fill="none" stroke="url(#markGrad)" stroke-width="1.5" opacity="0.4" />
+    <!-- Cap Golden Tassel -->
+    <circle cx="100" cy="44" r="4" fill="#f59e0b" />
+    <path d="M 100,44 Q 142,47 158,72" fill="none" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" />
+    <polygon points="154,72 162,72 164,90 152,90" fill="url(#markGoldGrad)" />
 
-  <!-- Emblem -->
-  <g transform="translate(28, 22)">
-    <!-- Mortarboard Academic Cap -->
-    <polygon points="100,26 175,58 100,90 25,58" fill="url(#markGrad)" />
-    <!-- Cap Rim -->
-    <polygon points="45,66 100,90 155,66 145,82 100,102 55,82" fill="#0284c7" opacity="0.9" />
-    <!-- Tassel -->
-    <circle cx="100" cy="58" r="5" fill="#f59e0b" />
-    <path d="M 100,58 Q 130,62 145,86" fill="none" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" />
-    <polygon points="142,86 148,86 149,106 141,106" fill="url(#goldMark)" />
+    <!-- Open Book Pages / Wings Outlines -->
+    <path d="M 98,165 C 68,160 32,156 14,142 L 14,82 C 32,96 68,100 98,105 Z" 
+          fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round" />
+    <path d="M 98,155 C 72,151 42,147 24,136 L 24,90 C 42,101 72,105 98,110" 
+          fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-linejoin="round" />
 
-    <!-- Letter H Left Vertical Pillar / Open Book Wing -->
-    <path d="M 45,98 C 30,111 20,131 20,158 C 20,185 32,201 45,208 L 68,208 C 55,198 48,181 48,158 C 48,131 58,113 68,98 Z" fill="#38bdf8" />
-    <rect x="58" y="98" width="22" height="110" rx="6" fill="url(#markGrad)" />
+    <path d="M 102,165 C 132,160 168,156 186,142 L 186,82 C 168,96 132,100 102,105 Z" 
+          fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round" />
+    <path d="M 102,155 C 128,151 158,147 176,136 L 176,90 C 158,101 128,105 102,110" 
+          fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-linejoin="round" />
 
-    <!-- Letter H Right Vertical Pillar -->
-    <rect x="120" y="98" width="22" height="110" rx="6" fill="url(#markGrad)" />
+    <!-- Central Letter 'H' Vertical Pillars -->
+    <rect x="52" y="74" width="20" height="98" rx="4" fill="#24346e" stroke="#1d2856" stroke-width="1.5" />
+    <line x1="62" y1="82" x2="62" y2="164" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" opacity="0.9" />
 
-    <!-- Letter H Crossbar & Tech Circuit Traces -->
-    <path d="M 76,143 Q 100,128 124,149" fill="none" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
-    <!-- Circuit Nodes -->
-    <line x1="80" y1="153" x2="105" y2="178" stroke="#f59e0b" stroke-width="4" stroke-linecap="round" />
-    <circle cx="105" cy="178" r="5.5" fill="#f59e0b" />
-    <line x1="105" y1="178" x2="122" y2="178" stroke="#f59e0b" stroke-width="4" stroke-linecap="round" />
-    <circle cx="122" cy="178" r="4.5" fill="#fbbf24" />
+    <rect x="128" y="74" width="20" height="98" rx="4" fill="#24346e" stroke="#1d2856" stroke-width="1.5" />
+    <line x1="138" y1="82" x2="138" y2="164" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" opacity="0.9" />
 
-    <line x1="80" y1="123" x2="102" y2="108" stroke="#06b6d4" stroke-width="3.5" stroke-linecap="round" />
-    <circle cx="102" cy="108" r="5" fill="#06b6d4" />
+    <!-- 'H' Center Loop & Circuits -->
+    <path d="M 72,124 C 86,124 88,112 100,112 C 112,112 114,124 128,124" 
+          fill="none" stroke="url(#markCyanGrad)" stroke-width="6" stroke-linecap="round" />
     
-    <!-- Outer Wing Accent -->
-    <path d="M 155,98 C 168,111 178,131 178,158 C 178,185 166,201 155,208 L 138,208 C 148,198 154,181 154,158 C 154,131 146,113 138,98 Z" fill="#38bdf8" opacity="0.85" />
+    <!-- Top Center Node -->
+    <line x1="100" y1="112" x2="100" y2="92" stroke="#38bdf8" stroke-width="2.4" stroke-linecap="round" />
+    <circle cx="100" cy="90" r="3.8" fill="#38bdf8" />
+
+    <!-- Bottom Golden Node -->
+    <path d="M 88,124 L 88,146 L 100,146" fill="none" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" />
+    <circle cx="100" cy="146" r="3.5" fill="#f59e0b" />
+
+    <!-- Book Bottom Spine Crest -->
+    <path d="M 100,165 L 100,188 C 86,181 64,178 44,178 L 44,173 C 64,173 86,176 100,183 C 114,176 136,173 156,173 L 156,178 C 136,178 114,181 100,188 Z" 
+          fill="#1e293b" />
+    <polygon points="100,188 95,195 100,200 105,195" fill="#f59e0b" />
   </g>
 </svg>

@@ -3052,11 +3052,13 @@ def brand_assets():
 @app.route("/brand/download/<asset_name>")
 def download_brand_asset(asset_name):
     allowed_assets = {
-        "logo-png": ("hoodle_logo.png", "Hoodle_Logo_Emblem.png", "image/png"),
+        "icon-png": ("hoodle_icon.png", "Hoodle_Icon_Transparent.png", "image/png"),
+        "icon-svg": ("hoodle_icon.svg", "Hoodle_Icon_Transparent.svg", "image/svg+xml"),
+        "logo-png": ("hoodle_icon.png", "Hoodle_Icon_Transparent.png", "image/png"),
         "logo-svg": ("hoodle_logo.svg", "Hoodle_Logo_Full.svg", "image/svg+xml"),
         "banner-png": ("hoodle_banner.png", "Hoodle_Brand_Banner.png", "image/png"),
-        "app-icon-png": ("hoodle_app_icon.png", "Hoodle_App_Icon.png", "image/png"),
-        "mark-svg": ("hoodle_mark.svg", "Hoodle_Mark_Icon.svg", "image/svg+xml"),
+        "app-icon-png": ("hoodle_icon.png", "Hoodle_Icon_Transparent.png", "image/png"),
+        "mark-svg": ("hoodle_mark.svg", "Hoodle_Mark_Transparent.svg", "image/svg+xml"),
         "kit": ("hoodle_brand_kit.zip", "Hoodle_Brand_Kit.zip", "application/zip"),
     }
     if asset_name not in allowed_assets:
