@@ -1688,27 +1688,9 @@ def edit_coursework(course_id, coursework_id):
     allowed_types = request.form.get("allowed_types", cw["allowed_types"]).strip().lower()
     labs = request.form.get("labs", cw["labs"] or "Lab 1, Lab 2, Lab 3, CC-101").strip()
 
-    user_role = session.get("role")
-
-    # CRITICAL SECURITY RULE: Teachers CANNOT modify due_date, start_time, or end_time once assigned
-    if user_role != "admin":
-        due_date = cw["due_date"]
-        start_time = cw["start_time"]
-        end_time = cw["end_time"]
-        timing_attempted = False
-        form_due = request.form.get("due_date", "").strip()
-        form_start = request.form.get("start_time", "").strip()
-        form_end = request.form.get("end_time", "").strip()
-        if (form_due and form_due != (cw["due_date"] or "")) or \
-           (form_start and form_start != (cw["start_time"] or "")) or \
-           (form_end and form_end != (cw["end_time"] or "")):
-            timing_attempted = True
-    else:
-        # Global administrator override if ever necessary
-        due_date = request.form.get("due_date", "").strip() or cw["due_date"]
-        start_time = request.form.get("start_time", "").strip() or cw["start_time"]
-        end_time = request.form.get("end_time", "").strip() or cw["end_time"]
-        timing_attempted = False
+    due_date = request.form.get("due_date", "").strip() or None
+    start_time = request.form.get("start_time", "").strip() or None
+    end_time = request.form.get("end_time", "").strip() or None
 
     conn.execute("""
         UPDATE coursework SET
@@ -1741,12 +1723,9 @@ def edit_coursework(course_id, coursework_id):
     conn.commit()
     conn.close()
 
-    if timing_attempted:
-        flash(f"Coursework '{title}' updated. Note: Due date, start time, and end time are locked and cannot be modified by teachers after assignment.", "warning")
-    else:
-        flash(f"Coursework '{title}' updated successfully.", "success")
-
+    flash(f"Coursework '{title}' updated successfully.", "success")
     return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
 
 
 @app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/delete", methods=["POST"])

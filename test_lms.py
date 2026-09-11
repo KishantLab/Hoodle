@@ -1284,8 +1284,8 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertEqual(sub["status"], "turned_in")
         self.logout()
 
-    def test_teacher_cannot_edit_coursework_timings(self):
-        """Verify teacher cannot alter due_date, start_time, or end_time of assigned work."""
+    def test_teacher_can_edit_coursework_timings_and_assignments(self):
+        """Verify teacher has full access to update due_date, start_time, end_time, title, and points of assigned work."""
         orig_due = "2026-10-15T23:59"
         orig_start = "2026-10-15T14:00"
         orig_end = "2026-10-15T17:00"
@@ -1300,30 +1300,33 @@ class ACCLLMSTestCase(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        # Teacher logs in and attempts to change timings + title
+        # Teacher logs in and updates timings + title + points
         self.login("kishan", "password123")
+        new_due = "2026-12-31T23:59"
+        new_start = "2026-12-31T10:00"
+        new_end = "2026-12-31T12:00"
         res = self.client.post(f"/courses/1/coursework/{cw_id}/edit", data={
             "title": "Updated Exam Title",
             "description": "Updated instructions",
             "points": "150",
-            "due_date": "2026-12-31T23:59",
-            "start_time": "2026-12-31T10:00",
-            "end_time": "2026-12-31T12:00",
+            "due_date": new_due,
+            "start_time": new_start,
+            "end_time": new_end,
             "allow_multiple": "1"
         }, follow_redirects=True)
 
         self.assertEqual(res.status_code, 200)
-        self.assertIn(b"Due date, start time, and end time are locked", res.data)
+        self.assertIn(b"updated successfully", res.data)
 
-        # Verify DB: title and points updated, but timings UNTOUCHED
+        # Verify DB: title, points, and timings are all successfully updated
         conn = app.get_db()
         cw = conn.execute("SELECT * FROM coursework WHERE id = ?", (cw_id,)).fetchone()
         conn.close()
         self.assertEqual(cw["title"], "Updated Exam Title")
         self.assertEqual(cw["points"], 150)
-        self.assertEqual(cw["due_date"], orig_due)
-        self.assertEqual(cw["start_time"], orig_start)
-        self.assertEqual(cw["end_time"], orig_end)
+        self.assertEqual(cw["due_date"], new_due)
+        self.assertEqual(cw["start_time"], new_start)
+        self.assertEqual(cw["end_time"], new_end)
         self.logout()
 
     def test_teacher_can_edit_all_class_settings(self):

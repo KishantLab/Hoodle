@@ -577,36 +577,29 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="form-group">
           <label class="form-label" for="edit_due_date">
             Due Date &amp; Time
-            <span style="font-size: 0.72rem; color: #b91c1c; font-weight: 700; margin-left: 4px;">🔒 Locked</span>
           </label>
-          <input type="datetime-local" id="edit_due_date" name="due_date" class="form-control" value="{{ cw.due_date or '' }}" {% if current_user.role != 'admin' %}disabled style="background: #f1f5f9; cursor: not-allowed;" title="Due date cannot be altered after assignment"{% endif %}>
-          <div style="font-size: 0.74rem; color: #b91c1c; margin-top: 3px;">
-            🔒 Instructors cannot change the due date once assigned.
-          </div>
+          <input type="datetime-local" id="edit_due_date" name="due_date" class="form-control" value="{{ cw.due_date or '' }}">
         </div>
       </div>
 
       {% if cw.type == 'exam' or cw.is_exam_mode %}
-        <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
-          <h4 style="font-size: 0.92rem; font-weight: 700; color: #b91c1c; margin-bottom: 0.5rem;">
-            🔒 Exam Schedule Timings (Strictly Immutable)
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
+          <h4 style="font-size: 0.92rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;">
+            ⏱️ Exam Schedule Timings
           </h4>
           <div class="modal-grid-2col">
             <div>
               <label class="form-label" style="font-size: 0.8rem;">
-                Exam Start Time <span style="color:#b91c1c;">🔒</span>
+                Exam Start Time
               </label>
-              <input type="datetime-local" name="start_time" class="form-control" value="{{ cw.start_time or '' }}" {% if current_user.role != 'admin' %}disabled style="background: #f1f5f9; cursor: not-allowed;"{% endif %}>
+              <input type="datetime-local" name="start_time" class="form-control" value="{{ cw.start_time or '' }}">
             </div>
             <div>
               <label class="form-label" style="font-size: 0.8rem;">
-                Exam End Time <span style="color:#b91c1c;">🔒</span>
+                Exam End Time (Cutoff)
               </label>
-              <input type="datetime-local" name="end_time" class="form-control" value="{{ cw.end_time or '' }}" {% if current_user.role != 'admin' %}disabled style="background: #f1f5f9; cursor: not-allowed;"{% endif %}>
+              <input type="datetime-local" name="end_time" class="form-control" value="{{ cw.end_time or '' }}">
             </div>
-          </div>
-          <div style="font-size: 0.74rem; color: #991b1b; margin-top: 6px;">
-            🔒 Exam start time and end time cannot be modified after assignment to preserve academic fairness.
           </div>
 
           <div style="margin-top: 0.75rem;">
