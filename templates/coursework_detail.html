@@ -27,18 +27,25 @@
           </div>
         </div>
 
-        {% if cw.type != 'material' %}
-          <div class="coursework-header-badge-box">
-            <div class="points-val" style="font-size: 1.25rem; font-weight: 800; color: var(--text-main);">
-              {{ cw.points }} Points
-            </div>
-            {% if cw.due_date %}
-              <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.2rem;">
-                Due {{ cw.due_date | format_dt }}
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+          {% if current_user.role in ('teacher', 'admin') %}
+            <button type="button" class="btn btn-secondary btn-sm" onclick="openModal('editCourseworkModal')" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600;">
+              <span>✏️ Edit Coursework</span>
+            </button>
+          {% endif %}
+          {% if cw.type != 'material' %}
+            <div class="coursework-header-badge-box">
+              <div class="points-val" style="font-size: 1.25rem; font-weight: 800; color: var(--text-main);">
+                {{ cw.points }} Points
               </div>
-            {% endif %}
-          </div>
-        {% endif %}
+              {% if cw.due_date %}
+                <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.2rem;">
+                  Due {{ cw.due_date | format_dt }}
+                </div>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
       </div>
 
       <!-- Description -->
@@ -325,6 +332,18 @@
                 <div style="font-size: 0.85rem; color: #166534;">"{{ my_submission.feedback }}"</div>
               {% endif %}
             </div>
+          {% elif cw.is_exam_mode or cw.type == 'exam' %}
+            <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-md); padding: 0.85rem; text-align: center; margin-bottom: 0.5rem;">
+              <div style="font-size: 1.25rem; margin-bottom: 0.25rem;">🔒</div>
+              <div style="font-size: 0.88rem; font-weight: 750; color: #b91c1c;">Exam Submission Finalized &amp; Locked</div>
+              <p style="font-size: 0.78rem; color: #991b1b; margin-top: 0.25rem; margin-bottom: 0;">Unsubmitting or revising exam submissions is disabled.</p>
+            </div>
+          {% elif is_past_due %}
+            <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: var(--radius-md); padding: 0.85rem; text-align: center; margin-bottom: 0.5rem;">
+              <div style="font-size: 1.25rem; margin-bottom: 0.25rem;">🔒</div>
+              <div style="font-size: 0.88rem; font-weight: 750; color: #475569;">Deadline Passed &amp; Submission Locked</div>
+              <p style="font-size: 0.78rem; color: #64748b; margin-top: 0.25rem; margin-bottom: 0;">Work cannot be unsubmitted after the due date has passed.</p>
+            </div>
           {% else %}
             <!-- Unsubmit Button -->
             <form action="{{ url_for('unsubmit_coursework', course_id=course.id, coursework_id=cw.id) }}" method="POST">
@@ -335,18 +354,26 @@
           {% endif %}
 
         {% else %}
-          <!-- Turn In Form when not submitted yet -->
-          <form action="{{ url_for('submit_coursework', course_id=course.id, coursework_id=cw.id) }}" method="POST" enctype="multipart/form-data">
-            <input type="hidden" name="source_type" value="local">
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.85rem;">Upload File {% if cw.allowed_types == 'zip' %}(.zip only){% endif %}</label>
-              <input type="file" name="submission_file" class="form-control" style="font-size: 0.85rem;" {% if cw.allowed_types == 'zip' %}accept=".zip"{% endif %} required>
+          {% if is_past_due and not cw.allow_late %}
+            <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-md); padding: 1rem; text-align: center; color: #991b1b;">
+              <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">⚠️</div>
+              <div style="font-weight: 750; font-size: 0.95rem;">Submission Deadline Passed</div>
+              <p style="font-size: 0.82rem; margin-top: 0.25rem; margin-bottom: 0;">The due date for this assignment has expired and late submissions are not accepted.</p>
             </div>
+          {% else %}
+            <!-- Turn In Form when not submitted yet -->
+            <form action="{{ url_for('submit_coursework', course_id=course.id, coursework_id=cw.id) }}" method="POST" enctype="multipart/form-data">
+              <input type="hidden" name="source_type" value="local">
+              <div class="form-group">
+                <label class="form-label" style="font-size: 0.85rem;">Upload File {% if cw.allowed_types == 'zip' %}(.zip only){% endif %}</label>
+                <input type="file" name="submission_file" class="form-control" style="font-size: 0.85rem;" {% if cw.allowed_types == 'zip' %}accept=".zip"{% endif %} required>
+              </div>
 
-            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; margin-top: 0.5rem;">
-              Turn In Assignment
-            </button>
-          </form>
+              <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; margin-top: 0.5rem;">
+                Turn In Assignment
+              </button>
+            </form>
+          {% endif %}
         {% endif %}
       </div>
 
@@ -512,4 +539,114 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 </script>
 {% endif %}
+
+<!-- Modal: Edit Coursework (Instructor / Admin) -->
+{% if current_user.role in ('teacher', 'admin') %}
+<div id="editCourseworkModal" class="modal-backdrop" style="display: none;">
+  <div class="modal-content" style="max-width: 650px;">
+    <div class="modal-header">
+      <h3 style="font-size: 1.2rem; font-weight: 700;">✏️ Edit Coursework</h3>
+      <button type="button" class="modal-close" onclick="closeModal('editCourseworkModal')">&times;</button>
+    </div>
+    <form action="{{ url_for('edit_coursework', course_id=course.id, coursework_id=cw.id) }}" method="POST" enctype="multipart/form-data">
+      <div class="form-group">
+        <label class="form-label" for="edit_title">Title</label>
+        <input type="text" id="edit_title" name="title" class="form-control" value="{{ cw.title }}" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="edit_topic">Topic / Module</label>
+        <select id="edit_topic" name="topic_id" class="form-control">
+          <option value="">No Topic (General)</option>
+          {% for t in topics %}
+            <option value="{{ t.id }}" {% if cw.topic_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="edit_description">Instructions / Problem Statement</label>
+        <textarea id="edit_description" name="description" rows="4" class="form-control">{{ cw.description or '' }}</textarea>
+      </div>
+
+      <div class="modal-grid-2col">
+        <div class="form-group">
+          <label class="form-label" for="edit_points">Maximum Points</label>
+          <input type="number" id="edit_points" name="points" class="form-control" value="{{ cw.points }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="edit_due_date">
+            Due Date &amp; Time
+            <span style="font-size: 0.72rem; color: #b91c1c; font-weight: 700; margin-left: 4px;">🔒 Locked</span>
+          </label>
+          <input type="datetime-local" id="edit_due_date" name="due_date" class="form-control" value="{{ cw.due_date or '' }}" {% if current_user.role != 'admin' %}disabled style="background: #f1f5f9; cursor: not-allowed;" title="Due date cannot be altered after assignment"{% endif %}>
+          <div style="font-size: 0.74rem; color: #b91c1c; margin-top: 3px;">
+            🔒 Instructors cannot change the due date once assigned.
+          </div>
+        </div>
+      </div>
+
+      {% if cw.type == 'exam' or cw.is_exam_mode %}
+        <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
+          <h4 style="font-size: 0.92rem; font-weight: 700; color: #b91c1c; margin-bottom: 0.5rem;">
+            🔒 Exam Schedule Timings (Strictly Immutable)
+          </h4>
+          <div class="modal-grid-2col">
+            <div>
+              <label class="form-label" style="font-size: 0.8rem;">
+                Exam Start Time <span style="color:#b91c1c;">🔒</span>
+              </label>
+              <input type="datetime-local" name="start_time" class="form-control" value="{{ cw.start_time or '' }}" {% if current_user.role != 'admin' %}disabled style="background: #f1f5f9; cursor: not-allowed;"{% endif %}>
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.8rem;">
+                Exam End Time <span style="color:#b91c1c;">🔒</span>
+              </label>
+              <input type="datetime-local" name="end_time" class="form-control" value="{{ cw.end_time or '' }}" {% if current_user.role != 'admin' %}disabled style="background: #f1f5f9; cursor: not-allowed;"{% endif %}>
+            </div>
+          </div>
+          <div style="font-size: 0.74rem; color: #991b1b; margin-top: 6px;">
+            🔒 Exam start time and end time cannot be modified after assignment to preserve academic fairness.
+          </div>
+
+          <div style="margin-top: 0.75rem;">
+            <label class="form-label" style="font-size: 0.8rem;">Lab Venues</label>
+            <input type="text" name="labs" class="form-control" value="{{ cw.labs or 'Lab 1, Lab 2, Lab 3, CC-101' }}" style="font-size: 0.85rem;">
+          </div>
+        </div>
+      {% endif %}
+
+      <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem;">
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+          <input type="checkbox" name="allow_multiple" value="1" {% if cw.allow_multiple %}checked{% endif %}>
+          Allow Resubmissions (Keeps Latest Version)
+        </label>
+        {% if cw.type != 'exam' and not cw.is_exam_mode %}
+          <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+            <input type="checkbox" name="allow_late" value="1" {% if cw.allow_late %}checked{% endif %}>
+            Allow Late Submissions
+          </label>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Attach Additional Reference Files / Problem Statements</label>
+        <input type="file" name="attachments" multiple class="form-control">
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('editCourseworkModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  if (window.location.hash === '#edit') {
+    openModal('editCourseworkModal');
+  }
+</script>
+{% endif %}
 {% endblock %}
+

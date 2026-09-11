@@ -15,6 +15,9 @@
         <strong>{{ course.join_code }}</strong>
         <span>📋</span>
       </div>
+      <button type="button" class="btn btn-sm" onclick="openModal('classSettingsModal')" style="background: rgba(255, 255, 255, 0.2); color: white; border: 1px solid rgba(255, 255, 255, 0.35); backdrop-filter: blur(4px); font-weight: 700; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.8rem; border-radius: 9999px; cursor: pointer;">
+        <span>⚙️ Class Settings</span>
+      </button>
     {% endif %}
   </div>
 </div>
@@ -228,4 +231,78 @@
     {% endif %}
   </main>
 </div>
+
+<!-- Modal: Class Settings (Teacher & Admin) -->
+{% if is_teacher_or_admin or (current_user and current_user.role in ('teacher', 'admin')) or (course and course.teacher_id == current_user.id) %}
+<div id="classSettingsModal" class="modal-backdrop" style="display: none;">
+  <div class="modal-content" style="max-width: 580px;">
+    <div class="modal-header">
+      <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 0.5rem;">
+        <span>⚙️</span> Class Settings
+      </h3>
+      <button type="button" class="modal-close" onclick="closeModal('classSettingsModal')">&times;</button>
+    </div>
+
+    <form action="{{ url_for('update_course_settings', course_id=course.id) }}" method="POST">
+      <div class="modal-grid-2col" style="margin-bottom: 1rem;">
+        <div class="form-group">
+          <label class="form-label" for="setting_course_code">Course Code</label>
+          <input type="text" id="setting_course_code" name="code" class="form-control" value="{{ course.code }}" required placeholder="e.g. CS601">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="setting_course_section">Section</label>
+          <input type="text" id="setting_course_section" name="section" class="form-control" value="{{ course.section or 'Section A' }}" placeholder="e.g. Section A, M.Tech">
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" for="setting_course_title">Course Title / Name</label>
+        <input type="text" id="setting_course_title" name="title" class="form-control" value="{{ course.title }}" required placeholder="e.g. Advanced GPU &amp; Parallel Computing">
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" for="setting_course_desc">Course Description / Syllabus Overview</label>
+        <textarea id="setting_course_desc" name="description" rows="3" class="form-control" placeholder="Course syllabus overview, office hours, and instructions.">{{ course.description or '' }}</textarea>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label class="form-label" for="setting_theme_color">Course Header Theme Color</label>
+        <select id="setting_theme_color" name="theme_color" class="form-control">
+          <option value="indigo" {% if course.theme_color == 'indigo' %}selected{% endif %}>Indigo (Deep Blue)</option>
+          <option value="emerald" {% if course.theme_color == 'emerald' %}selected{% endif %}>Emerald (Vibrant Green)</option>
+          <option value="amber" {% if course.theme_color == 'amber' %}selected{% endif %}>Amber (Warm Gold / Orange)</option>
+          <option value="rose" {% if course.theme_color == 'rose' %}selected{% endif %}>Rose (Ruby Red)</option>
+          <option value="teal" {% if course.theme_color == 'teal' %}selected{% endif %}>Teal (Cyan Green)</option>
+          <option value="purple" {% if course.theme_color == 'purple' %}selected{% endif %}>Purple (Deep Violet)</option>
+          <option value="slate" {% if course.theme_color == 'slate' %}selected{% endif %}>Slate (Steel Charcoal)</option>
+        </select>
+      </div>
+
+      <!-- Class Code & Joining Settings -->
+      <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
+        <div style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.35rem; color: var(--text-main);">
+          🔑 Enrollment Class Code
+        </div>
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+          Students enter this code on their dashboard to join this class.
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+          <div style="font-family: monospace; font-size: 1.15rem; font-weight: 800; letter-spacing: 0.1em; color: var(--primary); background: white; padding: 0.35rem 0.75rem; border-radius: 6px; border: 1px solid var(--border);">
+            {{ course.join_code }}
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="copyToClipboard('{{ course.join_code }}', this, 'Copied!')">
+            📋 Copy Code
+          </button>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('classSettingsModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" style="font-weight: 700;">Save Class Settings</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
+

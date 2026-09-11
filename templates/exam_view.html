@@ -137,10 +137,18 @@
         <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main);">
           🔄 Submit Revised Exam Archive (.zip)
         </h3>
+    {% elif my_sub and not is_ended and not exam.allow_multiple %}
+      <div style="border-top: 1px solid var(--border); padding: 1.25rem; margin-top: 1.5rem; text-align: center; background: #f0fdf4; border-radius: var(--radius-md);">
+        <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">🔒</div>
+        <div style="font-weight: 700; color: #166534; font-size: 0.95rem;">Single Submission Policy: Work Recorded &amp; Finalized</div>
+        <p style="font-size: 0.82rem; color: #15803d; margin-top: 0.25rem; margin-bottom: 0;">
+          Re-submissions are disabled for this exam. Your submitted work is safely recorded and locked.
+        </p>
+      </div>
     {% elif my_sub and is_ended %}
       <div style="border-top: 1px solid var(--border); padding: 1.25rem; margin-top: 1.5rem; text-align: center; background: #f8fafc; border-radius: var(--radius-md);">
         <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">🔒</div>
-        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">Exam Concluded & Submission Permanently Locked</div>
+        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">Exam Concluded &amp; Submission Permanently Locked</div>
         <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.25rem; margin-bottom: 0;">
           The exam time has expired. Your submission has been securely finalized and cannot be modified.
         </p>

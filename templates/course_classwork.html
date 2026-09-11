@@ -123,6 +123,10 @@
                         </form>
                       {% endif %}
 
+                      <a href="{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}#edit" class="btn btn-secondary btn-sm" title="Edit Coursework">
+                        ✏️ Edit
+                      </a>
+
                       <form action="{{ url_for('delete_coursework', course_id=course.id, coursework_id=cw.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete this coursework item?');">
                         <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger);" title="Delete Item">
                           🗑

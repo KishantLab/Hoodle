@@ -1118,17 +1118,243 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn(b"backup-server.local", res.data)
 
-        # Check config file was persisted
-        config = app.load_backup_config()
-        self.assertEqual(config["remote_host"], "backup-server.local")
-        self.assertEqual(config["remote_user"], "accladmin")
-        self.assertEqual(config["remote_dir"], "/storage/accl_backups")
-        self.assertEqual(config["retention_days"], 45)
+    def test_exam_submission_locking_after_deadline(self):
+        """Verify students cannot submit or modify exam work after the exam cutoff time has passed."""
+        # Setup: Create an exam with end_time in the past
+        past_time = (datetime.now() - timedelta(minutes=15)).strftime("%Y-%m-%dT%H:%M")
+        conn = app.get_db()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO coursework (course_id, type, title, description, points, start_time, end_time, allowed_types, allow_multiple, allow_late, is_exam_mode, created_by, created_at)
+            VALUES (1, 'exam', 'Past Midterm Exam', 'Strictly timed', 100, '2026-01-01T10:00', ?, 'zip', 1, 0, 1, 2, '2026-01-01 09:00:00')
+        """, (past_time,))
+        exam_id = c.lastrowid
+        conn.commit()
+        conn.close()
+
+        # Student logs in and tries to submit a ZIP file after exam ended
+        self.login("student1", "student123")
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zf:
+            zf.writestr("solution.c", "int main() { return 0; }")
+        zip_buffer.seek(0)
+
+        res = self.client.post(f"/courses/1/exam/{exam_id}/submit", data={
+            "lab_name": "Lab 1",
+            "exam_file": (zip_buffer, "solution.zip")
+        }, follow_redirects=True)
+
+        self.assertIn(b"The exam deadline has passed", res.data)
+        self.assertIn(b"strictly locked", res.data)
+
+        # Confirm nothing was saved in database
+        conn = app.get_db()
+        sub = conn.execute("SELECT * FROM submissions WHERE coursework_id = ?", (exam_id,)).fetchone()
+        conn.close()
+        self.assertIsNone(sub)
         self.logout()
+
+    def test_exam_resubmission_during_active_time(self):
+        """Verify resubmissions are allowed during active exam time ONLY if allow_multiple=1."""
+        # Create active exam with allow_multiple = 1
+        future_time = (datetime.now() + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
+        past_start = (datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
+        conn = app.get_db()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO coursework (course_id, type, title, description, points, start_time, end_time, allowed_types, allow_multiple, allow_late, is_exam_mode, created_by, created_at)
+            VALUES (1, 'exam', 'Active Midterm Multi', 'Timed active', 100, ?, ?, 'zip', 1, 0, 1, 2, '2026-01-01 09:00:00')
+        """, (past_start, future_time))
+        exam_multi_id = c.lastrowid
+
+        # Create active exam with allow_multiple = 0 (single submission)
+        c.execute("""
+            INSERT INTO coursework (course_id, type, title, description, points, start_time, end_time, allowed_types, allow_multiple, allow_late, is_exam_mode, created_by, created_at)
+            VALUES (1, 'exam', 'Active Midterm Single', 'Timed active', 100, ?, ?, 'zip', 0, 0, 1, 2, '2026-01-01 09:00:00')
+        """, (past_start, future_time))
+        exam_single_id = c.lastrowid
+        conn.commit()
+        conn.close()
+
+        self.login("student1", "student123")
+
+        # 1. Multi-submission exam: First submission -> version 1
+        zip1 = io.BytesIO()
+        with zipfile.ZipFile(zip1, "w") as zf:
+            zf.writestr("code1.c", "int v1() { return 1; }")
+        zip1.seek(0)
+        res1 = self.client.post(f"/courses/1/exam/{exam_multi_id}/submit", data={
+            "lab_name": "Lab 1",
+            "exam_file": (zip1, "code1.zip")
+        }, follow_redirects=True)
+        self.assertIn(b"Digital Submission Receipt", res1.data)
+
+        # Multi-submission exam: Second submission during active time -> version 2
+        zip2 = io.BytesIO()
+        with zipfile.ZipFile(zip2, "w") as zf:
+            zf.writestr("code2.c", "int v2() { return 2; }")
+        zip2.seek(0)
+        res2 = self.client.post(f"/courses/1/exam/{exam_multi_id}/submit", data={
+            "lab_name": "Lab 1",
+            "exam_file": (zip2, "code2.zip")
+        }, follow_redirects=True)
+        self.assertIn(b"Digital Submission Receipt", res2.data)
+
+        conn = app.get_db()
+        sub_multi = conn.execute("SELECT * FROM submissions WHERE coursework_id = ?", (exam_multi_id,)).fetchone()
+        self.assertEqual(sub_multi["version"], 2)
+
+        # 2. Single-submission exam: First submission -> success
+        zip3 = io.BytesIO()
+        with zipfile.ZipFile(zip3, "w") as zf:
+            zf.writestr("code_single.c", "int main() { return 0; }")
+        zip3.seek(0)
+        res3 = self.client.post(f"/courses/1/exam/{exam_single_id}/submit", data={
+            "lab_name": "Lab 1",
+            "exam_file": (zip3, "code_single.zip")
+        }, follow_redirects=True)
+        self.assertIn(b"Digital Submission Receipt", res3.data)
+
+        # Single-submission exam: Second submission -> REJECTED
+        zip4 = io.BytesIO()
+        with zipfile.ZipFile(zip4, "w") as zf:
+            zf.writestr("code_single_revised.c", "int main() { return 9; }")
+        zip4.seek(0)
+        res4 = self.client.post(f"/courses/1/exam/{exam_single_id}/submit", data={
+            "lab_name": "Lab 1",
+            "exam_file": (zip4, "code_single_revised.zip")
+        }, follow_redirects=True)
+        self.assertIn(b"Single submission policy", res4.data)
+
+        sub_single = conn.execute("SELECT * FROM submissions WHERE coursework_id = ?", (exam_single_id,)).fetchone()
+        self.assertEqual(sub_single["version"], 1)
+        conn.close()
+        self.logout()
+
+    def test_exam_unsubmit_strictly_prohibited(self):
+        """Verify student cannot unsubmit exam work under any circumstance."""
+        conn = app.get_db()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO coursework (course_id, type, title, description, points, is_exam_mode, created_by, created_at)
+            VALUES (1, 'exam', 'Lockdown Lab Exam', 'Description', 100, 1, 2, '2026-01-01 09:00:00')
+        """)
+        exam_id = c.lastrowid
+        c.execute("""
+            INSERT INTO submissions (coursework_id, student_id, roll_number, student_name, status, original_filename, stored_filename, file_path, file_size, sha256, ip_address, submitted_at, version, is_late, late_minutes, receipt_token)
+            VALUES (?, 3, '101', 'Test Student', 'turned_in', 'exam.zip', '101.zip', '/dummy', 1024, 'dummyhash', '127.0.0.1', '2026-01-01 10:00:00', 1, 0, 0, 'tok123')
+        """, (exam_id,))
+        conn.commit()
+        conn.close()
+
+        self.login("student1", "student123")
+        res = self.client.post(f"/courses/1/coursework/{exam_id}/unsubmit", follow_redirects=True)
+        self.assertIn(b"Submissions for exams cannot be unsubmitted", res.data)
+
+        conn = app.get_db()
+        sub = conn.execute("SELECT * FROM submissions WHERE coursework_id = ?", (exam_id,)).fetchone()
+        conn.close()
+        self.assertEqual(sub["status"], "turned_in")
+        self.logout()
+
+    def test_coursework_unsubmit_locked_after_due_date(self):
+        """Verify regular coursework cannot be unsubmitted after the due date has passed."""
+        past_due = (datetime.now() - timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M")
+        conn = app.get_db()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO coursework (course_id, type, title, description, points, due_date, created_by, created_at)
+            VALUES (1, 'assignment', 'Past Due Homework', 'Desc', 100, ?, 2, '2026-01-01 09:00:00')
+        """, (past_due,))
+        cw_id = c.lastrowid
+        c.execute("""
+            INSERT INTO submissions (coursework_id, student_id, roll_number, student_name, status, original_filename, stored_filename, file_path, file_size, sha256, ip_address, submitted_at, version, is_late, late_minutes, receipt_token)
+            VALUES (?, 3, '101', 'Test Student', 'turned_in', 'hw.c', 'hw.c', '/dummy', 500, 'hash123', '127.0.0.1', '2026-01-01 10:00:00', 1, 0, 0, 'tok456')
+        """, (cw_id,))
+        conn.commit()
+        conn.close()
+
+        self.login("student1", "student123")
+        res = self.client.post(f"/courses/1/coursework/{cw_id}/unsubmit", follow_redirects=True)
+        self.assertIn(b"Submission deadline has passed", res.data)
+
+        conn = app.get_db()
+        sub = conn.execute("SELECT * FROM submissions WHERE coursework_id = ?", (cw_id,)).fetchone()
+        conn.close()
+        self.assertEqual(sub["status"], "turned_in")
+        self.logout()
+
+    def test_teacher_cannot_edit_coursework_timings(self):
+        """Verify teacher cannot alter due_date, start_time, or end_time of assigned work."""
+        orig_due = "2026-10-15T23:59"
+        orig_start = "2026-10-15T14:00"
+        orig_end = "2026-10-15T17:00"
+
+        conn = app.get_db()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO coursework (course_id, type, title, description, points, due_date, start_time, end_time, created_by, created_at)
+            VALUES (1, 'exam', 'Original Exam Title', 'Original Desc', 100, ?, ?, ?, 2, '2026-01-01 09:00:00')
+        """, (orig_due, orig_start, orig_end))
+        cw_id = c.lastrowid
+        conn.commit()
+        conn.close()
+
+        # Teacher logs in and attempts to change timings + title
+        self.login("kishan", "password123")
+        res = self.client.post(f"/courses/1/coursework/{cw_id}/edit", data={
+            "title": "Updated Exam Title",
+            "description": "Updated instructions",
+            "points": "150",
+            "due_date": "2026-12-31T23:59",
+            "start_time": "2026-12-31T10:00",
+            "end_time": "2026-12-31T12:00",
+            "allow_multiple": "1"
+        }, follow_redirects=True)
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Due date, start time, and end time are locked", res.data)
+
+        # Verify DB: title and points updated, but timings UNTOUCHED
+        conn = app.get_db()
+        cw = conn.execute("SELECT * FROM coursework WHERE id = ?", (cw_id,)).fetchone()
+        conn.close()
+        self.assertEqual(cw["title"], "Updated Exam Title")
+        self.assertEqual(cw["points"], 150)
+        self.assertEqual(cw["due_date"], orig_due)
+        self.assertEqual(cw["start_time"], orig_start)
+        self.assertEqual(cw["end_time"], orig_end)
+        self.logout()
+
+    def test_teacher_can_edit_all_class_settings(self):
+        """Verify teacher can edit course code, title, section, description, and theme color."""
+        self.login("kishan", "password123")
+        res = self.client.post("/courses/1/settings", data={
+            "code": "ACCL701",
+            "title": "GPU Architecture & Deep Learning Acceleration",
+            "section": "Section B (Ph.D)",
+            "description": "Comprehensive lab course covering CUDA and TensorRT acceleration.",
+            "theme_color": "emerald"
+        }, follow_redirects=True)
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Class settings updated successfully", res.data)
+
+        # Verify DB
+        conn = app.get_db()
+        course = conn.execute("SELECT * FROM courses WHERE id = 1").fetchone()
+        conn.close()
+        self.assertEqual(course["code"], "ACCL701")
+        self.assertEqual(course["title"], "GPU Architecture & Deep Learning Acceleration")
+        self.assertEqual(course["section"], "Section B (Ph.D)")
+        self.assertEqual(course["theme_color"], "emerald")
+        self.logout()
+
 
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

@@ -804,9 +804,10 @@ def enforce_exam_lockdown():
     # Whitelisted endpoints during exam mode
     endpoint = request.endpoint or ""
     allowed_endpoints = {
-        "exam_view", "exam_submit", "exam_receipt", "logout", "static", "login",
+        "exam_view", "exam_submit", "exam_receipt", "unsubmit_coursework", "logout", "static", "login",
         "attend_scan_landing", "attend_submit", "course_attendance"
     }
+
 
     if endpoint in allowed_endpoints:
         return
@@ -1239,6 +1240,43 @@ def reset_join_code(course_id):
     return redirect(url_for("course_people", course_id=course_id))
 
 
+@app.route("/courses/<int:course_id>/settings", methods=["POST"])
+@teacher_required
+def update_course_settings(course_id):
+    conn = get_db()
+    course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+    if not course:
+        conn.close()
+        abort(404, "Course not found")
+
+    code = request.form.get("code", "").strip().upper()
+    title = request.form.get("title", "").strip()
+    section = request.form.get("section", "Section A").strip()
+    description = request.form.get("description", "").strip()
+    theme_color = request.form.get("theme_color", "indigo").strip().lower()
+
+    valid_themes = ("indigo", "emerald", "amber", "rose", "teal", "purple", "slate")
+    if theme_color not in valid_themes:
+        theme_color = "indigo"
+
+    if not code or not title:
+        conn.close()
+        flash("Course Code and Title are required.", "danger")
+        return redirect(url_for("course_stream", course_id=course_id))
+
+    conn.execute("""
+        UPDATE courses SET
+            code = ?, title = ?, section = ?, description = ?, theme_color = ?
+        WHERE id = ?
+    """, (code, title, section, description, theme_color, course_id))
+    conn.commit()
+    conn.close()
+
+    flash("Class settings updated successfully.", "success")
+    return redirect(url_for("course_stream", course_id=course_id))
+
+
+
 # --- Google Classroom Tabs: Stream, Classwork, People, Grades ---
 
 def get_course_or_404(course_id):
@@ -1624,7 +1662,95 @@ def toggle_exam_mode(course_id, coursework_id):
     return redirect(request.referrer or url_for("course_classwork", course_id=course_id))
 
 
+@app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/edit", methods=["POST"])
+@teacher_required
+def edit_coursework(course_id, coursework_id):
+    conn = get_db()
+    cw = conn.execute("SELECT * FROM coursework WHERE id = ? AND course_id = ?", (coursework_id, course_id)).fetchone()
+    if not cw:
+        conn.close()
+        abort(404, "Coursework not found")
+
+    title = request.form.get("title", "").strip()
+    if not title:
+        conn.close()
+        flash("Title is required for coursework.", "danger")
+        return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
+    description = request.form.get("description", "").strip()
+    topic_id_raw = request.form.get("topic_id", "")
+    topic_id = int(topic_id_raw) if topic_id_raw and topic_id_raw.isdigit() else None
+    points = int(request.form.get("points", 100)) if request.form.get("points") else 100
+    category_id_raw = request.form.get("category_id", "")
+    category_id = int(category_id_raw) if category_id_raw and category_id_raw.isdigit() else None
+    allow_multiple = 1 if request.form.get("allow_multiple") else 0
+    allow_late = 1 if request.form.get("allow_late") else 0
+    allowed_types = request.form.get("allowed_types", cw["allowed_types"]).strip().lower()
+    labs = request.form.get("labs", cw["labs"] or "Lab 1, Lab 2, Lab 3, CC-101").strip()
+
+    user_role = session.get("role")
+
+    # CRITICAL SECURITY RULE: Teachers CANNOT modify due_date, start_time, or end_time once assigned
+    if user_role != "admin":
+        due_date = cw["due_date"]
+        start_time = cw["start_time"]
+        end_time = cw["end_time"]
+        timing_attempted = False
+        form_due = request.form.get("due_date", "").strip()
+        form_start = request.form.get("start_time", "").strip()
+        form_end = request.form.get("end_time", "").strip()
+        if (form_due and form_due != (cw["due_date"] or "")) or \
+           (form_start and form_start != (cw["start_time"] or "")) or \
+           (form_end and form_end != (cw["end_time"] or "")):
+            timing_attempted = True
+    else:
+        # Global administrator override if ever necessary
+        due_date = request.form.get("due_date", "").strip() or cw["due_date"]
+        start_time = request.form.get("start_time", "").strip() or cw["start_time"]
+        end_time = request.form.get("end_time", "").strip() or cw["end_time"]
+        timing_attempted = False
+
+    conn.execute("""
+        UPDATE coursework SET
+            title = ?, description = ?, topic_id = ?, points = ?,
+            category_id = ?, allow_multiple = ?, allow_late = ?,
+            allowed_types = ?, labs = ?, due_date = ?, start_time = ?, end_time = ?
+        WHERE id = ? AND course_id = ?
+    """, (
+        title, description, topic_id, points,
+        category_id, allow_multiple, allow_late,
+        allowed_types, labs, due_date, start_time, end_time,
+        coursework_id, course_id
+    ))
+
+    # Optional attachments upload
+    uploaded_files = request.files.getlist("attachments")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for f in uploaded_files:
+        if f and f.filename:
+            fname = secure_filename(f.filename)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            stored = f"att_{course_id}_{coursework_id}_{timestamp}_{fname}"
+            dest = ATTACHMENTS_DIR / stored
+            f.save(dest)
+            conn.execute("""
+                INSERT INTO coursework_attachments (coursework_id, original_filename, stored_filename, file_path, file_size, uploaded_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (coursework_id, fname, stored, str(dest), dest.stat().st_size, now_str))
+
+    conn.commit()
+    conn.close()
+
+    if timing_attempted:
+        flash(f"Coursework '{title}' updated. Note: Due date, start time, and end time are locked and cannot be modified by teachers after assignment.", "warning")
+    else:
+        flash(f"Coursework '{title}' updated successfully.", "success")
+
+    return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
+
 @app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/delete", methods=["POST"])
+
 @teacher_required
 def delete_coursework(course_id, coursework_id):
     conn = get_db()
@@ -1723,6 +1849,23 @@ def coursework_detail(course_id, coursework_id):
         private_comments = []
         locker_files = []
 
+    topics = conn.execute("SELECT * FROM topics WHERE course_id = ? ORDER BY display_order ASC, id ASC", (course_id,)).fetchall()
+    categories = conn.execute("SELECT * FROM course_grading_categories WHERE course_id = ? ORDER BY id ASC", (course_id,)).fetchall()
+
+
+    now = datetime.now()
+    is_past_due = False
+    if cw["due_date"]:
+        due_dt = parse_iso_datetime(cw["due_date"])
+        if due_dt and now > due_dt:
+            is_past_due = True
+
+    is_exam_ended = False
+    if cw["is_exam_mode"] == 1 or cw["type"] == "exam":
+        cutoff = parse_iso_datetime(cw["end_time"]) if cw["end_time"] else (parse_iso_datetime(cw["due_date"]) if cw["due_date"] else None)
+        if cutoff and now > cutoff:
+            is_exam_ended = True
+
     conn.close()
     return render_template(
         "coursework_detail.html",
@@ -1733,9 +1876,14 @@ def coursework_detail(course_id, coursework_id):
         all_submissions=all_submissions,
         private_comments=private_comments,
         locker_files=locker_files,
+        topics=topics,
+        categories=categories,
+        is_past_due=is_past_due,
+        is_exam_ended=is_exam_ended,
         stats=stats,
         active_tab="classwork"
     )
+
 
 
 # --- Live Exam Submission Telemetry API ---
@@ -1870,7 +2018,17 @@ def submit_coursework(course_id, coursework_id):
     is_late = 0
     late_minutes = 0
 
+    # If coursework is an exam or strict exam mode is active:
+    if cw["is_exam_mode"] == 1 or cw["type"] == "exam":
+        cutoff = parse_iso_datetime(cw["end_time"]) if cw["end_time"] else (parse_iso_datetime(cw["due_date"]) if cw["due_date"] else None)
+        if cutoff and now > cutoff:
+            conn.close()
+            flash("The exam deadline has passed. Modifying or re-submitting after the exam has ended is strictly locked.", "danger")
+            return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
+
+
     if cw["due_date"]:
+
         due_dt = parse_iso_datetime(cw["due_date"])
         if due_dt and now > due_dt:
             if cw["allow_late"] == 0:
@@ -1977,10 +2135,24 @@ def submit_coursework(course_id, coursework_id):
 def unsubmit_coursework(course_id, coursework_id):
     conn = get_db()
     cw = conn.execute("SELECT * FROM coursework WHERE id = ? AND course_id = ?", (coursework_id, course_id)).fetchone()
-    if cw and cw["is_exam_mode"] == 1:
+    if not cw:
         conn.close()
-        flash("Submissions cannot be unsubmitted during active exam lockdown mode.", "danger")
+        abort(404)
+
+    # 1. Exam locking check: Exams can NEVER be unsubmitted
+    if cw["is_exam_mode"] == 1 or cw["type"] == "exam":
+        conn.close()
+        flash("Submissions for exams cannot be unsubmitted. All exam submissions are permanently recorded.", "danger")
         return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
+
+    # 2. Deadline check for regular coursework: Cannot unsubmit after deadline has passed
+    now = datetime.now()
+    if cw["due_date"]:
+        due_dt = parse_iso_datetime(cw["due_date"])
+        if due_dt and now > due_dt:
+            conn.close()
+            flash("Submission deadline has passed. Work cannot be unsubmitted after the deadline.", "danger")
+            return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
 
     sub = conn.execute("SELECT * FROM submissions WHERE coursework_id = ? AND student_id = ?", (coursework_id, session["user_id"])).fetchone()
     if sub:
@@ -1994,6 +2166,7 @@ def unsubmit_coursework(course_id, coursework_id):
         flash("Submission unsubmitted. You may make changes and turn it in again.", "info")
     conn.close()
     return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
 
 
 # --- Strict Exam Mode Lockdown Interface & Submission ---
@@ -2016,7 +2189,7 @@ def exam_view(course_id, coursework_id):
 
     now = datetime.now()
     st = parse_iso_datetime(cw["start_time"])
-    et = parse_iso_datetime(cw["end_time"])
+    et = parse_iso_datetime(cw["end_time"]) if cw["end_time"] else (parse_iso_datetime(cw["due_date"]) if cw["due_date"] else None)
 
     is_started = True if not st or now >= st else False
     is_ended = True if et and now > et else False
@@ -2031,7 +2204,7 @@ def exam_view(course_id, coursework_id):
         is_started=is_started,
         is_ended=is_ended,
         start_iso=cw["start_time"],
-        end_iso=cw["end_time"]
+        end_iso=cw["end_time"] or cw["due_date"]
     )
 
 
@@ -2079,32 +2252,30 @@ def exam_submit(course_id, coursework_id):
 
     now = datetime.now()
     now_str = now.strftime("%Y-%m-%d %H:%M:%S")
-    is_late = 0
-    late_minutes = 0
+
+    # Strict Exam Cutoff Check: Once exam time is over, everything is permanently locked
+    cutoff = None
+    if cw["end_time"]:
+        cutoff = parse_iso_datetime(cw["end_time"])
+    elif cw["due_date"]:
+        cutoff = parse_iso_datetime(cw["due_date"])
+
+    if cutoff and now > cutoff:
+        conn.close()
+        flash("The exam deadline has passed. Modifying or re-submitting after the exam has ended is strictly locked.", "danger")
+        return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
+
 
     existing = conn.execute("SELECT * FROM submissions WHERE coursework_id = ? AND student_id = ?", (coursework_id, user_id)).fetchone()
     if existing:
-        # If student already submitted once and exam end time has passed, strictly lock submission
-        if cw["end_time"]:
-            et = parse_iso_datetime(cw["end_time"])
-            if et and now > et:
-                conn.close()
-                flash("The exam deadline has passed. Modifying or re-submitting after the exam has ended is strictly locked.", "danger")
-                return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
         if cw["allow_multiple"] == 0:
             conn.close()
-            flash("Single submission policy: You have already submitted your exam.", "warning")
+            flash("Single submission policy: You have already submitted your exam. Re-submissions are not permitted.", "warning")
             return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
 
-    if cw["end_time"]:
-        et = parse_iso_datetime(cw["end_time"])
-        if et and now > et:
-            if cw["allow_late"] == 0:
-                conn.close()
-                flash("Exam submission cutoff has expired. Submissions are closed.", "danger")
-                return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
-            is_late = 1
-            late_minutes = int((now - et).total_seconds() / 60)
+    is_late = 0
+    late_minutes = 0
+
 
     version = (existing["version"] + 1) if existing else 1
     lab_name = request.form.get("lab_name", "Lab 1").strip()
