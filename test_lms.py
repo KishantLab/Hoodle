@@ -926,6 +926,136 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.login("student1", "student123")
         res_st = self.client.get(f"/api/courses/{course['id']}/coursework/{cw_id}/live-submissions")
         self.assertEqual(res_st.status_code, 403)
+        self.logout()
+
+    def test_admin_create_teacher(self):
+        """Test admin registering a new teacher account from User Directory."""
+        self.logout()
+        self.login("admin", "admin@accl")
+
+        res = self.client.post("/admin/teachers/create", data={
+            "display_name": "Dr. Sunita Rao",
+            "username": "srao",
+            "roll_number": "FAC099",
+            "email": "srao@iitbhilai.ac.in",
+            "password": "teacherpass123",
+            "role": "teacher"
+        }, follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Teacher account for Dr. Sunita Rao created successfully", res.data)
+
+        # Verify teacher can log in
+        self.logout()
+        res_login = self.login("srao", "teacherpass123")
+        self.assertEqual(res_login.status_code, 200)
+        self.assertIn(b"Dr. Sunita Rao", res_login.data)
+        self.logout()
+
+    def test_course_invitations_and_student_join(self):
+        """Test bulk student invitation by roll number, signup auto-linking, and home screen join."""
+        conn = app.get_db()
+        course = conn.execute("SELECT id, code, title FROM courses LIMIT 1").fetchone()
+        course_id = course["id"]
+
+        # Ensure student1 is not already enrolled for this test
+        st1 = conn.execute("SELECT id FROM users WHERE username = 'student1'").fetchone()
+        conn.execute("DELETE FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, st1["id"]))
+        conn.commit()
+        conn.close()
+
+        # 1. Teacher bulk invites: student1 (registered) and B26CS777 (unregistered)
+        self.logout()
+        self.login("kishan", "password123")
+        res_inv = self.client.post(f"/courses/{course_id}/invite", data={
+            "students_input": "B26DS001, B26CS777"
+        }, follow_redirects=True)
+        self.assertEqual(res_inv.status_code, 200)
+        self.assertIn(b"invitation(s) saved", res_inv.data)
+        self.logout()
+
+        # Verify invitations exist in database
+        conn = app.get_db()
+        inv_reg = conn.execute("SELECT * FROM course_invitations WHERE course_id = ? AND UPPER(student_roll) = 'B26DS001'", (course_id,)).fetchone()
+        inv_unreg = conn.execute("SELECT * FROM course_invitations WHERE course_id = ? AND UPPER(student_roll) = 'B26CS777'", (course_id,)).fetchone()
+        conn.close()
+        self.assertIsNotNone(inv_reg)
+        self.assertEqual(inv_reg["student_id"], st1["id"])
+        self.assertIsNotNone(inv_unreg)
+        self.assertIsNone(inv_unreg["student_id"])
+
+        # 2. Registered student (student1) logs in: home screen shows invitation banner and Join button
+        self.login("student1", "student123")
+        res_dash = self.client.get("/dashboard")
+        self.assertEqual(res_dash.status_code, 200)
+        self.assertIn(b"Pending Course Invitations", res_dash.data)
+        self.assertIn(b"Accept &amp; Join Class", res_dash.data)
+
+        # Student clicks Accept & Join Class
+        res_accept = self.client.post(f"/invitations/{inv_reg['id']}/accept", follow_redirects=True)
+        self.assertEqual(res_accept.status_code, 200)
+        self.assertIn(b"Welcome! You have successfully joined", res_accept.data)
+
+        # Verify enrolled in database and invitation accepted
+        conn = app.get_db()
+        enrolled = conn.execute("SELECT * FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, st1["id"])).fetchone()
+        inv_updated = conn.execute("SELECT status FROM course_invitations WHERE id = ?", (inv_reg["id"],)).fetchone()
+        conn.close()
+        self.assertIsNotNone(enrolled)
+        self.assertEqual(inv_updated["status"], "accepted")
+        self.logout()
+
+        # 3. Unregistered student signs up with roll number B26CS777
+        res_reg = self.client.post("/register", data={
+            "full_name": "Pooja Verma",
+            "roll_number": "B26CS777",
+            "email": "b26cs777@iitbhilai.ac.in",
+            "password": "poojapassword",
+            "confirm_password": "poojapassword",
+            "role": "student"
+        }, follow_redirects=True)
+        self.assertIn(b"Registration successful", res_reg.data)
+
+        # Verify invitation was auto-linked on signup
+        conn = app.get_db()
+        new_student = conn.execute("SELECT id FROM users WHERE username = 'b26cs777'").fetchone()
+        inv_linked = conn.execute("SELECT * FROM course_invitations WHERE id = ?", (inv_unreg["id"],)).fetchone()
+        conn.close()
+        self.assertIsNotNone(new_student)
+        self.assertEqual(inv_linked["student_id"], new_student["id"])
+
+        # Pooja logs in and sees pending invitation on Home Screen
+        self.login("b26cs777", "poojapassword")
+        res_pooja_dash = self.client.get("/dashboard")
+        self.assertEqual(res_pooja_dash.status_code, 200)
+        self.assertIn(b"Pending Course Invitations", res_pooja_dash.data)
+        self.assertIn(b"Accept &amp; Join Class", res_pooja_dash.data)
+
+        # Pooja accepts invitation
+        res_pooja_accept = self.client.post(f"/invitations/{inv_linked['id']}/accept", follow_redirects=True)
+        self.assertEqual(res_pooja_accept.status_code, 200)
+        self.assertIn(b"Welcome! You have successfully joined", res_pooja_accept.data)
+        self.logout()
+
+    def test_invitation_accept_by_token_link(self):
+        """Test accepting course invitation directly via unique email token link."""
+        conn = app.get_db()
+        course = conn.execute("SELECT id, code, title FROM courses LIMIT 1").fetchone()
+        token_str = "test_secure_token_12345"
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("""
+            INSERT INTO course_invitations (course_id, invited_by, student_roll, student_email, token, status, sent_at)
+            VALUES (?, 1, 'B26EE888', 'b26ee888@iitbhilai.ac.in', ?, 'pending', ?)
+        """, (course["id"], token_str, now_str))
+        conn.commit()
+        conn.close()
+
+        # Logged in user clicks link
+        self.logout()
+        self.login("student1", "student123")
+        res = self.client.get(f"/invitations/accept/{token_str}", follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Successfully joined", res.data)
+        self.logout()
 
 
 if __name__ == "__main__":

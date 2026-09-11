@@ -18,6 +18,10 @@ import json
 import csv
 import xml.etree.ElementTree as ET
 import secrets
+import smtplib
+import threading
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from pathlib import Path
 from functools import wraps
@@ -384,6 +388,30 @@ def init_db():
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_cat_course ON course_grading_categories (course_id)")
 
+    # 14. Course Invitations Table (Bulk Roll Number & Email Invitations)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS course_invitations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course_id INTEGER NOT NULL,
+            invited_by INTEGER NOT NULL,
+            student_roll TEXT DEFAULT NULL,
+            student_email TEXT DEFAULT NULL,
+            student_id INTEGER DEFAULT NULL,
+            token TEXT UNIQUE NOT NULL,
+            status TEXT DEFAULT 'pending',
+            sent_at TEXT NOT NULL,
+            responded_at TEXT DEFAULT NULL,
+            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+            FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE SET NULL
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_inv_course ON course_invitations (course_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_inv_roll ON course_invitations (student_roll)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_inv_email ON course_invitations (student_email)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_inv_student ON course_invitations (student_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_inv_token ON course_invitations (token)")
+
     # Migration for courses table
     c.execute("PRAGMA table_info(courses)")
     course_cols = [row["name"] for row in c.fetchall()]
@@ -496,6 +524,110 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+# --- Gmail Notification & Email Services ---
+
+def send_course_invitation_email(course, recipient_email, student_roll, teacher_name, token):
+    """
+    Sends a course invitation email via Gmail SMTP in a background daemon thread.
+    Gracefully logs and exits if Gmail credentials are not configured.
+    """
+    gmail_user = os.environ.get("GMAIL_SMTP_USER", "").strip()
+    gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
+    from_name = os.environ.get("GMAIL_FROM_NAME", "Hoodle LMS").strip()
+
+    if not gmail_user or not gmail_pass or not recipient_email:
+        return
+
+    # Derive base URL while still inside the active request context
+    base_url = os.environ.get("PORTAL_BASE_URL", "").strip().rstrip("/")
+    if not base_url:
+        try:
+            base_url = request.host_url.rstrip("/")
+        except Exception:
+            base_url = "http://localhost:8095"
+
+    join_url = f"{base_url}/invitations/accept/{token}"
+    course_code = course["code"]
+    course_title = course["title"]
+    course_section = course["section"] if "section" in course.keys() and course["section"] else "Section A"
+    join_code = course["join_code"] if "join_code" in course.keys() and course["join_code"] else ""
+
+    def _worker():
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"Course Invitation: {course_code} - {course_title}"
+            msg["From"] = f"{from_name} <{gmail_user}>"
+            msg["To"] = recipient_email
+
+            plain_text = f"""Hello,
+
+You have been invited by Prof. {teacher_name} to join {course_code}: {course_title} ({course_section}) on Hoodle LMS.
+
+To accept this invitation and enroll immediately, visit:
+{join_url}
+
+Alternatively, you can sign in to your Hoodle account where this invitation is waiting on your Home Screen, or enter Class Code: {join_code}
+
+Best regards,
+Hoodle LMS • Accelerated Classroom & Lab Learning
+ACCL Research Lab, IIT Bhilai
+"""
+            html_text = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Course Invitation</title></head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <div style="max-width: 580px; margin: 30px auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
+    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 28px 24px; text-align: center; color: white;">
+      <h1 style="margin: 0 0 6px; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">Hoodle LMS</h1>
+      <p style="margin: 0; font-size: 13px; opacity: 0.9;">Accelerated Classroom &amp; Lab Learning</p>
+    </div>
+    <div style="padding: 28px 24px;">
+      <div style="font-size: 15px; margin-bottom: 16px;">
+        Hello <strong>{student_roll or 'Student'}</strong>,
+      </div>
+      <p style="font-size: 14px; line-height: 1.6; color: #475569; margin-bottom: 20px;">
+        <strong>Prof. {teacher_name}</strong> has invited you to join the class on Hoodle:
+      </p>
+      
+      <div style="background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 6px; padding: 16px; margin-bottom: 24px;">
+        <div style="font-size: 12px; font-weight: 700; color: #2563eb; text-transform: uppercase;">Classroom</div>
+        <div style="font-size: 18px; font-weight: 800; color: #0f172a; margin-top: 2px;">{course_code}: {course_title}</div>
+        <div style="font-size: 13px; color: #64748b; margin-top: 4px;">{course_section}</div>
+        <div style="font-size: 12px; color: #64748b; margin-top: 8px;">Class Code: <code style="background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 4px; font-weight: 700;">{join_code}</code></div>
+      </div>
+
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="{join_url}" style="background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 15px; font-weight: 700; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);">
+          Accept Invitation &amp; Join Class &rarr;
+        </a>
+      </div>
+
+      <p style="font-size: 12.5px; color: #64748b; line-height: 1.5; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+        If you already have a Hoodle account, you can sign in to your home screen where this invitation is waiting for you. If you don't have an account, clicking the button above will guide you to register with roll number <strong>{student_roll or ''}</strong>.
+      </p>
+    </div>
+    <div style="background: #f8fafc; padding: 14px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
+      Hoodle LMS &bull; Accelerated Computing Research Lab (ACCL), IIT Bhilai
+    </div>
+  </div>
+</body>
+</html>
+"""
+            msg.attach(MIMEText(plain_text, "plain"))
+            msg.attach(MIMEText(html_text, "html"))
+
+            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
+            server.starttls()
+            server.login(gmail_user, gmail_pass)
+            server.sendmail(gmail_user, [recipient_email], msg.as_string())
+            server.quit()
+            app.logger.info("Course invitation email sent to %s for %s", recipient_email, course_code)
+        except Exception as e:
+            app.logger.warning("Failed to send course invitation email to %s: %s", recipient_email, e)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
 
 
 # --- Authentication & Authorization Helpers ---
@@ -765,6 +897,20 @@ def register():
             INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (username, roll_number, email, pwd_hash, full_name, role, now_str))
+        new_user = conn.execute("SELECT last_insert_rowid() as id").fetchone()
+        new_user_id = new_user["id"] if new_user else None
+
+        # Auto-link any pending course invitations matching this student's roll number or email
+        if new_user_id:
+            conn.execute("""
+                UPDATE course_invitations
+                SET student_id = ?
+                WHERE status = 'pending' AND (
+                    (student_roll IS NOT NULL AND UPPER(student_roll) = ?) OR
+                    (student_email IS NOT NULL AND student_email != '' AND LOWER(student_email) = ?)
+                )
+            """, (new_user_id, roll_number.upper(), email.lower()))
+
         conn.commit()
         conn.close()
 
@@ -798,9 +944,31 @@ def dashboard():
 
     courses = []
     upcoming_deadlines = []
+    pending_invitations = []
     locker_stats = {"used_bytes": 0, "quota_bytes": user["storage_quota_bytes"], "percent": 0}
 
     if user["role"] == "student":
+        user_roll = (user["roll_number"] or "").strip().upper()
+        user_email = (user["email"] or "").strip().lower()
+
+        # Query active pending invitations for this student
+        pending_invitations = conn.execute("""
+            SELECT ci.id as invite_id, ci.token, ci.sent_at,
+                   c.id as course_id, c.code as course_code, c.title as course_title,
+                   c.section as course_section, c.theme_color,
+                   u.display_name as teacher_name
+            FROM course_invitations ci
+            JOIN courses c ON ci.course_id = c.id
+            JOIN users u ON ci.invited_by = u.id
+            WHERE (ci.student_id = ? OR (ci.student_roll IS NOT NULL AND UPPER(ci.student_roll) = ?) OR (ci.student_email IS NOT NULL AND student_email != '' AND LOWER(ci.student_email) = ?))
+              AND ci.status = 'pending'
+              AND c.is_archived = 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM course_enrollments ce WHERE ce.course_id = c.id AND ce.user_id = ?
+              )
+            ORDER BY ci.sent_at DESC
+        """, (user["id"], user_roll, user_email, user["id"])).fetchall()
+
         # Courses enrolled by student
         courses = conn.execute("""
             SELECT c.*, u.display_name as teacher_name,
@@ -868,7 +1036,8 @@ def dashboard():
         "dashboard.html",
         courses=courses,
         upcoming_deadlines=upcoming_deadlines,
-        locker_stats=locker_stats
+        locker_stats=locker_stats,
+        pending_invitations=pending_invitations
     )
 
 
@@ -1886,6 +2055,16 @@ def course_people(course_id):
         any(t["id"] == curr_user["id"] for t in teachers)
     )
 
+    pending_invitations = []
+    if is_teacher_or_admin:
+        pending_invitations = conn.execute("""
+            SELECT ci.*, u.display_name as student_name
+            FROM course_invitations ci
+            LEFT JOIN users u ON ci.student_id = u.id
+            WHERE ci.course_id = ? AND ci.status = 'pending'
+            ORDER BY ci.sent_at DESC
+        """, (course_id,)).fetchall()
+
     conn.close()
     return render_template(
         "course_people.html",
@@ -1893,6 +2072,7 @@ def course_people(course_id):
         teachers=teachers,
         students=students,
         available_users=available_users,
+        pending_invitations=pending_invitations,
         is_teacher_or_admin=is_teacher_or_admin,
         active_tab="people"
     )
@@ -2004,6 +2184,267 @@ def remove_student(course_id, target_user_id):
     conn.close()
     flash("Person removed from course roster.", "info")
     return redirect(url_for("course_people", course_id=course_id))
+
+
+# --- Course Invitations & Student Home Screen Join ---
+
+@app.route("/courses/<int:course_id>/invite", methods=["POST"])
+@teacher_required
+def invite_students(course_id):
+    course = get_course_or_404(course_id)
+    curr_user = get_current_user()
+    teacher_name = curr_user["display_name"]
+    raw_input = request.form.get("students_input", "").strip()
+
+    if not raw_input:
+        flash("Please enter one or more roll numbers or email addresses.", "warning")
+        return redirect(url_for("course_people", course_id=course_id))
+
+    # Split by comma, semicolon, newline, or whitespace
+    entries = [tok.strip() for tok in re.split(r"[,;\s\n\r]+", raw_input) if tok.strip()]
+    if not entries:
+        flash("No valid roll numbers or emails found.", "warning")
+        return redirect(url_for("course_people", course_id=course_id))
+
+    conn = get_db()
+    enrolled_user_ids = {row["user_id"] for row in conn.execute(
+        "SELECT user_id FROM course_enrollments WHERE course_id = ?", (course_id,)
+    ).fetchall()}
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    added_count = 0
+    already_enrolled = 0
+    registered_now = 0
+    pending_signup = 0
+
+    # Avoid duplicate processing within the same batch
+    seen_entries = set()
+
+    for entry in entries:
+        entry_clean = entry.strip()
+        entry_lower = entry_clean.lower()
+        entry_upper = entry_clean.upper()
+
+        if entry_lower in seen_entries:
+            continue
+        seen_entries.add(entry_lower)
+
+        is_email = "@" in entry_clean
+        user = None
+
+        if is_email:
+            student_email = entry_lower
+            user = conn.execute("SELECT * FROM users WHERE LOWER(email) = ?", (entry_lower,)).fetchone()
+            student_roll = (user["roll_number"] or "").upper() if user and user["roll_number"] else None
+        else:
+            student_roll = entry_upper
+            user = conn.execute("""
+                SELECT * FROM users
+                WHERE UPPER(roll_number) = ? OR LOWER(username) = ?
+            """, (entry_upper, entry_lower)).fetchone()
+            student_email = user["email"].lower() if user and user["email"] else f"{entry_lower}@iitbhilai.ac.in"
+
+        if user and user["id"] in enrolled_user_ids:
+            already_enrolled += 1
+            continue
+
+        student_id = user["id"] if user else None
+
+        # Check existing invitation in this course
+        existing_inv = None
+        if student_id:
+            existing_inv = conn.execute("""
+                SELECT id FROM course_invitations
+                WHERE course_id = ? AND status = 'pending' AND (
+                    student_id = ? OR 
+                    (student_roll IS NOT NULL AND UPPER(student_roll) = ?) OR 
+                    (student_email IS NOT NULL AND LOWER(student_email) = ?)
+                )
+            """, (course_id, student_id, student_roll or "", student_email or "")).fetchone()
+        elif student_roll:
+            existing_inv = conn.execute("""
+                SELECT id FROM course_invitations
+                WHERE course_id = ? AND status = 'pending' AND UPPER(student_roll) = ?
+            """, (course_id, student_roll)).fetchone()
+        elif student_email:
+            existing_inv = conn.execute("""
+                SELECT id FROM course_invitations
+                WHERE course_id = ? AND status = 'pending' AND LOWER(student_email) = ?
+            """, (course_id, student_email)).fetchone()
+
+        invite_token = secrets.token_urlsafe(24)
+
+        if existing_inv:
+            conn.execute("""
+                UPDATE course_invitations
+                SET token = ?, sent_at = ?, student_id = COALESCE(?, student_id), student_email = COALESCE(?, student_email)
+                WHERE id = ?
+            """, (invite_token, now_str, student_id, student_email, existing_inv["id"]))
+        else:
+            conn.execute("""
+                INSERT INTO course_invitations (course_id, invited_by, student_roll, student_email, student_id, token, status, sent_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+            """, (course_id, curr_user["id"], student_roll, student_email, student_id, invite_token, now_str))
+
+        added_count += 1
+        if student_id:
+            registered_now += 1
+        else:
+            pending_signup += 1
+
+        # Dispatch background Gmail email if recipient email exists
+        if student_email:
+            send_course_invitation_email(course, student_email, student_roll, teacher_name, invite_token)
+
+    conn.commit()
+    conn.close()
+
+    msg_parts = [f"Processed {len(seen_entries)} entry(ies): {added_count} invitation(s) saved."]
+    if registered_now:
+        msg_parts.append(f"{registered_now} registered student(s) will see the invitation immediately on their home screen.")
+    if pending_signup:
+        msg_parts.append(f"{pending_signup} unregistered roll number(s) will receive the invitation automatically when they sign up.")
+    if already_enrolled:
+        msg_parts.append(f"{already_enrolled} already enrolled student(s) were skipped.")
+
+    flash(" ".join(msg_parts), "success")
+    return redirect(url_for("course_people", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/invitations/<int:invite_id>/revoke", methods=["POST"])
+@teacher_required
+def revoke_invitation(course_id, invite_id):
+    conn = get_db()
+    conn.execute("DELETE FROM course_invitations WHERE id = ? AND course_id = ?", (invite_id, course_id))
+    conn.commit()
+    conn.close()
+    flash("Course invitation revoked.", "info")
+    return redirect(url_for("course_people", course_id=course_id))
+
+
+@app.route("/invitations/<int:invite_id>/accept", methods=["POST"])
+@login_required
+def accept_invitation(invite_id):
+    user = get_current_user()
+    user_id = user["id"]
+    user_roll = (user["roll_number"] or "").strip().upper()
+    user_email = (user["email"] or "").strip().lower()
+
+    conn = get_db()
+    inv = conn.execute("""
+        SELECT ci.*, c.code as course_code, c.title as course_title, c.is_archived
+        FROM course_invitations ci
+        JOIN courses c ON ci.course_id = c.id
+        WHERE ci.id = ? AND ci.status = 'pending'
+    """, (invite_id,)).fetchone()
+
+    if not inv:
+        conn.close()
+        flash("Invitation not found or has already been accepted/expired.", "warning")
+        return redirect(url_for("dashboard"))
+
+    # Verify student identity matches this invitation
+    authorized = (
+        inv["student_id"] == user_id or
+        (user_roll and inv["student_roll"] and inv["student_roll"].upper() == user_roll) or
+        (user_email and inv["student_email"] and inv["student_email"].lower() == user_email)
+    )
+
+    if not authorized:
+        conn.close()
+        flash("You are not authorized to accept this invitation.", "danger")
+        return redirect(url_for("dashboard"))
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Enroll student in course
+    conn.execute("""
+        INSERT OR IGNORE INTO course_enrollments (course_id, user_id, role, enrolled_at)
+        VALUES (?, ?, 'student', ?)
+    """, (inv["course_id"], user_id, now_str))
+
+    # Mark invitation accepted
+    conn.execute("""
+        UPDATE course_invitations
+        SET status = 'accepted', student_id = ?, responded_at = ?
+        WHERE id = ?
+    """, (user_id, now_str, invite_id))
+    conn.commit()
+    conn.close()
+
+    flash(f"Welcome! You have successfully joined {inv['course_code']}: {inv['course_title']}.", "success")
+    return redirect(url_for("course_stream", course_id=inv["course_id"]))
+
+
+@app.route("/invitations/<int:invite_id>/decline", methods=["POST"])
+@login_required
+def decline_invitation(invite_id):
+    user = get_current_user()
+    user_id = user["id"]
+    user_roll = (user["roll_number"] or "").strip().upper()
+    user_email = (user["email"] or "").strip().lower()
+
+    conn = get_db()
+    inv = conn.execute("SELECT * FROM course_invitations WHERE id = ? AND status = 'pending'", (invite_id,)).fetchone()
+    if not inv:
+        conn.close()
+        flash("Invitation not found.", "warning")
+        return redirect(url_for("dashboard"))
+
+    authorized = (
+        inv["student_id"] == user_id or
+        (user_roll and inv["student_roll"] and inv["student_roll"].upper() == user_roll) or
+        (user_email and inv["student_email"] and inv["student_email"].lower() == user_email)
+    )
+    if not authorized:
+        conn.close()
+        flash("You are not authorized to decline this invitation.", "danger")
+        return redirect(url_for("dashboard"))
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute("UPDATE course_invitations SET status = 'declined', responded_at = ? WHERE id = ?", (now_str, invite_id))
+    conn.commit()
+    conn.close()
+
+    flash("Course invitation declined.", "info")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/invitations/accept/<token>")
+def accept_invitation_by_token(token):
+    conn = get_db()
+    inv = conn.execute("""
+        SELECT ci.*, c.code as course_code, c.title as course_title, c.is_archived
+        FROM course_invitations ci
+        JOIN courses c ON ci.course_id = c.id
+        WHERE ci.token = ? AND ci.status = 'pending' AND c.is_archived = 0
+    """, (token,)).fetchone()
+
+    if not inv:
+        conn.close()
+        flash("This course invitation link is invalid or has already been accepted.", "warning")
+        return redirect(url_for("dashboard" if "user_id" in session else "login"))
+
+    # If student is already logged in
+    if "user_id" in session:
+        user_id = session["user_id"]
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("""
+            INSERT OR IGNORE INTO course_enrollments (course_id, user_id, role, enrolled_at)
+            VALUES (?, ?, 'student', ?)
+        """, (inv["course_id"], user_id, now_str))
+        conn.execute("""
+            UPDATE course_invitations
+            SET status = 'accepted', student_id = ?, responded_at = ?
+            WHERE id = ?
+        """, (user_id, now_str, inv["id"]))
+        conn.commit()
+        conn.close()
+        flash(f"Successfully joined {inv['course_code']}: {inv['course_title']}!", "success")
+        return redirect(url_for("course_stream", course_id=inv["course_id"]))
+
+    conn.close()
+    flash(f"Please sign in or register to join {inv['course_code']}: {inv['course_title']}.", "info")
+    return redirect(url_for("login", next=url_for("accept_invitation_by_token", token=token)))
 
 
 # --- Tab 4: Grades & Canvas-Inspired Weighted Assessment Engine ---
@@ -3227,6 +3668,50 @@ def admin_users():
     """).fetchall()
     conn.close()
     return render_template("admin_users.html", users=users)
+
+
+@app.route("/admin/teachers/create", methods=["POST"])
+@admin_required
+def admin_create_teacher():
+    username = request.form.get("username", "").strip().lower()
+    display_name = request.form.get("display_name", "").strip()
+    roll_number = request.form.get("roll_number", "").strip().upper()
+    email = request.form.get("email", "").strip().lower()
+    password = request.form.get("password", "").strip()
+    role = request.form.get("role", "teacher").strip().lower()
+    if role not in ("teacher", "admin"):
+        role = "teacher"
+
+    if not username or not display_name or not password:
+        flash("Username, Full Name, and Password are required.", "danger")
+        return redirect(url_for("admin_users"))
+
+    if len(password) < 6:
+        flash("Password must be at least 6 characters.", "danger")
+        return redirect(url_for("admin_users"))
+
+    conn = get_db()
+    existing = conn.execute("""
+        SELECT id FROM users
+        WHERE LOWER(username) = ? OR (email != '' AND LOWER(email) = ?) OR (roll_number != '' AND UPPER(roll_number) = ?)
+    """, (username, email, roll_number)).fetchone()
+
+    if existing:
+        conn.close()
+        flash("A user with this Username, Email, or Faculty ID already exists.", "danger")
+        return redirect(url_for("admin_users"))
+
+    pwd_hash = hash_password(password)
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute("""
+        INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (username, roll_number, email, pwd_hash, display_name, role, now_str))
+    conn.commit()
+    conn.close()
+
+    flash(f"Teacher account for {display_name} created successfully!", "success")
+    return redirect(url_for("admin_users"))
 
 
 @app.route("/admin/users/<int:user_id>/role", methods=["POST"])

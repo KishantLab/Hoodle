@@ -25,6 +25,62 @@
   </div>
 </div>
 
+  <!-- Pending Course Invitations for Students -->
+  {% if pending_invitations %}
+    <div class="card" style="background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border: 1.5px solid #93c5fd; padding: 1.5rem; border-radius: var(--radius-lg); margin-bottom: 2rem; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.08);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="font-size: 1.35rem;">📬</span>
+          <h2 style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a; margin: 0;">
+            Pending Course Invitations ({{ pending_invitations|length }})
+          </h2>
+        </div>
+        <span style="font-size: 0.8rem; background: #2563eb; color: white; padding: 2px 8px; border-radius: 999px; font-weight: 700;">
+          Action Required
+        </span>
+      </div>
+      
+      <p style="font-size: 0.88rem; color: #475569; margin-bottom: 1.25rem;">
+        You have been invited to join the following course(s). Click <strong>"Accept &amp; Join Class"</strong> to enroll instantly.
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        {% for inv in pending_invitations %}
+          <div style="background: white; border: 1px solid #bfdbfe; border-radius: var(--radius-md); padding: 1.15rem 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <div style="width: 44px; height: 44px; border-radius: 8px; background: #e0f2fe; color: #0284c7; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.85rem; font-family: monospace;">
+                {{ inv.course_code[:6] }}
+              </div>
+              <div>
+                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                  <span style="font-weight: 800; font-size: 1.05rem; color: #0f172a;">{{ inv.course_code }}: {{ inv.course_title }}</span>
+                  <span style="font-size: 0.75rem; background: #f1f5f9; color: #475569; padding: 2px 7px; border-radius: 4px; font-weight: 600;">{{ inv.course_section or 'Section A' }}</span>
+                </div>
+                <div style="font-size: 0.82rem; color: #64748b; margin-top: 0.2rem;">
+                  👨‍🏫 Invited by <strong>Prof. {{ inv.teacher_name }}</strong> &bull; <span style="font-size: 0.78rem;">{{ inv.sent_at | format_dt }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 0.6rem; align-items: center;">
+              <form action="{{ url_for('accept_invitation', invite_id=inv.invite_id) }}" method="POST" style="margin: 0;">
+                <button type="submit" class="btn btn-primary" style="padding: 0.55rem 1.25rem; font-weight: 700; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.4rem; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);">
+                  <span>✅</span>
+                  <span>Accept &amp; Join Class</span>
+                </button>
+              </form>
+              <form action="{{ url_for('decline_invitation', invite_id=inv.invite_id) }}" method="POST" style="margin: 0;" onsubmit="return confirm('Decline invitation to {{ inv.course_code }}?');">
+                <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.55rem 0.85rem; color: #64748b;" title="Decline Invitation">
+                  ✕ Decline
+                </button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
 <div class="dashboard-layout-grid">
   <!-- Courses Grid -->
   <div>

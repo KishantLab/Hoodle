@@ -126,9 +126,17 @@
 
   <!-- Students Section -->
   <div class="card">
-    <div class="card-header">
-      <h2 class="card-title" style="font-size: 1.25rem; color: #1e3a8a;">Enrolled Students</h2>
-      <span style="font-size: 0.85rem; color: var(--text-muted);">{{ students | length }} Student(s)</span>
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+      <div>
+        <h2 class="card-title" style="font-size: 1.25rem; color: #1e3a8a;">Enrolled Students</h2>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">{{ students | length }} Student(s) enrolled</span>
+      </div>
+      {% if is_teacher_or_admin %}
+        <button onclick="openModal('inviteStudentsModal')" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 0.4rem; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);">
+          <span>✉️</span>
+          <span>Invite / Add Students</span>
+        </button>
+      {% endif %}
     </div>
 
     {% if students %}
@@ -182,7 +190,67 @@
       <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted);">
         <div style="font-size: 2rem; margin-bottom: 0.5rem;">👨‍🎓</div>
         <p>No students have joined this course yet.</p>
-        <p style="font-size: 0.82rem; margin-top: 0.25rem;">Share Class Code <strong>{{ course.join_code }}</strong> with students to enroll.</p>
+        <p style="font-size: 0.82rem; margin-top: 0.25rem;">Share Class Code <strong>{{ course.join_code }}</strong> or click "Invite / Add Students" above to enroll students.</p>
+      </div>
+    {% endif %}
+
+    {% if is_teacher_or_admin and pending_invitations %}
+      <!-- Pending Invitations Subsection -->
+      <div style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h3 style="font-size: 1.05rem; font-weight: 700; color: #475569; display: flex; align-items: center; gap: 0.4rem; margin: 0;">
+            <span>⏳</span>
+            <span>Pending Invitations ({{ pending_invitations|length }})</span>
+          </h3>
+          <span style="font-size: 0.78rem; color: var(--text-muted);">Awaiting student account creation or Home Screen acceptance</span>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="lms-table" style="font-size: 0.85rem; margin: 0;">
+            <thead>
+              <tr>
+                <th>Roll Number</th>
+                <th>Student Email</th>
+                <th>Status</th>
+                <th>Invited Date</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for inv in pending_invitations %}
+                <tr>
+                  <td style="font-family: monospace; font-weight: 700; color: #1e3a8a;">
+                    {{ inv.student_roll or '-' }}
+                  </td>
+                  <td style="color: var(--text-muted); font-size: 0.82rem;">
+                    {{ inv.student_email or '-' }}
+                  </td>
+                  <td>
+                    {% if inv.student_id %}
+                      <span style="font-size: 0.75rem; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 600;">
+                        Registered (On Home Screen)
+                      </span>
+                    {% else %}
+                      <span style="font-size: 0.75rem; background: #fef3c7; color: #92400e; padding: 2px 7px; border-radius: 4px; font-weight: 600;">
+                        Awaiting Student Signup
+                      </span>
+                    {% endif %}
+                  </td>
+                  <td style="color: var(--text-muted); font-size: 0.8rem;">
+                    {{ inv.sent_at | format_dt }}
+                  </td>
+                  <td style="text-align: right;">
+                    <form action="{{ url_for('revoke_invitation', course_id=course.id, invite_id=inv.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Revoke invitation for {{ inv.student_roll or inv.student_email }}?');">
+                      <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger); font-size: 0.72rem; padding: 0.2rem 0.45rem;" title="Revoke Invitation">
+                        Revoke
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
     {% endif %}
   </div>
@@ -231,6 +299,43 @@
       <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
         <button type="button" class="btn btn-secondary" onclick="closeModal('addCoTeacherModal')">Cancel</button>
         <button type="submit" class="btn btn-primary">Save Role & Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Invite / Add Students in Bulk (Teachers & Admins) -->
+<div id="inviteStudentsModal" class="modal-backdrop">
+  <div class="modal-content" style="max-width: 520px;">
+    <div class="modal-header">
+      <h3 style="font-size: 1.15rem; font-weight: 700; color: #1e3a8a;">✉️ Invite / Add Students to {{ course.code }}</h3>
+      <button class="modal-close" onclick="closeModal('inviteStudentsModal')">&times;</button>
+    </div>
+    <form action="{{ url_for('invite_students', course_id=course.id) }}" method="POST">
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.45;">
+        Paste student <strong>Roll Numbers</strong> (e.g. <code>B26CS001, B26CS002</code>) or emails below. You can separate them by commas, spaces, or newlines.
+      </p>
+
+      <div class="form-group">
+        <label class="form-label" for="students_input">Student Roll Numbers or Emails *</label>
+        <textarea id="students_input" name="students_input" class="form-control" rows="6" placeholder="B26CS001, B26CS002, B26EE015&#10;b26ds099@iitbhilai.ac.in" style="font-family: monospace; font-size: 0.88rem; line-height: 1.5;" required></textarea>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.85rem; margin-bottom: 1.25rem; font-size: 0.82rem; color: #475569; line-height: 1.45;">
+        <div style="font-weight: 700; margin-bottom: 0.25rem; color: #1e293b;">⚡ How It Works:</div>
+        <ul style="margin: 0; padding-left: 1.25rem;">
+          <li><strong>Registered Students</strong>: The invitation will appear immediately on their Home Screen with an instant <strong>"Accept &amp; Join Class"</strong> button.</li>
+          <li><strong>Unregistered Students</strong>: The invitation is recorded under their roll number. As soon as the student signs up with that roll number, the invitation will automatically link and show on their Home Screen.</li>
+          <li>If Gmail delivery is active, an email invitation with a direct 1-click join link will also be dispatched.</li>
+        </ul>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('inviteStudentsModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.4rem;">
+          <span>✉️</span>
+          <span>Send Invitations</span>
+        </button>
       </div>
     </form>
   </div>
