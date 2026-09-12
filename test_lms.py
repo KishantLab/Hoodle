@@ -2071,10 +2071,9 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertNotIn(b'href="/messages"', res_dash.data)
         self.assertNotIn("💬 Messages".encode("utf-8"), res_dash.data)
 
-        # Footer must contain APK download button
-        self.assertIn(b'class="footer-apk-btn"', res_dash.data)
+        # APK download link must be in user dropdown menu and dashboard
         self.assertIn(b'/download/app.apk', res_dash.data)
-        self.assertIn(b'App (.apk)', res_dash.data)
+        self.assertIn(b'Download App (.apk)', res_dash.data)
 
         # Test APK download route
         res_apk = self.client.get("/download/app.apk")
@@ -2144,9 +2143,9 @@ class ACCLLMSTestCase(unittest.TestCase):
         # 1. Courses button has nav-pill-bordered and nav-pill-courses
         self.assertIn(b"nav-pill-bordered nav-pill-courses", res.data)
 
-        # 2. Top bar Scan QR button has nav-pill-bordered, nav-pill-scan-qr, and 'Scan QR' label
+        # 2. Top bar Scan QR button has nav-pill-bordered, nav-pill-scan-qr, and 'ScanQR' label
         self.assertIn(b"nav-pill-bordered nav-pill-scan-qr", res.data)
-        self.assertIn(b"Scan QR", res.data)
+        self.assertIn(b"ScanQR", res.data)
 
         # 3. Floating downside scanner button is completely removed
         self.assertNotIn(b'class="scanner-fab"', res.data)
@@ -2321,6 +2320,51 @@ class ACCLLMSTestCase(unittest.TestCase):
             self.assertIn(b"Google Authentication Blocked", res.data)
             self.assertIn(b"Error 534: WebLoginRequired", res.data)
             self.assertIn(b"DisplayUnlockCaptcha", res.data)
+        self.logout()
+
+    def test_change_password_flow_and_validation(self):
+        """Verify password change validations: invalid current password shows danger alert, and valid change succeeds."""
+        self.login("student1", "student123")
+
+        # 1. GET /change-password shows form with current_password, new_password, confirm_password
+        res = self.client.get("/change-password")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Change Account Password", res.data)
+        self.assertIn(b'name="current_password"', res.data)
+        self.assertIn(b'name="new_password"', res.data)
+
+        # 2. POST with invalid current password shows "Invalid current password." in alert-danger
+        res_fail = self.client.post("/change-password", data={
+            "current_password": "wrongpassword",
+            "new_password": "brandnewpassword123",
+            "confirm_password": "brandnewpassword123"
+        })
+        self.assertEqual(res_fail.status_code, 200)
+        self.assertIn(b"Invalid current password.", res_fail.data)
+        self.assertIn(b"alert-danger", res_fail.data)
+
+        # 3. POST with correct current password succeeds and redirects to dashboard
+        res_ok = self.client.post("/change-password", data={
+            "current_password": "student123",
+            "new_password": "brandnewpassword123",
+            "confirm_password": "brandnewpassword123"
+        }, follow_redirects=True)
+        self.assertEqual(res_ok.status_code, 200)
+        self.assertIn(b"Your password has been changed successfully.", res_ok.data)
+        self.logout()
+
+        # 4. Student can now log in with the new password
+        res_login = self.login("student1", "brandnewpassword123")
+        self.assertEqual(res_login.status_code, 200)
+
+        # 5. Rapid duplicate submit handling (where hash matches new password)
+        res_dup = self.client.post("/change-password", data={
+            "current_password": "student123",
+            "new_password": "brandnewpassword123",
+            "confirm_password": "brandnewpassword123"
+        }, follow_redirects=True)
+        self.assertEqual(res_dup.status_code, 200)
+        self.assertIn(b"Your password has been changed successfully.", res_dup.data)
         self.logout()
 
 

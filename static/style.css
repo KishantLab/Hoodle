@@ -391,10 +391,33 @@ input[type="text"]:focus {
     margin-bottom: 1.25rem;
 }
 
-.alert-error {
-    background-color: var(--error-bg);
-    border: 1px solid var(--error-border);
-    color: var(--error);
+.alert-error,
+.alert-danger {
+    background-color: #fef2f2;
+    border: 1.5px solid #f87171;
+    color: #b91c1c;
+    font-weight: 600;
+}
+
+.alert-success {
+    background-color: #f0fdf4;
+    border: 1.5px solid #4ade80;
+    color: #15803d;
+    font-weight: 600;
+}
+
+.alert-warning {
+    background-color: #fffbeb;
+    border: 1.5px solid #fde047;
+    color: #b45309;
+    font-weight: 600;
+}
+
+.alert-info {
+    background-color: #eff6ff;
+    border: 1.5px solid #93c5fd;
+    color: #1d4ed8;
+    font-weight: 600;
 }
 
 /* Receipt Card */
@@ -661,4 +684,11 @@ img[src*="accl_logo.png"] {
     color: #475569;
     line-height: 1.5;
     white-space: pre-line;
+}
+
+@media (max-width: 768px) {
+    .footer,
+    .accl-footer-banner {
+        display: none !important;
+    }
 }

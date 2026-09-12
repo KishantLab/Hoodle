@@ -84,7 +84,7 @@
                     <span class="net-dot"></span>
                     <span>Intranet</span>
                   </button>
-                  <button type="button" class="btn-network-toggle" id="btnNetInternet" onclick="selectNetworkMode('internet', event)" title="Internet Access via Tailscale">
+                  <button type="button" class="btn-network-toggle" id="btnNetInternet" onclick="selectNetworkMode('internet', event)" title="Internet Access (Remote Access)">
                     <span class="net-dot"></span>
                     <span>Internet</span>
                   </button>
@@ -122,7 +122,8 @@
             </div>
           </div>
         {% else %}
-          <a href="{{ url_for('usage_guide') }}" class="btn btn-outline btn-sm" style="margin-right: 0.4rem; text-decoration: none; font-size: 0.8rem;">📖 Usage Guide</a>
+          <a href="{{ url_for('usage_guide') }}" class="btn btn-outline btn-sm" style="margin-right: 0.4rem; text-decoration: none; font-size: 0.8rem;">📖 Guide</a>
+          <a href="{{ url_for('download_apk') }}" class="btn btn-outline btn-sm" style="margin-right: 0.4rem; text-decoration: none; font-size: 0.8rem;">📱 App (.apk)</a>
           <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Sign In</a>
         {% endif %}
       </div>
@@ -131,8 +132,9 @@
     <!-- Row 2: Clean Nav Pills (Highlighted Courses, Course Switcher, Messages, Scanner, Directory, Backup) -->
     {% if current_user %}
       <nav class="navbar-nav-strip">
-        <a href="{{ url_for('dashboard') }}" class="nav-pill nav-pill-bordered nav-pill-courses {% if request.path == '/dashboard' or request.path == '/' or request.path.startswith('/courses') %}active{% endif %}">
-          {% if request.path.startswith('/courses') %}← 📚 All Courses{% else %}📚 Courses{% endif %}
+        <a href="{{ url_for('dashboard') }}" class="nav-pill nav-pill-bordered nav-pill-courses" title="View Enrolled Courses">
+          <span>📚</span>
+          <span>Courses</span>
         </a>
 
         {% if user_courses and user_courses|length > 1 %}
@@ -159,7 +161,7 @@
         {% if current_user.role == 'student' %}
           <button type="button" class="nav-pill nav-pill-bordered nav-pill-scan-qr" onclick="openAttendanceScanner()" title="Scan Attendance QR Code">
             <span>📷</span>
-            <span>Scan QR</span>
+            <span>ScanQR</span>
           </button>
         {% endif %}
 
@@ -468,7 +470,7 @@
               <span class="net-dot"></span>
               <span>Intranet</span>
             </button>
-            <button type="button" class="btn-network-toggle" id="modalBtnNetInternet" onclick="selectNetworkMode('internet', event)" title="Internet Access via Tailscale">
+            <button type="button" class="btn-network-toggle" id="modalBtnNetInternet" onclick="selectNetworkMode('internet', event)" title="Internet Access (Remote Access)">
               <span class="net-dot"></span>
               <span>Internet</span>
             </button>
@@ -508,18 +510,6 @@
         <strong class="footer-brand-name">Hoodle</strong>
         <span class="footer-sep">•</span>
         <span class="footer-tagline">Accelerated Classroom &amp; Lab Learning</span>
-      </div>
-
-      <!-- Center: Usage Guide & App Download -->
-      <div class="footer-guide">
-        <a href="{{ url_for('usage_guide') }}" class="footer-guide-btn" title="Hoodle Student &amp; Instructor Guide">
-          <span>📖</span>
-          <span>Usage Guide</span>
-        </a>
-        <a href="{{ url_for('download_apk') }}" class="footer-apk-btn" title="Download Hoodle LMS Android App (.apk)">
-          <span>📱</span>
-          <span>App (.apk)</span>
-        </a>
       </div>
 
       <!-- Right: Developed by -->
@@ -627,7 +617,7 @@
 
       let targetUrl = "";
       if (targetMode === "internet") {
-        // Switch to Tailscale Internet Portal (Public Funnel)
+        // Switch to Remote Internet Portal (Public Access)
         if (currentHost.includes("ts.net") || currentHost === "100.87.0.15") {
           updateNetworkUI("internet");
           return;

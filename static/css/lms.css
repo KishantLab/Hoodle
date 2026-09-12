@@ -627,24 +627,24 @@ body.is-android-app .lms-footer {
   padding: 0.35rem 0.9rem !important;
   display: inline-flex !important;
   align-items: center !important;
+  justify-content: center !important;
   gap: 0.4rem !important;
   box-shadow: 0 1px 3px rgba(37, 99, 235, 0.12) !important;
   transition: all 0.15s ease !important;
+  text-decoration: none !important;
+  cursor: pointer !important;
 }
 
 .nav-pill-bordered:hover,
 .nav-pill-courses:hover,
-.nav-pill-scan-qr:hover {
+.nav-pill-scan-qr:hover,
+.nav-pill-bordered:focus,
+.nav-pill-courses:focus,
+.nav-pill-scan-qr:focus {
   background: #2563eb !important;
   color: #ffffff !important;
   border-color: #1d4ed8 !important;
   box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25) !important;
-}
-
-.nav-pill-courses.active {
-  background: #2563eb !important;
-  color: #ffffff !important;
-  border-color: #1d4ed8 !important;
 }
 
 .nav-pill-action {
@@ -1258,6 +1258,10 @@ body.is-android-app .lms-footer {
   .dashboard-layout-grid {
     grid-template-columns: 1fr !important;
     gap: 1.25rem !important;
+  }
+  .lms-footer,
+  .footer {
+    display: none !important;
   }
 }
 

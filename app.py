@@ -770,12 +770,13 @@ def send_course_invitation_email(course, recipient_email, student_roll, teacher_
 
     def _worker():
         try:
+            server, smtp_user, smtp_from = create_smtp_connection()
             msg = MIMEMultipart("alternative")
             if is_ta:
                 msg["Subject"] = f"Course Invitation: Join {course_code} as {role_label} - {course_title}"
             else:
                 msg["Subject"] = f"Course Invitation: {course_code} - {course_title}"
-            msg["From"] = f"{from_name} <{gmail_user}>"
+            msg["From"] = f"{smtp_from} <{smtp_user}>"
             msg["To"] = recipient_email
 
             role_desc = f"as a {role_label}" if is_ta else "to join"
@@ -798,35 +799,29 @@ ACCL Research Lab, IIT Bhilai
             html_text = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><title>Course Invitation</title></head>
-<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
-  <div style="max-width: 580px; margin: 30px auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px;">
+  <div style="max-width: 580px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
     <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 28px 24px; text-align: center; color: white;">
-      <h1 style="margin: 0 0 6px; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">Hoodle LMS</h1>
-      <p style="margin: 0; font-size: 13px; opacity: 0.9;">Accelerated Classroom &amp; Lab Learning</p>
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em;">Hoodle LMS</h1>
+      <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.85;">Accelerated Classroom &amp; Lab Learning &bull; ACCL IIT Bhilai</p>
     </div>
     <div style="padding: 28px 24px;">
-      <div style="font-size: 15px; margin-bottom: 16px;">
-        Hello <strong>{student_roll or 'Colleague'}</strong>,
-      </div>
-      <p style="font-size: 14px; line-height: 1.6; color: #475569; margin-bottom: 20px;">
-        <strong>Prof. {teacher_name}</strong> has invited you to join the class {role_desc} on Hoodle:
+      <h2 style="margin: 0 0 8px 0; font-size: 18px; color: #0f172a;">Course Invitation</h2>
+      {role_badge}
+      <p style="color: #475569; font-size: 14px; line-height: 1.6; margin-top: 14px;">
+        You have been invited by <strong>Prof. {teacher_name}</strong> {role_desc} the course:
       </p>
-      
-      <div style="background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 6px; padding: 16px; margin-bottom: 24px;">
-        <div style="font-size: 12px; font-weight: 700; color: #2563eb; text-transform: uppercase;">Classroom</div>
-        <div style="font-size: 18px; font-weight: 800; color: #0f172a; margin-top: 2px;">{course_code}: {course_title}</div>
-        <div style="font-size: 13px; color: #64748b; margin-top: 4px;">{course_section}</div>
-        {role_badge}
-        <div style="font-size: 12px; color: #64748b; margin-top: 8px;">Class Code: <code style="background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 4px; font-weight: 700;">{join_code}</code></div>
+      <div style="background: #eff6ff; border-left: 4px solid #2563eb; padding: 14px 18px; border-radius: 6px; margin: 18px 0;">
+        <div style="font-size: 16px; font-weight: 800; color: #1e3a8a;">{course_code}</div>
+        <div style="font-size: 14px; font-weight: 600; color: #1e293b; margin-top: 2px;">{course_title}</div>
+        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Section: {course_section} &bull; Class Code: <strong>{join_code}</strong></div>
       </div>
-
-      <div style="text-align: center; margin: 28px 0;">
-        <a href="{join_url}" style="background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 15px; font-weight: 700; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);">
+      <div style="text-align: center; margin: 26px 0 20px 0;">
+        <a href="{join_url}" style="background-color: #2563eb; color: white; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block; box-shadow: 0 2px 4px rgba(37,99,235,0.3);">
           {btn_text} &rarr;
         </a>
       </div>
-
-      <p style="font-size: 12.5px; color: #64748b; line-height: 1.5; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+      <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 0;">
         If you already have a Hoodle account, you can sign in to your home screen where this invitation is waiting for you. If you don't have an account, clicking the button above will guide you to register with roll number <strong>{student_roll or ''}</strong>.
       </p>
     </div>
@@ -839,8 +834,7 @@ ACCL Research Lab, IIT Bhilai
 """
             msg.attach(MIMEText(plain_text, "plain"))
             msg.attach(MIMEText(html_text, "html"))
-            server, gmail_user, from_name = create_smtp_connection()
-            server.sendmail(gmail_user, [recipient_email], msg.as_string())
+            server.sendmail(smtp_user, [recipient_email], msg.as_string())
             server.quit()
             app.logger.info("Course invitation email sent to %s for %s (role: %s)", recipient_email, course_code, role)
         except Exception as e:
@@ -1373,11 +1367,12 @@ def logout():
 def change_password():
     """Allows any logged-in student, teacher, or admin to securely update their own password."""
     if request.method == "POST":
-        current_pwd = request.form.get("current_password", "")
-        new_pwd = request.form.get("new_password", "").strip()
-        confirm_pwd = request.form.get("confirm_password", "").strip()
+        raw_current_pwd = request.form.get("current_password") or ""
+        current_pwd = raw_current_pwd.strip()
+        new_pwd = (request.form.get("new_password") or "").strip()
+        confirm_pwd = (request.form.get("confirm_password") or "").strip()
 
-        if not current_pwd or not new_pwd:
+        if not raw_current_pwd or not new_pwd:
             flash("All password fields are required.", "danger")
             return render_template("set_password.html", is_self_change=True)
 
@@ -1391,14 +1386,22 @@ def change_password():
 
         conn = get_db()
         user = conn.execute("SELECT password_hash FROM users WHERE id = ?", (session["user_id"],)).fetchone()
-        if not user or not check_password_hash(user["password_hash"], current_pwd):
+        
+        # Resilient password verification (raw, trimmed, or already updated by rapid duplicate submit)
+        is_valid = user and (
+            check_password_hash(user["password_hash"], raw_current_pwd) or
+            check_password_hash(user["password_hash"], current_pwd) or
+            check_password_hash(user["password_hash"], new_pwd)
+        )
+        if not is_valid:
             conn.close()
-            flash("Incorrect current password.", "danger")
+            flash("Invalid current password.", "danger")
             return render_template("set_password.html", is_self_change=True)
 
-        new_hash = hash_password(new_pwd)
-        conn.execute("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", (new_hash, session["user_id"]))
-        conn.commit()
+        if not check_password_hash(user["password_hash"], new_pwd):
+            new_hash = hash_password(new_pwd)
+            conn.execute("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", (new_hash, session["user_id"]))
+            conn.commit()
         conn.close()
 
         flash("Your password has been changed successfully.", "success")
