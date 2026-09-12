@@ -38,19 +38,59 @@
       <!-- Right: User Section or Sign In -->
       <div class="navbar-user-actions">
         {% if current_user %}
-          <div class="user-chip" style="cursor: pointer;" onclick="openUserProfileModal()" title="View Student / Profile Details">
-            <div class="user-avatar-circle">
-              {{ current_user.display_name[0]|upper }}
+          <!-- User Account Menu Wrapper with Mobile Dropdown -->
+          <div class="user-menu-wrapper" id="userMenuWrapper">
+            <button type="button" class="user-chip-btn" id="userChipBtn" onclick="toggleUserDropdown(event)" aria-haspopup="true" aria-expanded="false" title="User Menu &amp; Account Options">
+              <div class="user-avatar-circle">
+                {{ current_user.display_name[0]|upper }}
+              </div>
+              <div class="user-meta">
+                <span class="user-name">{{ current_user.display_name }} ▾</span>
+                <span class="user-sub">
+                  {% if current_user.roll_number %}{{ current_user.roll_number }} • {% endif %}
+                  <span class="role-badge role-{{ current_user.role }}">{{ current_user.role }}</span>
+                </span>
+              </div>
+            </button>
+
+            <!-- Desktop Quick Action Buttons -->
+            <div class="user-desktop-actions">
+              <a href="{{ url_for('change_password') }}" class="btn-signout" style="padding: 0.25rem 0.5rem; font-size: 0.78rem; text-decoration: none;" title="Change Password">🔑 Password</a>
+              <a href="{{ url_for('logout') }}" class="btn-signout" title="Sign Out">Sign Out</a>
             </div>
-            <div class="user-meta">
-              <span class="user-name">{{ current_user.display_name }} ▾</span>
-              <span class="user-sub">
-                {% if current_user.roll_number %}{{ current_user.roll_number }} • {% endif %}
-                <span class="role-badge role-{{ current_user.role }}">{{ current_user.role }}</span>
-              </span>
+
+            <!-- Mobile & Desktop User Dropdown Menu -->
+            <div id="userDropdownMenu" class="user-action-dropdown">
+              <div class="user-dropdown-info">
+                <div class="user-dropdown-name">{{ current_user.display_name }}</div>
+                <div class="user-dropdown-role">
+                  <span class="role-badge role-{{ current_user.role }}">{{ current_user.role }}</span>
+                  {% if current_user.roll_number %}<span>{{ current_user.roll_number }}</span>{% endif %}
+                </div>
+                {% if current_user.email %}
+                  <div class="user-dropdown-email">{{ current_user.email }}</div>
+                {% endif %}
+              </div>
+
+              <div class="user-dropdown-separator"></div>
+
+              <a href="#" onclick="closeUserDropdown(); openUserProfileModal(); return false;" class="user-dropdown-link">
+                <span>👤</span>
+                <span>My Profile Details</span>
+              </a>
+
+              <a href="{{ url_for('change_password') }}" class="user-dropdown-link">
+                <span>🔑</span>
+                <span>Change Password</span>
+              </a>
+
+              <div class="user-dropdown-separator"></div>
+
+              <a href="{{ url_for('logout') }}" class="user-dropdown-link user-dropdown-danger">
+                <span>🚪</span>
+                <span>Sign Out</span>
+              </a>
             </div>
-            <a href="{{ url_for('change_password') }}" class="btn-signout" style="padding: 0.25rem 0.5rem; font-size: 0.78rem; text-decoration: none;" title="Change Password" onclick="event.stopPropagation()">🔑 Password</a>
-            <a href="{{ url_for('logout') }}" class="btn-signout" title="Sign Out" onclick="event.stopPropagation()">Sign Out</a>
           </div>
         {% else %}
           <a href="{{ url_for('usage_guide') }}" class="btn btn-outline btn-sm" style="margin-right: 0.4rem; text-decoration: none; font-size: 0.8rem;">📖 Usage Guide</a>
@@ -415,29 +455,29 @@
   </div>
   {% endif %}
 
-  <footer style="margin-top: auto; padding: 1.15rem 1.5rem; border-top: 1px solid var(--border); background: white;">
-    <div style="max-width: 1300px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+  <footer class="lms-footer">
+    <div class="lms-footer-container">
       <!-- Left: Hoodle branding -->
-      <div style="display: flex; align-items: center; gap: 0.4rem; min-width: 220px;">
-        <strong style="font-family: var(--font-display); font-size: 0.95rem; color: var(--text-main); font-weight: 800;">Hoodle</strong>
-        <span style="color: #94a3b8; font-weight: 400;">•</span>
-        <span style="font-size: 0.84rem; color: #475569; font-weight: 600;">Accelerated Classroom &amp; Lab Learning</span>
+      <div class="footer-branding">
+        <strong class="footer-brand-name">Hoodle</strong>
+        <span class="footer-sep">•</span>
+        <span class="footer-tagline">Accelerated Classroom &amp; Lab Learning</span>
       </div>
 
       <!-- Center: Usage Guide -->
-      <div style="text-align: center;">
-        <a href="{{ url_for('usage_guide') }}" style="color: var(--primary); font-weight: 700; text-decoration: none; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.4rem; background: #eff6ff; padding: 0.4rem 1rem; border-radius: 9999px; border: 1px solid #bfdbfe; box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08); transition: all 0.15s ease;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">
+      <div class="footer-guide">
+        <a href="{{ url_for('usage_guide') }}" class="footer-guide-btn">
           <span>📖</span>
           <span>Usage Guide &amp; Tutorials</span>
         </a>
       </div>
 
       <!-- Right: Developed by -->
-      <div style="font-size: 0.83rem; color: #64748b; font-weight: 500; display: flex; align-items: center; gap: 0.4rem; min-width: 220px; justify-content: flex-end;">
+      <div class="footer-credits">
         <span>Developed by</span>
-        <span style="font-family: var(--font-display); font-weight: 700; color: #0f172a; font-size: 0.86rem; background: #f1f5f9; padding: 2px 7px; border-radius: 4px; border: 1px solid #e2e8f0;">Kishan Tamboli (PhD)</span>
-        <span style="color: #cbd5e1;">•</span>
-        <span style="font-weight: 600; color: #1e3a8a;">ACCL IIT Bhilai</span>
+        <span class="footer-author-badge">Kishan Tamboli (PhD)</span>
+        <span class="footer-sep">•</span>
+        <span class="footer-org">ACCL IIT Bhilai</span>
       </div>
     </div>
   </footer>
@@ -457,13 +497,42 @@
       if (modal) modal.style.display = "none";
     }
 
+    function toggleUserDropdown(e) {
+      if (e) e.stopPropagation();
+      const menu = document.getElementById("userDropdownMenu");
+      const btn = document.getElementById("userChipBtn");
+      if (!menu) return;
+      const isShown = menu.classList.contains("show");
+      if (isShown) {
+        menu.classList.remove("show");
+        if (btn) btn.setAttribute("aria-expanded", "false");
+      } else {
+        const courseMenu = document.getElementById("courseSwitcherDropdown");
+        if (courseMenu) courseMenu.style.display = "none";
+        menu.classList.add("show");
+        if (btn) btn.setAttribute("aria-expanded", "true");
+      }
+    }
+
+    function closeUserDropdown() {
+      const menu = document.getElementById("userDropdownMenu");
+      const btn = document.getElementById("userChipBtn");
+      if (menu) menu.classList.remove("show");
+      if (btn) btn.setAttribute("aria-expanded", "false");
+    }
+
     function toggleCourseSwitcher(e) {
       if (e) e.stopPropagation();
+      closeUserDropdown();
       const el = document.getElementById("courseSwitcherDropdown");
       if (el) el.style.display = (el.style.display === "none" || el.style.display === "") ? "block" : "none";
     }
 
     document.addEventListener("click", function(e) {
+      const userWrapper = document.getElementById("userMenuWrapper");
+      if (userWrapper && !userWrapper.contains(e.target)) {
+        closeUserDropdown();
+      }
       const dropdown = document.getElementById("courseSwitcherDropdown");
       if (dropdown && dropdown.style.display === "block" && !e.target.closest(".course-switcher-wrapper")) {
         dropdown.style.display = "none";

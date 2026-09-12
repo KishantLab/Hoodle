@@ -35,7 +35,7 @@
     <a href="#sec-exam-lockdown" class="guide-nav-pill">🔒 5. Timed Lab Exams</a>
     <a href="#sec-receipts" class="guide-nav-pill">🧾 6. SHA-256 Receipts</a>
     <a href="#sec-grades" class="guide-nav-pill">📊 7. Attendance Quota</a>
-    <a href="#sec-network" class="guide-nav-pill">🌐 8. Network &amp; VPN</a>
+    <a href="#sec-network" class="guide-nav-pill">🌐 8. Network Access</a>
   </div>
 
   <!-- ========================================== -->
@@ -55,7 +55,7 @@
         <ol class="guide-step-list">
           <li>
             <strong>Open the LMS Portal:</strong><br>
-            Navigate to <code>http://10.10.14.104:8095</code> (Campus Network) or <code>http://100.87.0.15:8095</code> (via Tailscale VPN).
+            Navigate to <code>http://10.10.14.104/lms</code> or <code>http://10.10.14.104:8095</code> on the campus network.
           </li>
           <li>
             <strong>Enter Your Credentials:</strong><br>
@@ -348,34 +348,34 @@
   </section>
 
   <!-- ========================================== -->
-  <!-- SECTION 8: NETWORK CONNECTIVITY & VPN      -->
+  <!-- SECTION 8: NETWORK ACCESS & CONNECTIVITY   -->
   <!-- ========================================== -->
   <section id="sec-network" class="guide-section card" style="padding: 2rem;">
     <div class="guide-section-header">
       <div class="guide-step-badge">Step 8</div>
-      <h2>Network Access &amp; VPN Connectivity (100.87.0.15)</h2>
+      <h2>Network Access &amp; Portal Connectivity</h2>
     </div>
     <p class="guide-lead">
-      How to reach Hoodle LMS from anywhere inside hostels, computer labs, or remotely via VPN.
+      How to reach Hoodle LMS from classrooms, hostels, and computer labs across the campus network.
     </p>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1.25rem;">
       <div style="background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
         <div style="font-size: 1.35rem; margin-bottom: 0.35rem;">🏫 Campus Wi-Fi &amp; Labs</div>
-        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">Local IP Portal</div>
+        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">Hoodle Portal (Reverse Proxy)</div>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.5;">
-          Direct connection inside academic buildings, classrooms, and hostel LAN:
+          Standard web address accessible across all academic buildings, classrooms, and hostel LAN:
         </p>
-        <code style="display: block; padding: 0.4rem 0.6rem; background: var(--bg-card); border-radius: 4px; font-size: 0.82rem; margin-top: 0.5rem;">http://10.10.14.104:8095</code>
+        <code style="display: block; padding: 0.4rem 0.6rem; background: var(--bg-card); border-radius: 4px; font-size: 0.82rem; margin-top: 0.5rem;">http://10.10.14.104/lms</code>
       </div>
 
       <div style="background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
-        <div style="font-size: 1.35rem; margin-bottom: 0.35rem;">🔒 Tailscale VPN Access</div>
-        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">Mesh Network Portal</div>
+        <div style="font-size: 1.35rem; margin-bottom: 0.35rem;">⚡ Direct Service Port</div>
+        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">Direct Port 8095 Access</div>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.5;">
-          Connect from off-campus, mobile hotspot, or private network using Tailscale VPN:
+          Direct backend port connection for fast access and lab workstation setups:
         </p>
-        <code style="display: block; padding: 0.4rem 0.6rem; background: var(--bg-card); border-radius: 4px; font-size: 0.82rem; margin-top: 0.5rem;">http://100.87.0.15:8095</code>
+        <code style="display: block; padding: 0.4rem 0.6rem; background: var(--bg-card); border-radius: 4px; font-size: 0.82rem; margin-top: 0.5rem;">http://10.10.14.104:8095</code>
       </div>
 
       <div style="background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">

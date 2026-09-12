@@ -188,6 +188,123 @@ img[src*="accl_logo.png"] {
   border: 1px solid var(--border);
 }
 
+.user-menu-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.user-chip-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: #f8fafc;
+  padding: 0.3rem 0.65rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.user-chip-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.user-desktop-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.user-action-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 220px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  z-index: 1050;
+  padding: 0.5rem 0;
+  animation: fadeInUserDropdown 0.15s ease-out;
+}
+
+.user-action-dropdown.show {
+  display: block;
+}
+
+@keyframes fadeInUserDropdown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.user-dropdown-info {
+  padding: 0.5rem 0.95rem 0.4rem;
+}
+
+.user-dropdown-name {
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+.user-dropdown-role {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.user-dropdown-email {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-dropdown-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 0.35rem 0;
+}
+
+.user-dropdown-link {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.95rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-main);
+  text-decoration: none;
+  transition: background 0.12s ease;
+}
+
+.user-dropdown-link:hover {
+  background: #f1f5f9;
+  color: var(--primary);
+}
+
+.user-dropdown-danger {
+  color: #dc2626 !important;
+}
+
+.user-dropdown-danger:hover {
+  background: #fef2f2 !important;
+  color: #b91c1c !important;
+}
+
 .user-avatar-circle {
   width: 28px;
   height: 28px;
@@ -231,6 +348,100 @@ img[src*="accl_logo.png"] {
   border: 1px solid var(--border);
   text-decoration: none;
   transition: all 0.15s ease;
+}
+
+/* Base Footer Styles */
+.lms-footer {
+  margin-top: auto;
+  padding: 1.15rem 1.5rem;
+  border-top: 1px solid var(--border);
+  background: white;
+}
+
+.lms-footer-container {
+  max-width: 1300px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.footer-branding {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 220px;
+}
+
+.footer-brand-name {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  color: var(--text-main);
+  font-weight: 800;
+}
+
+.footer-sep {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.footer-tagline {
+  font-size: 0.84rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.footer-guide {
+  text-align: center;
+}
+
+.footer-guide-btn {
+  color: var(--primary);
+  font-weight: 700;
+  text-decoration: none;
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #eff6ff;
+  padding: 0.4rem 1rem;
+  border-radius: 9999px;
+  border: 1px solid #bfdbfe;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08);
+  transition: all 0.15s ease;
+}
+
+.footer-guide-btn:hover {
+  background: #dbeafe;
+}
+
+.footer-credits {
+  font-size: 0.83rem;
+  color: #64748b;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 220px;
+  justify-content: flex-end;
+}
+
+.footer-author-badge {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 0.86rem;
+  background: #f1f5f9;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.footer-org {
+  font-weight: 600;
+  color: #1e3a8a;
 }
 
 .btn-signout:hover {
@@ -933,24 +1144,94 @@ img[src*="accl_logo.png"] {
     gap: 0.4rem;
   }
 
-  .user-chip {
-    padding: 0.2rem 0.5rem;
-    gap: 0.4rem;
+  .user-desktop-actions {
+    display: none !important;
   }
 
-  .user-meta {
-    display: none; /* Hide detailed name/roll on small mobile to prevent overflow */
+  .user-chip-btn {
+    padding: 2px 4px;
+    border-radius: 9999px;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    cursor: pointer;
+  }
+
+  .user-chip-btn .user-meta {
+    display: none !important;
   }
 
   .user-avatar-circle {
-    width: 26px;
-    height: 26px;
-    font-size: 0.75rem;
+    width: 30px;
+    height: 30px;
+    font-size: 0.82rem;
   }
 
-  .btn-signout {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.72rem;
+  .user-action-dropdown {
+    right: 0;
+    min-width: 210px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  }
+
+  /* Mobile Footer: Slim, unobtrusive, small font */
+  .lms-footer {
+    padding: 0.55rem 0.75rem !important;
+    background: #f8fafc !important;
+    border-top: 1px solid #e2e8f0 !important;
+  }
+
+  .lms-footer-container {
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center !important;
+    gap: 0.3rem !important;
+  }
+
+  .footer-branding {
+    min-width: 0 !important;
+    justify-content: center !important;
+    gap: 0.25rem !important;
+  }
+
+  .footer-brand-name {
+    font-size: 0.78rem !important;
+  }
+
+  .footer-tagline {
+    font-size: 0.7rem !important;
+    color: #64748b !important;
+  }
+
+  .footer-guide {
+    margin: 0.15rem 0 !important;
+  }
+
+  .footer-guide-btn {
+    font-size: 0.72rem !important;
+    padding: 0.2rem 0.65rem !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+
+  .footer-credits {
+    min-width: 0 !important;
+    justify-content: center !important;
+    font-size: 0.68rem !important;
+    color: #94a3b8 !important;
+    gap: 0.25rem !important;
+  }
+
+  .footer-author-badge {
+    font-size: 0.7rem !important;
+    padding: 1px 5px !important;
+    background: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    color: #1e293b !important;
+  }
+
+  .footer-org {
+    font-size: 0.68rem !important;
+    color: #475569 !important;
   }
 
   .navbar-nav-strip {

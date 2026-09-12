@@ -2033,6 +2033,29 @@ class ACCLLMSTestCase(unittest.TestCase):
 
         self.logout()
 
+    def test_student_guide_no_tailscale_and_mobile_header_footer(self):
+        """Verify student guide does not contain Tailscale VPN and mobile header/footer elements exist."""
+        # 1. User Guide - verify NO Tailscale / VPN references
+        res_guide = self.client.get("/student-guide")
+        self.assertEqual(res_guide.status_code, 200)
+        self.assertNotIn(b"Tailscale", res_guide.data)
+        self.assertNotIn(b"tailscale", res_guide.data)
+        self.assertNotIn(b"Tailscale VPN", res_guide.data)
+        self.assertIn(b"Network Access &amp; Portal Connectivity", res_guide.data)
+
+        # 2. Header user dropdown and footer classes
+        self.login("kishan", "password123")
+        res_dash = self.client.get("/dashboard")
+        self.assertEqual(res_dash.status_code, 200)
+        self.assertIn(b'id="userMenuWrapper"', res_dash.data)
+        self.assertIn(b'id="userChipBtn"', res_dash.data)
+        self.assertIn(b'id="userDropdownMenu"', res_dash.data)
+        self.assertIn(b'Change Password', res_dash.data)
+        self.assertIn(b'Sign Out', res_dash.data)
+        self.assertIn(b'class="lms-footer"', res_dash.data)
+        self.assertIn(b'class="lms-footer-container"', res_dash.data)
+        self.logout()
+
 
 if __name__ == "__main__":
     unittest.main()
