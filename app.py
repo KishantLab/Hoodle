@@ -604,27 +604,85 @@ def init_db():
 
 # --- Gmail Notification & Email Services ---
 
-def get_smtp_config():
+def get_smtp_full_config():
     """
-    Returns (gmail_user, gmail_pass, from_name) tuple.
-    Checks SQLite system_settings table first, then environment variables,
-    defaulting to the verified account hoodle.lms@gmail.com with configured App Password.
+    Returns dict of all SMTP settings: user, password, from_name, host, port, security.
     """
     default_user = os.environ.get("GMAIL_SMTP_USER", "hoodle.lms@gmail.com").strip()
     default_pass = os.environ.get("GMAIL_APP_PASSWORD", "hvrnbggfrzmnvrsh").strip()
     default_from = os.environ.get("GMAIL_FROM_NAME", "Hoodle LMS").strip()
+    default_host = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
+    default_port = int(os.environ.get("SMTP_PORT", 587))
+    default_security = os.environ.get("SMTP_SECURITY", "starttls").strip().lower()
 
     try:
         conn = get_db()
-        rows = conn.execute("SELECT key, value FROM system_settings WHERE key IN ('gmail_smtp_user', 'gmail_app_password', 'gmail_from_name')").fetchall()
+        rows = conn.execute("SELECT key, value FROM system_settings WHERE key IN ('gmail_smtp_user', 'gmail_app_password', 'gmail_from_name', 'smtp_host', 'smtp_port', 'smtp_security')").fetchall()
         conn.close()
         settings = {r["key"]: r["value"] for r in rows if r["value"]}
         user = settings.get("gmail_smtp_user") or default_user
         password = settings.get("gmail_app_password") or default_pass
         from_name = settings.get("gmail_from_name") or default_from
-        return user.strip(), password.strip().replace(" ", ""), from_name.strip()
+        host = settings.get("smtp_host") or default_host
+        try:
+            port = int(settings.get("smtp_port") or default_port)
+        except (ValueError, TypeError):
+            port = 587
+        security = (settings.get("smtp_security") or default_security).lower()
+        return {
+            "user": user.strip(),
+            "password": password.strip().replace(" ", ""),
+            "from_name": from_name.strip(),
+            "host": host.strip(),
+            "port": port,
+            "security": security
+        }
     except Exception:
-        return default_user, default_pass.replace(" ", ""), default_from
+        return {
+            "user": default_user,
+            "password": default_pass.replace(" ", ""),
+            "from_name": default_from,
+            "host": default_host,
+            "port": default_port,
+            "security": default_security
+        }
+
+
+def get_smtp_config():
+    """
+    Returns (gmail_user, gmail_pass, from_name) tuple.
+    Maintained for backwards compatibility across tests and legacy calls.
+    """
+    cfg = get_smtp_full_config()
+    return cfg["user"], cfg["password"], cfg["from_name"]
+
+
+def create_smtp_connection():
+    """
+    Establishes and returns an authenticated SMTP connection based on current settings.
+    Raises Exception if connection or authentication fails.
+    """
+    cfg = get_smtp_full_config()
+    user = cfg["user"]
+    password = cfg["password"]
+    host = cfg["host"]
+    port = cfg["port"]
+    security = cfg["security"]
+
+    if not user or not password:
+        raise ValueError("SMTP username or password is not configured.")
+
+    if security == "ssl" or port == 465:
+        server = smtplib.SMTP_SSL(host, port, timeout=15)
+    else:
+        server = smtplib.SMTP(host, port, timeout=15)
+        server.ehlo()
+        if security != "none":
+            server.starttls()
+            server.ehlo()
+
+    server.login(user, password)
+    return server, user, cfg["from_name"]
 
 
 def get_portal_base_url():
@@ -656,7 +714,7 @@ def get_portal_base_url():
             prefix = request.headers.get("X-Forwarded-Prefix", "").strip().rstrip("/")
             if prefix and not base.endswith(prefix):
                 base = f"{base}{prefix}"
-            if ("10.10.14.104" in base or "accl" in base) and not base.endswith(("/lms", "/hoodle")):
+            if ("10.10.14.104" in base or "accl" in base or "ts.net" in base or "100.87.0.15" in base) and not base.endswith(("/lms", "/hoodle")):
                 base = f"{base}/lms"
             if base:
                 return base
@@ -781,10 +839,7 @@ ACCL Research Lab, IIT Bhilai
 """
             msg.attach(MIMEText(plain_text, "plain"))
             msg.attach(MIMEText(html_text, "html"))
-
-            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
-            server.starttls()
-            server.login(gmail_user, gmail_pass)
+            server, gmail_user, from_name = create_smtp_connection()
             server.sendmail(gmail_user, [recipient_email], msg.as_string())
             server.quit()
             app.logger.info("Course invitation email sent to %s for %s (role: %s)", recipient_email, course_code, role)
@@ -821,9 +876,7 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
 
     def _worker():
         try:
-            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
-            server.starttls()
-            server.login(gmail_user, gmail_pass)
+            server, gmail_user, from_name = create_smtp_connection()
 
             from_display = f"{actor_name} via Hoodle LMS" if actor_name else from_name
 
@@ -5093,11 +5146,18 @@ def admin_backup_download_latest():
 @app.route("/admin/email")
 @admin_required
 def admin_email_settings():
-    gmail_user, gmail_pass, from_name = get_smtp_config()
+    cfg = get_smtp_full_config()
+    gmail_user = cfg["user"]
+    gmail_pass = cfg["password"]
+    from_name = cfg["from_name"]
+    smtp_host = cfg["host"]
+    smtp_port = cfg["port"]
+    smtp_security = cfg["security"]
+
     conn = get_db()
     portal_url_row = conn.execute("SELECT value FROM system_settings WHERE key = 'portal_base_url'").fetchone()
     conn.close()
-    portal_base_url = portal_url_row["value"] if portal_url_row else os.environ.get("PORTAL_BASE_URL", "http://10.10.14.104/lms")
+    portal_base_url = portal_url_row["value"] if portal_url_row else os.environ.get("PORTAL_BASE_URL", "https://10.10.14.104/lms")
 
     masked_pass = ("•" * 12 + gmail_pass[-4:]) if len(gmail_pass) >= 4 else ("•" * 8 if gmail_pass else "Not configured")
 
@@ -5107,6 +5167,9 @@ def admin_email_settings():
         masked_pass=masked_pass,
         raw_pass_len=len(gmail_pass),
         from_name=from_name,
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
+        smtp_security=smtp_security,
         portal_base_url=portal_base_url
     )
 
@@ -5117,10 +5180,13 @@ def admin_update_email_settings():
     new_user = request.form.get("gmail_user", "").strip()
     new_pass = request.form.get("gmail_password", "").strip().replace(" ", "")
     new_from = request.form.get("from_name", "").strip()
+    new_host = request.form.get("smtp_host", "").strip()
+    new_port = request.form.get("smtp_port", "").strip()
+    new_security = request.form.get("smtp_security", "").strip().lower()
     new_base_url = request.form.get("portal_base_url", "").strip().rstrip("/")
 
     if not new_user:
-        flash("Gmail address cannot be empty.", "danger")
+        flash("Email address cannot be empty.", "danger")
         return redirect(url_for("admin_email_settings"))
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -5130,12 +5196,18 @@ def admin_update_email_settings():
         conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('gmail_app_password', ?, ?)", (new_pass, now_str))
     if new_from:
         conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('gmail_from_name', ?, ?)", (new_from, now_str))
+    if new_host:
+        conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('smtp_host', ?, ?)", (new_host, now_str))
+    if new_port:
+        conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('smtp_port', ?, ?)", (new_port, now_str))
+    if new_security:
+        conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('smtp_security', ?, ?)", (new_security, now_str))
     if new_base_url:
         conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('portal_base_url', ?, ?)", (new_base_url, now_str))
     conn.commit()
     conn.close()
 
-    flash("Gmail SMTP settings saved successfully. New settings take effect immediately.", "success")
+    flash("SMTP settings saved successfully. New settings take effect immediately.", "success")
     return redirect(url_for("admin_email_settings"))
 
 
@@ -5147,18 +5219,19 @@ def admin_test_email_settings():
         flash("Please enter a valid recipient email to send test verification.", "danger")
         return redirect(url_for("admin_email_settings"))
 
-    gmail_user, gmail_pass, from_name = get_smtp_config()
+    cfg = get_smtp_full_config()
+    gmail_user = cfg["user"]
+    gmail_pass = cfg["password"]
+    from_name = cfg["from_name"]
     if not gmail_user or not gmail_pass:
-        flash("Gmail user or App Password is not configured.", "danger")
+        flash("Email address or App Password is not configured.", "danger")
         return redirect(url_for("admin_email_settings"))
 
     try:
-        server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
-        server.starttls()
-        server.login(gmail_user, gmail_pass)
+        server, gmail_user, from_name = create_smtp_connection()
 
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Hoodle LMS - Gmail SMTP Test Verification"
+        msg["Subject"] = "Hoodle LMS - SMTP Verification"
         msg["From"] = f"{from_name} <{gmail_user}>"
         msg["To"] = test_recipient
 
@@ -5166,9 +5239,9 @@ def admin_test_email_settings():
           <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: white; padding: 16px 20px; border-radius: 8px; margin-bottom: 20px;">
             <h2 style="margin: 0; font-size: 18px;">Hoodle LMS &bull; SMTP Verification</h2>
           </div>
-          <p style="font-size: 14px; color: #334155; line-height: 1.5;">This email confirms that Gmail SMTP credentials for <strong>{gmail_user}</strong> are authenticated and actively transmitting emails.</p>
+          <p style="font-size: 14px; color: #334155; line-height: 1.5;">This email confirms that SMTP credentials for <strong>{gmail_user}</strong> are authenticated and actively transmitting emails via <strong>{cfg['host']}:{cfg['port']}</strong>.</p>
           <div style="background: #f8fafc; border-left: 4px solid #22c55e; padding: 12px 16px; border-radius: 4px; font-size: 13px; color: #15803d; margin: 18px 0;">
-            &check; Gmail SMTP Authentication: Verified OK
+            &check; SMTP Authentication: Verified OK
           </div>
           <p style="font-size: 11px; color: #94a3b8; margin: 0; border-top: 1px solid #f1f5f9; padding-top: 12px;">Dispatched by Hoodle LMS Administrator.</p>
         </div>"""
@@ -5179,9 +5252,24 @@ def admin_test_email_settings():
         server.sendmail(gmail_user, [test_recipient], msg.as_string())
         server.quit()
         flash(f"✅ Success! Test email was verified and sent to {test_recipient} via {gmail_user}.", "success")
+    except smtplib.SMTPAuthenticationError as e:
+        err_str = str(e)
+        app.logger.warning("SMTP auth failed: %s", err_str)
+        if "534" in err_str or "WebLoginRequired" in err_str:
+            flash(
+                "❌ Google Authentication Blocked (Error 534: WebLoginRequired). "
+                "Google requires verification: (1) Ensure 2-Step Verification is active on your Google account. "
+                "(2) Generate a dedicated 16-character App Password at myaccount.google.com/apppasswords and enter it below. "
+                "(3) If you already use an App Password, open https://accounts.google.com/DisplayUnlockCaptcha in your browser while signed into this Gmail account, click 'Continue', then retry.",
+                "danger"
+            )
+        elif "535" in err_str or "BadCredentials" in err_str:
+            flash("❌ SMTP Authentication Failed (Error 535: Invalid Credentials). Please check your email address and 16-character Google App Password.", "danger")
+        else:
+            flash(f"❌ SMTP Authentication Failed: {err_str}. Please verify your credentials.", "danger")
     except Exception as e:
         app.logger.warning("SMTP test verification failed: %s", e)
-        flash(f"❌ SMTP verification failed: {str(e)}. Please check your Google App Password.", "danger")
+        flash(f"❌ SMTP verification failed: {str(e)}. Please check your SMTP settings or App Password.", "danger")
 
     return redirect(url_for("admin_email_settings"))
 
@@ -5190,10 +5278,10 @@ def admin_test_email_settings():
 @admin_required
 def admin_reset_email_settings():
     conn = get_db()
-    conn.execute("DELETE FROM system_settings WHERE key IN ('gmail_smtp_user', 'gmail_app_password', 'gmail_from_name', 'portal_base_url')")
+    conn.execute("DELETE FROM system_settings WHERE key IN ('gmail_smtp_user', 'gmail_app_password', 'gmail_from_name', 'smtp_host', 'smtp_port', 'smtp_security', 'portal_base_url')")
     conn.commit()
     conn.close()
-    flash("Gmail SMTP settings reset to system defaults (hoodle.lms@gmail.com).", "info")
+    flash("Gmail SMTP settings reset to system defaults (hoodle.lms@gmail.com on smtp.gmail.com:587).", "info")
     return redirect(url_for("admin_email_settings"))
 
 

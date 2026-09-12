@@ -49,6 +49,7 @@
                 <span class="user-sub">
                   {% if current_user.roll_number %}{{ current_user.roll_number }} • {% endif %}
                   <span class="role-badge role-{{ current_user.role }}">{{ current_user.role }}</span>
+                  <span class="net-chip-badge" id="topNetBadge" style="margin-left: 3px;" title="Current Network Mode">Intranet</span>
                 </span>
               </div>
             </button>
@@ -70,6 +71,24 @@
                 {% if current_user.email %}
                   <div class="user-dropdown-email">{{ current_user.email }}</div>
                 {% endif %}
+              </div>
+
+              <!-- Network Switcher in User Dropdown Menu (Intranet default & priority vs Internet) -->
+              <div class="user-dropdown-network-box">
+                <div class="network-box-header">
+                  <span class="network-box-title">Network</span>
+                  <span class="network-mode-pill" id="dropdownNetStatus">Intranet</span>
+                </div>
+                <div class="network-toggle-buttons">
+                  <button type="button" class="btn-network-toggle active" id="btnNetIntranet" onclick="selectNetworkMode('intranet', event)" title="Campus Intranet (Default &amp; Priority)">
+                    <span class="net-dot"></span>
+                    <span>Intranet</span>
+                  </button>
+                  <button type="button" class="btn-network-toggle" id="btnNetInternet" onclick="selectNetworkMode('internet', event)" title="Internet Access via Tailscale">
+                    <span class="net-dot"></span>
+                    <span>Internet</span>
+                  </button>
+                </div>
               </div>
 
               <div class="user-dropdown-separator"></div>
@@ -438,6 +457,24 @@
           {% endif %}
         </div>
 
+        <!-- Network Mode Selector in Modal (Intranet default & priority vs Internet) -->
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 0.85rem; margin-bottom: 0.85rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+            <span style="font-size: 0.76rem; font-weight: 700; color: var(--text-main);">📡 Network Access Mode</span>
+            <span class="network-mode-pill" id="modalNetStatus">Intranet</span>
+          </div>
+          <div class="network-toggle-buttons">
+            <button type="button" class="btn-network-toggle active" id="modalBtnNetIntranet" onclick="selectNetworkMode('intranet', event)" title="Campus Intranet (Default &amp; Priority)">
+              <span class="net-dot"></span>
+              <span>Intranet</span>
+            </button>
+            <button type="button" class="btn-network-toggle" id="modalBtnNetInternet" onclick="selectNetworkMode('internet', event)" title="Internet Access via Tailscale">
+              <span class="net-dot"></span>
+              <span>Internet</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Quick Access: Usage Guide & Android App -->
         <div style="display: flex; gap: 0.5rem; margin-bottom: 0.85rem;">
           <a href="{{ url_for('usage_guide') }}" class="btn btn-secondary btn-sm" style="flex: 1; text-align: center; text-decoration: none; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;">
@@ -573,7 +610,93 @@
       window.location.assign(`https://${host}${path}${search}`);
     }
 
+    function selectNetworkMode(targetMode, event) {
+      if (event) {
+        try { event.preventDefault(); event.stopPropagation(); } catch(err) {}
+      }
+      localStorage.setItem("hoodle_network_preference", targetMode);
+
+      const currentHost = window.location.hostname;
+      let path = window.location.pathname || "/lms/dashboard";
+      const search = window.location.search || "";
+      const hash = window.location.hash || "";
+
+      if (!path.startsWith('/lms') && !path.startsWith('/hoodle')) {
+        path = '/lms' + (path.startsWith('/') ? path : '/' + path);
+      }
+
+      let targetUrl = "";
+      if (targetMode === "internet") {
+        // Switch to Tailscale Internet Portal (Public Funnel)
+        if (currentHost.includes("ts.net") || currentHost === "100.87.0.15") {
+          updateNetworkUI("internet");
+          return;
+        }
+        targetUrl = `https://accllogin.tail77fd8b.ts.net${path}${search}${hash}`;
+      } else {
+        // Switch to Campus Intranet Portal (Default & Priority)
+        if (currentHost === "10.10.14.104" || currentHost === "localhost" || currentHost === "127.0.0.1") {
+          updateNetworkUI("intranet");
+          return;
+        }
+        targetUrl = `https://10.10.14.104${path}${search}${hash}`;
+      }
+
+      if (targetUrl) {
+        window.location.assign(targetUrl);
+      }
+    }
+
+    function detectCurrentNetwork() {
+      const host = window.location.hostname;
+      if (host.includes("ts.net") || host === "100.87.0.15") {
+        return "internet";
+      }
+      return "intranet";
+    }
+
+    function updateNetworkUI(currentMode) {
+      const mode = currentMode || detectCurrentNetwork();
+
+      document.querySelectorAll(".btn-network-toggle").forEach(btn => {
+        btn.classList.remove("active");
+      });
+
+      if (mode === "internet") {
+        document.querySelectorAll("#btnNetInternet, #modalBtnNetInternet").forEach(btn => {
+          btn.classList.add("active");
+        });
+        document.querySelectorAll("#dropdownNetStatus, #modalNetStatus").forEach(el => {
+          el.textContent = "Internet (Active)";
+          el.style.background = "#e0e7ff";
+          el.style.color = "#3730a3";
+        });
+        const topBadge = document.getElementById("topNetBadge");
+        if (topBadge) {
+          topBadge.textContent = "Internet";
+          topBadge.style.background = "#e0e7ff";
+          topBadge.style.color = "#3730a3";
+        }
+      } else {
+        document.querySelectorAll("#btnNetIntranet, #modalBtnNetIntranet").forEach(btn => {
+          btn.classList.add("active");
+        });
+        document.querySelectorAll("#dropdownNetStatus, #modalNetStatus").forEach(el => {
+          el.textContent = "Intranet (Default)";
+          el.style.background = "#dcfce7";
+          el.style.color = "#166534";
+        });
+        const topBadge = document.getElementById("topNetBadge");
+        if (topBadge) {
+          topBadge.textContent = "Intranet";
+          topBadge.style.background = "#dcfce7";
+          topBadge.style.color = "#166534";
+        }
+      }
+    }
+
     document.addEventListener("DOMContentLoaded", function() {
+      updateNetworkUI();
       if (window.Android) {
         document.body.classList.add("is-android-app");
         const footer = document.querySelector(".lms-footer");

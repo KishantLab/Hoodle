@@ -30,6 +30,22 @@
     </div>
   </div>
 
+  <!-- Troubleshooting Guide for Google 534 Error -->
+  <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #2563eb; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; font-size: 0.85rem; color: #1e3a8a; line-height: 1.5;">
+    <div style="font-weight: 800; font-size: 0.95rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.45rem;">
+      <span>💡</span>
+      <span>Got Error 534 (WebLoginRequired) during SMTP Verification?</span>
+    </div>
+    <div style="color: #334155; margin-bottom: 0.5rem;">
+      Google requires device authorization for accounts sending mail via SMTP from server or campus IP addresses. Follow these quick steps to resolve it:
+    </div>
+    <ol style="margin: 0; padding-left: 1.25rem; color: #334155; display: flex; flex-direction: column; gap: 0.25rem;">
+      <li><strong>Turn ON 2-Step Verification:</strong> Go to <a href="https://myaccount.google.com/security" target="_blank" style="color: #2563eb; font-weight: 700; text-decoration: underline;">Google Account &rarr; Security</a> and ensure 2-Step Verification is active.</li>
+      <li><strong>Generate an App Password:</strong> Visit <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color: #2563eb; font-weight: 700; text-decoration: underline;">myaccount.google.com/apppasswords</a>, create a 16-letter App Password named "Hoodle LMS", and enter it in the form below.</li>
+      <li><strong>Authorize Server IP via DisplayUnlockCaptcha:</strong> If Google still blocks connection with Error 534, open <a href="https://accounts.google.com/DisplayUnlockCaptcha" target="_blank" style="color: #2563eb; font-weight: 700; text-decoration: underline;">accounts.google.com/DisplayUnlockCaptcha</a> while logged into this Google account in your browser, click <strong>"Continue"</strong>, and re-run the verification test within 10 minutes.</li>
+    </ol>
+  </div>
+
   <!-- Status Overview Cards -->
   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.75rem;">
     <!-- Active Sender Card -->
@@ -46,7 +62,7 @@
         </div>
         <div style="font-size: 0.74rem; color: #166534; font-weight: 600; margin-top: 0.15rem; display: flex; align-items: center; gap: 0.3rem;">
           <span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block;"></span>
-          <span>Authenticated via Google App Password</span>
+          <span>Authenticated via Google App Password / SMTP</span>
         </div>
       </div>
     </div>
@@ -61,10 +77,10 @@
           Encryption Protocol
         </div>
         <div style="font-weight: 800; font-size: 1.05rem; color: #0f172a;">
-          STARTTLS (Port 587)
+          {{ smtp_security | upper }} (Port {{ smtp_port }})
         </div>
         <div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.15rem;">
-          Host: <code>smtp.gmail.com</code>
+          Host: <code>{{ smtp_host }}</code>
         </div>
       </div>
     </div>
@@ -75,7 +91,7 @@
     <div class="card">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem;">
         <h2 style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a; margin: 0; display: flex; align-items: center; gap: 0.4rem;">
-          <span>⚙️</span> Edit Gmail Credentials
+          <span>⚙️</span> Edit Outgoing Email Credentials
         </h2>
         <span style="font-size: 0.75rem; background: #eff6ff; color: #1e40af; font-weight: 700; padding: 2px 8px; border-radius: 9999px;">
           Instant Hot Reload
@@ -85,18 +101,18 @@
       <form action="{{ url_for('admin_update_email_settings') }}" method="POST">
         <div class="form-group" style="margin-bottom: 1.15rem;">
           <label class="form-label" for="gmail_user">
-            Gmail Address (Username)
+            Email Address / Username
           </label>
           <input type="email" id="gmail_user" name="gmail_user" value="{{ gmail_user }}" class="form-control" placeholder="e.g. hoodle.lms@gmail.com" required>
           <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-            Emails for assignments, grades, announcements, and direct messages will be dispatched from this address.
+            Notifications for assignments, grades, announcements, and direct messages will be sent from this account.
           </div>
         </div>
 
         <div class="form-group" style="margin-bottom: 1.15rem;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
             <label class="form-label" for="gmail_password" style="margin-bottom: 0;">
-              Google App Password (16 Characters)
+              Password / Google App Password (16 Characters)
             </label>
             <span style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">
               Current: {{ masked_pass }}
@@ -104,7 +120,7 @@
           </div>
           <input type="password" id="gmail_password" name="gmail_password" class="form-control" placeholder="Leave blank to keep current password" autocomplete="new-password">
           <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.45;">
-            💡 <strong>How to get Google App Password:</strong> In your Google Account &rarr; Security &rarr; Turn on 2-Step Verification &rarr; Search "App Passwords" &rarr; Create one named "Hoodle" &rarr; Paste the 16 characters here.
+            💡 <strong>For Gmail:</strong> Must be a 16-letter App Password generated at <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color: #2563eb; font-weight: 700;">myaccount.google.com/apppasswords</a>.
           </div>
         </div>
 
@@ -115,11 +131,36 @@
           <input type="text" id="from_name" name="from_name" value="{{ from_name }}" class="form-control" placeholder="e.g. Hoodle LMS" required>
         </div>
 
+        <!-- Advanced SMTP Server Settings -->
+        <details style="margin-bottom: 1.25rem; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem;">
+          <summary style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a; cursor: pointer;">
+            🔧 Custom SMTP Server Settings (Optional)
+          </summary>
+          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.75rem; margin-top: 0.85rem;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="smtp_host" style="font-size: 0.8rem;">SMTP Host</label>
+              <input type="text" id="smtp_host" name="smtp_host" value="{{ smtp_host }}" class="form-control" placeholder="smtp.gmail.com" style="font-size: 0.85rem;">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="smtp_port" style="font-size: 0.8rem;">Port</label>
+              <input type="number" id="smtp_port" name="smtp_port" value="{{ smtp_port }}" class="form-control" placeholder="587" style="font-size: 0.85rem;">
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 0.75rem; margin-bottom: 0;">
+            <label class="form-label" for="smtp_security" style="font-size: 0.8rem;">Security Protocol</label>
+            <select id="smtp_security" name="smtp_security" class="form-control" style="font-size: 0.85rem;">
+              <option value="starttls" {% if smtp_security == 'starttls' %}selected{% endif %}>STARTTLS (Port 587 - Recommended)</option>
+              <option value="ssl" {% if smtp_security == 'ssl' %}selected{% endif %}>SSL / TLS (Port 465)</option>
+              <option value="none" {% if smtp_security == 'none' %}selected{% endif %}>None (Port 25)</option>
+            </select>
+          </div>
+        </details>
+
         <div class="form-group" style="margin-bottom: 1.5rem;">
           <label class="form-label" for="portal_base_url">
             Portal Base URL for Action Buttons
           </label>
-          <input type="url" id="portal_base_url" name="portal_base_url" value="{{ portal_base_url }}" class="form-control" placeholder="http://10.10.14.104/lms">
+          <input type="url" id="portal_base_url" name="portal_base_url" value="{{ portal_base_url }}" class="form-control" placeholder="https://10.10.14.104/lms">
           <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
             Links inside notification emails will point to this base address.
           </div>

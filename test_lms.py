@@ -1860,7 +1860,7 @@ class ACCLLMSTestCase(unittest.TestCase):
             "portal_base_url": "http://10.10.14.104/lms"
         }, follow_redirects=True)
         self.assertEqual(res.status_code, 200)
-        self.assertIn(b"Gmail SMTP settings saved successfully", res.data)
+        self.assertIn(b"SMTP settings saved successfully", res.data)
 
         # Verify get_smtp_config reflects the DB update
         up_user, up_pwd, up_name = app.get_smtp_config()
@@ -2272,6 +2272,55 @@ class ACCLLMSTestCase(unittest.TestCase):
             self.assertIn("ta_person@iitbhilai.ac.in", kwargs["recipient_emails"])
             self.assertIn("b26ds001@iitbhilai.ac.in", kwargs["recipient_emails"])
 
+        self.logout()
+
+    def test_messages_no_email_alerts_active_box(self):
+        """Verify the 'Email alerts active' box has been removed from messages page."""
+        self.login("student1", "student123")
+        res = self.client.get("/messages")
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn(b"Email alerts active", res.data)
+        self.logout()
+
+    def test_user_icon_network_buttons_intranet_and_internet(self):
+        """Verify the user icon dropdown and modal include 'Intranet' (default) and 'Internet' buttons."""
+        self.login("student1", "student123")
+        res = self.client.get("/dashboard")
+        self.assertEqual(res.status_code, 200)
+
+        # 1. Top bar user chip has Intranet badge
+        self.assertIn(b'id="topNetBadge"', res.data)
+        self.assertIn(b'Intranet', res.data)
+
+        # 2. User dropdown menu has Intranet and Internet toggle buttons
+        self.assertIn(b'id="userDropdownMenu"', res.data)
+        self.assertIn(b'id="btnNetIntranet"', res.data)
+        self.assertIn(b'id="btnNetInternet"', res.data)
+        self.assertIn(b'onclick="selectNetworkMode(\'intranet\', event)"', res.data)
+        self.assertIn(b'onclick="selectNetworkMode(\'internet\', event)"', res.data)
+
+        # 3. User profile modal has network toggle buttons
+        self.assertIn(b'id="userProfileModal"', res.data)
+        self.assertIn(b'id="modalBtnNetIntranet"', res.data)
+        self.assertIn(b'id="modalBtnNetInternet"', res.data)
+        self.logout()
+
+    def test_admin_test_email_534_error_guidance(self):
+        """Verify SMTP test verification handles 534 error with helpful guidance."""
+        from unittest.mock import patch
+        import smtplib
+
+        self.login("admin", "admin@accl")
+        # Mock create_smtp_connection to simulate Google 534 WebLoginRequired
+        with patch("app.create_smtp_connection") as mock_conn:
+            mock_conn.side_effect = smtplib.SMTPAuthenticationError(534, b"5.7.9 Please log in with your web browser and then try again. https://support.google.com/mail/?p=WebLoginRequired")
+            res = self.client.post("/admin/email/test", data={
+                "test_recipient": "test@domain.com"
+            }, follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            self.assertIn(b"Google Authentication Blocked", res.data)
+            self.assertIn(b"Error 534: WebLoginRequired", res.data)
+            self.assertIn(b"DisplayUnlockCaptcha", res.data)
         self.logout()
 
 
