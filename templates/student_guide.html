@@ -1,0 +1,555 @@
+{% extends "base.html" %}
+
+{% block title %}Student Usage Guide & Tutorials - Hoodle LMS{% endblock %}
+
+{% block content %}
+<div class="guide-container" style="max-width: 1080px; margin: 0 auto; padding-bottom: 4rem;">
+
+  <!-- Hero Header Banner -->
+  <div class="card" style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: white; border-radius: var(--radius-lg); padding: 2.25rem 2rem; margin-bottom: 2rem; box-shadow: var(--shadow-md);">
+    <div style="display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;">
+      <div style="font-size: 3.2rem; background: rgba(255,255,255,0.18); width: 76px; height: 76px; border-radius: 20px; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+        📖
+      </div>
+      <div style="flex: 1; min-width: 280px;">
+        <div style="display: inline-block; background: rgba(255, 255, 255, 0.2); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 0.5rem;">
+          Official Student Handbook
+        </div>
+        <h1 style="font-size: 2rem; font-weight: 800; margin: 0; line-height: 1.2; letter-spacing: -0.02em;">
+          Hoodle LMS Student Usage &amp; Examination Guide
+        </h1>
+        <p style="margin: 0.5rem 0 0 0; opacity: 0.92; font-size: 0.96rem; max-width: 780px; line-height: 1.5;">
+          A complete walkthrough for IIT Bhilai students: 1-click course joining, daily anti-proxy QR attendance scanning, lab exam lockdown protocols, countdown timers, and cryptographic submission receipts.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Navigation Anchor Strip -->
+  <div class="guide-nav-bar" style="background: white; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.75rem 1rem; margin-bottom: 2.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; box-shadow: var(--shadow-sm); position: sticky; top: 72px; z-index: 20;">
+    <span style="font-size: 0.8rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; margin-right: 0.25rem;">Jump to:</span>
+    <a href="#sec-signin" class="guide-nav-pill">🔐 1. Sign In</a>
+    <a href="#sec-joining" class="guide-nav-pill">🏫 2. Join Courses</a>
+    <a href="#sec-stream" class="guide-nav-pill">📢 3. Stream &amp; Labs</a>
+    <a href="#sec-attendance" class="guide-nav-pill">📷 4. QR Attendance</a>
+    <a href="#sec-exam-lockdown" class="guide-nav-pill">🔒 5. Timed Lab Exams</a>
+    <a href="#sec-receipts" class="guide-nav-pill">🧾 6. SHA-256 Receipts</a>
+    <a href="#sec-grades" class="guide-nav-pill">📊 7. Attendance Quota</a>
+    <a href="#sec-network" class="guide-nav-pill">🌐 8. Network &amp; VPN</a>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- SECTION 1: SIGN IN & ACCOUNT SETUP        -->
+  <!-- ========================================== -->
+  <section id="sec-signin" class="guide-section card" style="padding: 2rem; margin-bottom: 2rem;">
+    <div class="guide-section-header">
+      <div class="guide-step-badge">Step 1</div>
+      <h2>Signing In &amp; Account Setup</h2>
+    </div>
+    <p class="guide-lead">
+      Access Hoodle LMS using your assigned IIT Bhilai roll number or institute email address.
+    </p>
+
+    <div class="guide-grid">
+      <div class="guide-text-col">
+        <ol class="guide-step-list">
+          <li>
+            <strong>Open the LMS Portal:</strong><br>
+            Navigate to <code>http://10.10.14.104:8095</code> (Campus Network) or <code>http://100.87.0.15:8095</code> (via Tailscale VPN).
+          </li>
+          <li>
+            <strong>Enter Your Credentials:</strong><br>
+            Use your student roll number (e.g., <code>b26cs021</code> or <code>12310120</code>) or institute email. Default initial password is set to your lowercase roll number (e.g. <code>b26cs021</code>).
+          </li>
+          <li>
+            <strong>First-Time Password Change:</strong><br>
+            If prompted, update your password to a secure personal passphrase. You can also update it anytime via the <strong>🔑 Password</strong> link in the top bar.
+          </li>
+        </ol>
+
+        <div class="guide-callout info">
+          <strong>💡 Pro-Tip:</strong> Bookmark the portal on your smartphone home screen for 1-tap access when scanning lecture attendance in class!
+        </div>
+      </div>
+
+      <div class="guide-img-col">
+        <div class="guide-img-card" onclick="openLightbox('{{ url_for('static', filename='images/guide/01_signin_register.png') }}', 'Hoodle LMS Sign-In Screen with IIT Bhilai branding')">
+          <img src="{{ url_for('static', filename='images/guide/01_signin_register.png') }}" alt="Hoodle LMS Sign-In Screen">
+          <div class="guide-img-overlay">🔍 Click to zoom</div>
+          <div class="guide-img-caption">Figure 1.1: Official Sign In Portal with IIT Bhilai credentials</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SECTION 2: JOINING COURSES & SHORT LINKS   -->
+  <!-- ========================================== -->
+  <section id="sec-joining" class="guide-section card" style="padding: 2rem; margin-bottom: 2rem;">
+    <div class="guide-section-header">
+      <div class="guide-step-badge">Step 2</div>
+      <h2>Joining Your Courses (1-Click Links &amp; Codes)</h2>
+    </div>
+    <p class="guide-lead">
+      You can enroll in courses using either a direct 1-click short invite link or a 6-character class code.
+    </p>
+
+    <div class="guide-grid">
+      <div class="guide-text-col">
+        <h4 style="font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;">Method A: Direct Short Invite Links</h4>
+        <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;">
+          When instructors share a course invite, simply tap the short link. Hoodle LMS automatically registers and enrolls your student account:
+        </p>
+        <div style="background: var(--bg-alt); padding: 0.75rem 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border); font-family: monospace; font-size: 0.85rem; margin-bottom: 1.25rem;">
+          http://10.10.14.104:8095/j/<strong>CS100A</strong>
+        </div>
+
+        <h4 style="font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;">Method B: Dashboard Join Code</h4>
+        <ol class="guide-step-list">
+          <li>On your <strong>📚 Courses</strong> dashboard, click the <strong>+ Join Class</strong> button.</li>
+          <li>Enter the 6-character class code provided by your instructor (e.g. <code>CS100A</code>).</li>
+          <li>Click <strong>Join Course</strong>. The course card immediately appears on your dashboard.</li>
+        </ol>
+      </div>
+
+      <div class="guide-img-col">
+        <div class="guide-img-card" onclick="openLightbox('{{ url_for('static', filename='images/guide/02_join_classroom.png') }}', 'Student Dashboard with course cards and Join Course modal')">
+          <img src="{{ url_for('static', filename='images/guide/02_join_classroom.png') }}" alt="Student Dashboard with Join Course modal">
+          <div class="guide-img-overlay">🔍 Click to zoom</div>
+          <div class="guide-img-caption">Figure 2.1: Student Dashboard showing course cards and Join Class modal</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SECTION 3: COURSE STREAM & LAB WORK        -->
+  <!-- ========================================== -->
+  <section id="sec-stream" class="guide-section card" style="padding: 2rem; margin-bottom: 2rem;">
+    <div class="guide-section-header">
+      <div class="guide-step-badge">Step 3</div>
+      <h2>Course Stream, Classwork &amp; Submissions</h2>
+    </div>
+    <p class="guide-lead">
+      Keep track of lecture announcements, lab assignments, and upcoming deadlines in one unified workspace.
+    </p>
+
+    <div class="guide-grid">
+      <div class="guide-text-col">
+        <ul class="guide-step-list" style="list-style-type: none; padding-left: 0;">
+          <li style="margin-bottom: 1rem;">
+            <strong>📢 Stream Tab:</strong> Live class announcements from professors, lab TAs, and important exam venue notices.
+          </li>
+          <li style="margin-bottom: 1rem;">
+            <strong>📝 Classwork Tab:</strong> Browse lecture slides, lab manuals, homework, and coding problem statements organized by topic.
+          </li>
+          <li style="margin-bottom: 1rem;">
+            <strong>⏰ Upcoming Deadlines Box:</strong> The left sidebar highlights all imminent deadlines so you never miss an assignment.
+          </li>
+          <li style="margin-bottom: 1rem;">
+            <strong>📁 Allowed File Types:</strong> Always check allowed extensions (e.g. <code>.c</code>, <code>.py</code>, <code>.zip</code>, <code>.pdf</code>) before uploading. Files exceeding size limits or wrong extensions are rejected cleanly.
+          </li>
+        </ul>
+      </div>
+
+      <div class="guide-img-col">
+        <div class="guide-img-card" onclick="openLightbox('{{ url_for('static', filename='images/guide/03_course_stream.png') }}', 'Course Stream with announcements, deadlines, and tabs')">
+          <img src="{{ url_for('static', filename='images/guide/03_course_stream.png') }}" alt="Course Stream with announcements and tabs">
+          <div class="guide-img-overlay">🔍 Click to zoom</div>
+          <div class="guide-img-caption">Figure 3.1: Course Stream tab showing announcements and upcoming assignments</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SECTION 4: ATTENDANCE & ANTI-PROXY QR      -->
+  <!-- ========================================== -->
+  <section id="sec-attendance" class="guide-section card" style="padding: 2rem; margin-bottom: 2rem;">
+    <div class="guide-section-header">
+      <div class="guide-step-badge" style="background: var(--success);">Step 4</div>
+      <h2>Classroom Attendance via Anti-Proxy Dynamic QR</h2>
+    </div>
+    <p class="guide-lead">
+      Hoodle LMS features a dynamic anti-proxy attendance engine that rotates cryptographic QR codes on the lecture projector every 45 seconds.
+    </p>
+
+    <div class="guide-grid">
+      <div class="guide-text-col">
+        <ol class="guide-step-list">
+          <li>
+            <strong>Locate the QR Projector Screen:</strong><br>
+            At the beginning of each lecture or lab, the instructor displays the rotating dynamic QR code on the classroom projector screen.
+          </li>
+          <li>
+            <strong>Open the Camera Scanner:</strong><br>
+            Click the <strong>📷 Scan Attendance</strong> button in the top navigation bar or the floating mobile button at the bottom-right of your screen.
+          </li>
+          <li>
+            <strong>Scan the Projected Code:</strong><br>
+            Point your mobile camera at the projector screen. As soon as the code is recognized, the system redirects to your verification page.
+          </li>
+          <li>
+            <strong>Photo Upload Fallback:</strong><br>
+            If your mobile browser blocks the live video stream or you are on plain HTTP, click the <strong>📁 Upload Photo / Take Picture</strong> button in the modal. Your phone's native camera opens automatically, takes a quick photo of the screen, and decodes the QR instantanously!
+          </li>
+          <li>
+            <strong>Confirmation &amp; Logging:</strong><br>
+            Once confirmed, your presence is atomically logged in the server database with timestamp, session type (Lecture/Lab), and IP address.
+          </li>
+        </ol>
+
+        <div class="guide-callout warning">
+          <strong>⚠️ 45-Second Rotation Rule:</strong> Taking a photo and sending it to an absent friend will not work. By the time they receive and scan the photo, the 45-second token will have already expired!
+        </div>
+      </div>
+
+      <div class="guide-img-col">
+        <div class="guide-img-card" onclick="openLightbox('{{ url_for('static', filename='images/guide/04_attendance_scanner.png') }}', 'Attendance Camera Viewfinder with reticle and photo fallback')">
+          <img src="{{ url_for('static', filename='images/guide/04_attendance_scanner.png') }}" alt="Attendance Camera Scanner modal">
+          <div class="guide-img-overlay">🔍 Click to zoom</div>
+          <div class="guide-img-caption">Figure 4.1: Live Camera Scanner viewfinder with photo capture fallback</div>
+        </div>
+
+        <div class="guide-img-card" style="margin-top: 1rem;" onclick="openLightbox('{{ url_for('static', filename='images/guide/05_attendance_confirmation.png') }}', 'Attendance Recorded Confirmation Screen')">
+          <img src="{{ url_for('static', filename='images/guide/05_attendance_confirmation.png') }}" alt="Attendance Success Screen">
+          <div class="guide-img-overlay">🔍 Click to zoom</div>
+          <div class="guide-img-caption">Figure 4.2: Verified Attendance Confirmation with roll number &amp; timestamp</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SECTION 5: TIMED LAB EXAMS & LOCKDOWN MODE -->
+  <!-- ========================================== -->
+  <section id="sec-exam-lockdown" class="guide-section card" style="padding: 2rem; margin-bottom: 2rem; border-top: 5px solid #dc2626;">
+    <div class="guide-section-header">
+      <div class="guide-step-badge" style="background: #dc2626;">Step 5</div>
+      <h2 style="color: #991b1b;">Timed Lab Exams &amp; Strict Lockdown Mode</h2>
+    </div>
+    <p class="guide-lead">
+      During lab exams, Hoodle LMS enforces Academic Integrity Lockdown to maintain strict fairness across all examination halls.
+    </p>
+
+    <div class="guide-grid">
+      <div class="guide-text-col">
+        <div style="background: #fef2f2; border: 1.5px solid #fecaca; border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.25rem;">
+          <h4 style="font-size: 1.05rem; font-weight: 800; color: #991b1b; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>🔒</span> Strict Lockdown Rules
+          </h4>
+          <ul style="font-size: 0.88rem; color: #7f1d1d; line-height: 1.5; margin-left: 1.25rem;">
+            <li><strong>Isolated Portal Access:</strong> When an exam is live, browsing other course materials, slides, or student lockers is locked. Any navigation attempt redirects directly to the exam.</li>
+            <li><strong>Live Countdown Clock:</strong> The exam page displays a live countdown timer ticking down to the exact second.</li>
+            <li><strong>Strict Deadline Enforcement:</strong> When the countdown reaches <code>00:00:00</code>, the submission gateway closes immediately. Submissions cannot be made after the time has expired.</li>
+            <li><strong>Single Submission Policy:</strong> If the exam is configured for single submission, your uploaded work is permanent and locked immediately. If multiple submissions are permitted, re-uploads are accepted only until the timer expires.</li>
+          </ul>
+        </div>
+
+        <h4 style="font-size: 1rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.35rem;">How to Submit Your Exam:</h4>
+        <ol class="guide-step-list">
+          <li>Select your designated Lab Venue (e.g. <code>CC-101</code>, <code>Lab 1</code>).</li>
+          <li>Choose your single solution file (e.g., <code>b26cs021_lab1.zip</code>).</li>
+          <li>Click <strong>Upload &amp; Finalize Submission</strong> before the countdown timer hits zero.</li>
+        </ol>
+      </div>
+
+      <div class="guide-img-col">
+        <div class="guide-img-card" onclick="openLightbox('{{ url_for('static', filename='images/guide/06_exam_interface.png') }}', 'Strict Exam Lockdown Interface with live countdown timer')">
+          <img src="{{ url_for('static', filename='images/guide/06_exam_interface.png') }}" alt="Strict Exam Lockdown Interface">
+          <div class="guide-img-overlay">🔍 Click to zoom</div>
+          <div class="guide-img-caption">Figure 5.1: Active Exam Mode showing lockdown banner and real-time countdown timer</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SECTION 6: DIGITAL SUBMISSION RECEIPTS     -->
+  <!-- ========================================== -->
+  <section id="sec-receipts" class="guide-section card" style="padding: 2rem; margin-bottom: 2rem;">
+    <div class="guide-section-header">
+      <div class="guide-step-badge" style="background: var(--primary);">Step 6</div>
+      <h2>Digital Submission Receipts &amp; SHA-256 Integrity</h2>
+    </div>
+    <p class="guide-lead">
+      Every assignment and exam submission generates an immutable digital receipt with a cryptographic SHA-256 fingerprint.
+    </p>
+
+    <div class="guide-grid">
+      <div class="guide-text-col">
+        <p style="font-size: 0.92rem; color: var(--text-main); line-height: 1.6; margin-bottom: 1rem;">
+          When your file is safely uploaded to the LMS server, the system calculates a 256-bit hash of the exact file contents and generates an official Digital Submission Receipt.
+        </p>
+
+        <div style="background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem 1.25rem; margin-bottom: 1.25rem; font-size: 0.88rem;">
+          <div style="font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;">The Receipt Contains:</div>
+          <ul style="color: var(--text-muted); line-height: 1.6; margin-left: 1.25rem;">
+            <li><strong>Official Receipt Token:</strong> e.g., <code>RCPT-CSL100-20260912-B26CS021-8F4343</code></li>
+            <li><strong>Cryptographic SHA-256 Hash:</strong> Proof that your file was not tampered with.</li>
+            <li><strong>Atomic Server Timestamp:</strong> Official millisecond timestamp recorded by the server clock.</li>
+            <li><strong>File Metadata:</strong> Original file name, byte size, and assigned computer lab name.</li>
+          </ul>
+        </div>
+
+        <div class="guide-callout success">
+          <strong>🛡️ Dispute Resolution:</strong> Your submission receipt is indisputable proof of timely work completion. You can take a screenshot or copy the receipt token for your personal records.
+        </div>
+      </div>
+
+      <div class="guide-img-col">
+        <div class="guide-img-card" onclick="openLightbox('{{ url_for('static', filename='images/guide/07_submission_receipt.png') }}', 'Digital Exam Submission Receipt with SHA-256 fingerprint')">
+          <img src="{{ url_for('static', filename='images/guide/07_submission_receipt.png') }}" alt="Digital Exam Submission Receipt">
+          <div class="guide-img-overlay">🔍 Click to zoom</div>
+          <div class="guide-img-caption">Figure 6.1: Official Submission Receipt card showing SHA-256 token and timestamp</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SECTION 7: ATTENDANCE & GRADEBOOK TRACKING -->
+  <!-- ========================================== -->
+  <section id="sec-grades" class="guide-section card" style="padding: 2rem; margin-bottom: 2rem;">
+    <div class="guide-section-header">
+      <div class="guide-step-badge">Step 7</div>
+      <h2>Monitoring Attendance Quotas &amp; Grade Progress</h2>
+    </div>
+    <p class="guide-lead">
+      Track your attendance percentage against the mandatory 75% IIT Bhilai institute requirement.
+    </p>
+
+    <div class="guide-grid">
+      <div class="guide-text-col">
+        <ul class="guide-step-list" style="list-style-type: none; padding-left: 0;">
+          <li style="margin-bottom: 1.25rem;">
+            <strong>🟢 Satisfactory Status (&ge; 75%):</strong><br>
+            When your attendance is 75.0% or higher, your progress bar turns green with a <em>Satisfactory</em> badge. You remain fully eligible for end-semester examinations.
+          </li>
+          <li style="margin-bottom: 1.25rem;">
+            <strong>🔴 Shortage Warning (&lt; 75%):</strong><br>
+            If your attendance drops below 75%, the progress bar turns red with an immediate <em>Shortage Warning</em> alert. Attend all upcoming sessions to restore your standing.
+          </li>
+          <li style="margin-bottom: 1.25rem;">
+            <strong>📜 Complete Session History:</strong><br>
+            The table logs every single lecture, lab, and tutorial session you attended, with exact recording timestamps and verification methods.
+          </li>
+        </ul>
+      </div>
+
+      <div class="guide-img-col">
+        <div class="guide-img-card" onclick="openLightbox('{{ url_for('static', filename='images/guide/08_attendance_grades.png') }}', 'Student Personal Attendance Record showing 90% progress bar and session history')">
+          <img src="{{ url_for('static', filename='images/guide/08_attendance_grades.png') }}" alt="Student Personal Attendance Record">
+          <div class="guide-img-overlay">🔍 Click to zoom</div>
+          <div class="guide-img-caption">Figure 7.1: Personal Attendance Record showing 90% quota bar &amp; session breakdown</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SECTION 8: NETWORK CONNECTIVITY & VPN      -->
+  <!-- ========================================== -->
+  <section id="sec-network" class="guide-section card" style="padding: 2rem;">
+    <div class="guide-section-header">
+      <div class="guide-step-badge">Step 8</div>
+      <h2>Network Access &amp; VPN Connectivity (100.87.0.15)</h2>
+    </div>
+    <p class="guide-lead">
+      How to reach Hoodle LMS from anywhere inside hostels, computer labs, or remotely via VPN.
+    </p>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1.25rem;">
+      <div style="background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
+        <div style="font-size: 1.35rem; margin-bottom: 0.35rem;">🏫 Campus Wi-Fi &amp; Labs</div>
+        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">Local IP Portal</div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.5;">
+          Direct connection inside academic buildings, classrooms, and hostel LAN:
+        </p>
+        <code style="display: block; padding: 0.4rem 0.6rem; background: var(--bg-card); border-radius: 4px; font-size: 0.82rem; margin-top: 0.5rem;">http://10.10.14.104:8095</code>
+      </div>
+
+      <div style="background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
+        <div style="font-size: 1.35rem; margin-bottom: 0.35rem;">🔒 Tailscale VPN Access</div>
+        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">Mesh Network Portal</div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.5;">
+          Connect from off-campus, mobile hotspot, or private network using Tailscale VPN:
+        </p>
+        <code style="display: block; padding: 0.4rem 0.6rem; background: var(--bg-card); border-radius: 4px; font-size: 0.82rem; margin-top: 0.5rem;">http://100.87.0.15:8095</code>
+      </div>
+
+      <div style="background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
+        <div style="font-size: 1.35rem; margin-bottom: 0.35rem;">📷 Live Camera HTTPS</div>
+        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">Secure Video Feed</div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.5;">
+          If using a browser that requires HTTPS for webcams, switch seamlessly via:
+        </p>
+        <code style="display: block; padding: 0.4rem 0.6rem; background: var(--bg-card); border-radius: 4px; font-size: 0.82rem; margin-top: 0.5rem;">https://10.10.14.104/smartaccess/</code>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- Interactive Lightbox Modal for Screenshots -->
+<div id="guideLightbox" class="modal-backdrop" onclick="closeLightbox(event)" style="display: none; align-items: center; justify-content: center; z-index: 9999;">
+  <div style="max-width: 92vw; max-height: 92vh; position: relative; background: #0f172a; padding: 0.75rem; border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);">
+    <button onclick="closeLightbox()" style="position: absolute; top: -14px; right: -14px; background: white; border: 2px solid #0f172a; border-radius: 9999px; width: 36px; height: 36px; font-size: 1.25rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);">&times;</button>
+    <img id="lightboxImg" src="" alt="Screenshot" style="max-width: 100%; max-height: 80vh; object-fit: contain; border-radius: 6px; display: block;">
+    <div id="lightboxCaption" style="color: #cbd5e1; font-size: 0.88rem; text-align: center; margin-top: 0.75rem; padding: 0 1rem; font-weight: 500;"></div>
+  </div>
+</div>
+
+<style>
+  .guide-nav-pill {
+    padding: 0.35rem 0.75rem;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-main);
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+  .guide-nav-pill:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+  .guide-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  .guide-step-badge {
+    background: var(--primary);
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+  }
+  .guide-section-header h2 {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--text-main);
+    margin: 0;
+  }
+  .guide-lead {
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    line-height: 1.5;
+  }
+  .guide-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 1.75rem;
+    align-items: start;
+  }
+  @media (max-width: 840px) {
+    .guide-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .guide-step-list {
+    margin: 0 0 1.25rem 0;
+    padding-left: 1.25rem;
+    font-size: 0.9rem;
+    color: var(--text-main);
+    line-height: 1.65;
+  }
+  .guide-step-list li {
+    margin-bottom: 0.75rem;
+  }
+  .guide-img-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--bg-card);
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .guide-img-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+  .guide-img-card img {
+    width: 100%;
+    display: block;
+    height: auto;
+    object-fit: cover;
+  }
+  .guide-img-overlay {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(15, 23, 42, 0.75);
+    color: white;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border-radius: 9999px;
+    backdrop-filter: blur(4px);
+  }
+  .guide-img-caption {
+    padding: 0.55rem 0.75rem;
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    background: var(--bg-alt);
+    border-top: 1px solid var(--border);
+    font-weight: 500;
+  }
+  .guide-callout {
+    padding: 0.85rem 1rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin-top: 1rem;
+  }
+  .guide-callout.info {
+    background: #eff6ff;
+    border-left: 4px solid #3b82f6;
+    color: #1e40af;
+  }
+  .guide-callout.warning {
+    background: #fffbeb;
+    border-left: 4px solid #f59e0b;
+    color: #92400e;
+  }
+  .guide-callout.success {
+    background: #f0fdf4;
+    border-left: 4px solid #16a34a;
+    color: #166534;
+  }
+</style>
+
+<script>
+  function openLightbox(imgSrc, captionText) {
+    const modal = document.getElementById("guideLightbox");
+    const img = document.getElementById("lightboxImg");
+    const cap = document.getElementById("lightboxCaption");
+    img.src = imgSrc;
+    cap.innerText = captionText || "";
+    modal.style.display = "flex";
+  }
+
+  function closeLightbox(e) {
+    if (!e || e.target.id === "guideLightbox" || e.target.tagName === "BUTTON") {
+      document.getElementById("guideLightbox").style.display = "none";
+    }
+  }
+
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") {
+      closeLightbox();
+    }
+  });
+</script>
+{% endblock %}

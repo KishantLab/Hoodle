@@ -1467,6 +1467,78 @@ class ACCLLMSTestCase(unittest.TestCase):
 
         self.logout()
 
+    def test_student_guide_routes(self):
+        """Verify /guide and /student-guide render successfully."""
+        # Unauthenticated access
+        res = self.client.get("/guide")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Hoodle LMS Student Usage &amp; Examination Guide", res.data)
+        self.assertIn(b"Timed Lab Exams &amp; Strict Lockdown Mode", res.data)
+        self.assertIn(b"01_signin_register.png", res.data)
+
+        res2 = self.client.get("/student-guide")
+        self.assertEqual(res2.status_code, 200)
+        self.assertIn(b"Official Student Handbook", res2.data)
+
+        # Authenticated student access
+        self.login("student1", "student123")
+        res3 = self.client.get("/guide")
+        self.assertEqual(res3.status_code, 200)
+        self.logout()
+
+    def test_past_attendance_import(self):
+        """Test importing past Google Sheets attendance rows with auto-user-provisioning and auto-enrollment."""
+        self.login("kishan", "password123")
+
+        sample_sheet_data = """Date\tEmail\tSection\tSession Type\tStatus\tKey
+9/9/2026\tb26cs021@iitbhilai.ac.in\tBatch 1\tLecture\tPRESENT\tb26cs021@iitbhilai.ac.in_LECTURE_2026-09-09
+9/9/2026\tb26cs034@iitbhilai.ac.in\tBatch 1\tLecture\tPRESENT\tb26cs034@iitbhilai.ac.in_LECTURE_2026-09-09
+9/9/2026\ts26ma021@iitbhilai.ac.in\tM.Sc Maths\tLecture\tPRESENT\ts26ma021@iitbhilai.ac.in_LECTURE_2026-09-09
+"""
+        res = self.client.post("/courses/1/attendance/import", data={
+            "import_data": sample_sheet_data,
+            "default_session_type": "Lecture",
+            "default_date": "2026-09-09",
+            "auto_create_users": "1",
+            "auto_enroll": "1"
+        }, follow_redirects=True)
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Successfully processed", res.data)
+
+        # Verify DB records
+        conn = app.get_db()
+        st1 = conn.execute("SELECT * FROM users WHERE LOWER(email) = 'b26cs021@iitbhilai.ac.in'").fetchone()
+        self.assertIsNotNone(st1)
+        self.assertEqual(st1["roll_number"], "B26CS021")
+
+        enr = conn.execute("SELECT * FROM course_enrollments WHERE course_id = 1 AND user_id = ?", (st1["id"],)).fetchone()
+        self.assertIsNotNone(enr)
+
+        sess = conn.execute("SELECT * FROM attendance_sessions WHERE course_id = 1 AND session_date = '2026-09-09'").fetchone()
+        self.assertIsNotNone(sess)
+
+        log = conn.execute("SELECT * FROM attendance_logs WHERE course_id = 1 AND student_id = ?", (st1["id"],)).fetchone()
+        self.assertIsNotNone(log)
+        self.assertEqual(log["attendance_date"], "2026-09-09")
+        self.assertEqual(log["status"], "PRESENT")
+        self.assertEqual(log["method"], "GOOGLE_SHEET_IMPORT")
+
+        # Test idempotency - reimporting same data should not duplicate
+        res2 = self.client.post("/courses/1/attendance/import", data={
+            "import_data": sample_sheet_data,
+            "default_session_type": "Lecture",
+            "default_date": "2026-09-09",
+            "auto_create_users": "1",
+            "auto_enroll": "1"
+        }, follow_redirects=True)
+        self.assertEqual(res2.status_code, 200)
+
+        logs_count = conn.execute("SELECT COUNT(*) as cnt FROM attendance_logs WHERE course_id = 1 AND student_id = ?", (st1["id"],)).fetchone()["cnt"]
+        self.assertEqual(logs_count, 1)
+
+        conn.close()
+        self.logout()
 
 
 if __name__ == "__main__":

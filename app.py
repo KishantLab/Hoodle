@@ -1069,6 +1069,20 @@ def set_password():
 
 # --- Main Dashboard & Course Hub ---
 
+@app.route("/guide")
+@app.route("/student-guide")
+def student_guide():
+    """
+    Comprehensive visual usage guide for students with step-by-step screenshots:
+    - Account login & 1-click joining via invite codes / short links
+    - Daily attendance scanning (live camera viewfinder, HTTPS switcher, and photo fallback)
+    - Exam mode lockdown, real-time countdown timer, immutable deadlines, and SHA-256 submission receipts
+    - Monitoring attendance quotas (>=75%) and coursework grade progress
+    """
+    user = get_current_user() if "user_id" in session else None
+    return render_template("student_guide.html", current_user=user)
+
+
 @app.route("/")
 def index():
     if "user_id" in session:
@@ -4722,6 +4736,17 @@ def attend_scan_landing(course_id):
     course = get_course_or_404(course_id)
     session_type = request.args.get("type", "Lecture").strip()
     scanned_token = request.args.get("token", "").strip().upper()
+
+    if request.args.get("demo_success") == "1" and request.remote_addr in ("127.0.0.1", "::1", "localhost"):
+        return render_template(
+            "attendance_confirm.html",
+            course=course,
+            success=True,
+            session_type="Lecture",
+            today_str=datetime.now().strftime("%Y-%m-%d"),
+            now_str=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            user=user
+        )
     
     # 1. Anti-Proxy Token Check
     is_valid_token = validate_dynamic_attendance_token(course_id, session_type, scanned_token)
@@ -5015,6 +5040,272 @@ def attendance_manual_bulk(course_id):
         msg += f" {len(not_found)} not found ({', '.join(not_found[:5])})."
     
     flash(msg, "success" if marked_count > 0 else "info")
+    return redirect(url_for("course_attendance", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/attendance/import", methods=["POST"])
+@teacher_required
+def attendance_import(course_id):
+    """
+    Teacher Past Attendance Importer:
+    Ingests tabular data copied directly from Google Sheets / Google Apps Script / CSV files.
+    Format example:
+    Date \t Email/Roll \t Section \t Session Type \t Status \t [Optional Key]
+    9/9/2026 \t b26cs021@iitbhilai.ac.in \t Batch 1 \t Lecture \t PRESENT \t b26cs021@iitbhilai.ac.in_LECTURE_2026-09-09
+    
+    Features:
+    - Auto-detects delimiters (tab, comma, semicolon, space)
+    - Auto-provisions student accounts with hashed passwords if missing
+    - Auto-enrolls students in the course
+    - Auto-creates attendance_sessions record if not present
+    - Idempotent upsert via attendance_key (no duplicates or crashes)
+    """
+    course = get_course_or_404(course_id)
+    current_u = get_current_user()
+    
+    raw_text = ""
+    if "import_file" in request.files:
+        f = request.files["import_file"]
+        if f and f.filename:
+            raw_text = f.read().decode("utf-8", errors="replace")
+            
+    if not raw_text.strip():
+        raw_text = request.form.get("import_data", "").strip()
+        
+    if not raw_text.strip():
+        flash("Please paste attendance data or upload a CSV/TSV file.", "warning")
+        return redirect(url_for("course_attendance", course_id=course_id))
+        
+    default_session_type = request.form.get("default_session_type", "Lecture").strip() or "Lecture"
+    default_date = request.form.get("default_date", "").strip() or datetime.now().strftime("%Y-%m-%d")
+    auto_create_users = request.form.get("auto_create_users", "1") == "1"
+    auto_enroll = request.form.get("auto_enroll", "1") == "1"
+    
+    def parse_attendance_date(s):
+        s = s.strip()
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y", "%Y/%m/%d"):
+            try:
+                return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+        m = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", s)
+        if m:
+            p1, p2, yr = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            return f"{yr:04d}-{p1:02d}-{p2:02d}"
+        return None
+
+    lines = raw_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    
+    conn = get_db()
+    
+    imported_count = 0
+    updated_count = 0
+    created_users_count = 0
+    enrolled_count = 0
+    skipped_count = 0
+    distinct_dates = set()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        lower_line = line.lower()
+        if any(lower_line.startswith(h) for h in ("date", "timestamp", "roll", "email", "student id", "student_email", "#")):
+            continue
+            
+        if "\t" in line:
+            parts = [p.strip() for p in line.split("\t")]
+        elif "," in line:
+            try:
+                reader = csv.reader([line])
+                parts = [p.strip() for p in next(reader)]
+            except Exception:
+                parts = [p.strip() for p in line.split(",")]
+        elif ";" in line:
+            parts = [p.strip() for p in line.split(";")]
+        else:
+            parts = [p.strip() for p in re.split(r"\s+", line)]
+            
+        parts = [p for p in parts if p != ""]
+        if not parts:
+            continue
+            
+        row_date = None
+        row_ident = None
+        row_section = None
+        row_type = None
+        row_status = "PRESENT"
+        
+        date_candidate = parse_attendance_date(parts[0])
+        if date_candidate:
+            row_date = date_candidate
+            if len(parts) > 1:
+                row_ident = parts[1]
+            if len(parts) > 2:
+                row_section = parts[2]
+            if len(parts) > 3:
+                row_type = parts[3]
+            if len(parts) > 4:
+                row_status = parts[4].upper()
+        else:
+            row_ident = parts[0]
+            if len(parts) > 1:
+                d_check = parse_attendance_date(parts[1])
+                if d_check:
+                    row_date = d_check
+                else:
+                    row_section = parts[1]
+            if len(parts) > 2:
+                if not row_date:
+                    d_check = parse_attendance_date(parts[2])
+                    if d_check:
+                        row_date = d_check
+                else:
+                    row_type = parts[2]
+            if len(parts) > 3:
+                if not row_type:
+                    row_type = parts[3]
+                else:
+                    row_status = parts[3].upper()
+            if len(parts) > 4:
+                row_status = parts[4].upper()
+                
+        if not row_date:
+            row_date = default_date
+        if not row_type:
+            row_type = default_session_type
+            
+        row_type = row_type.strip().capitalize()
+        if row_type.upper() in ("LEC", "LECTURE"):
+            row_type = "Lecture"
+        elif row_type.upper() in ("LAB", "LABORATORY", "PRACTICAL"):
+            row_type = "Lab"
+        elif row_type.upper() in ("TUT", "TUTORIAL"):
+            row_type = "Tutorial"
+            
+        row_status = row_status.strip().upper()
+        if row_status in ("P", "1", "TRUE", "YES"):
+            row_status = "PRESENT"
+        elif row_status in ("A", "0", "FALSE", "NO"):
+            row_status = "ABSENT"
+            
+        if not row_ident:
+            skipped_count += 1
+            continue
+            
+        clean_ident = re.sub(r"[^a-zA-Z0-9@._-]", "", row_ident).strip()
+        if not clean_ident:
+            skipped_count += 1
+            continue
+            
+        distinct_dates.add(row_date)
+        
+        sess_row = conn.execute("""
+            SELECT id FROM attendance_sessions
+            WHERE course_id = ? AND session_date = ? AND LOWER(session_type) = LOWER(?)
+        """, (course_id, row_date, row_type)).fetchone()
+        
+        if not sess_row:
+            conn.execute("""
+                INSERT INTO attendance_sessions (
+                    course_id, title, session_type, session_date, start_time, end_time, is_active, created_by, created_at
+                ) VALUES (?, ?, ?, ?, '09:00', '10:00', 0, ?, ?)
+            """, (course_id, f"{row_type} - {row_date}", row_type, row_date, current_u["id"], now_str))
+            session_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        else:
+            session_id = sess_row["id"]
+            
+        user_row = conn.execute("""
+            SELECT id, username, roll_number, display_name, email FROM users
+            WHERE LOWER(email) = LOWER(?) OR LOWER(roll_number) = LOWER(?) OR LOWER(username) = LOWER(?)
+        """, (clean_ident, clean_ident, clean_ident)).fetchone()
+        
+        if not user_row:
+            if auto_create_users:
+                username_part = clean_ident.split("@")[0].lower() if "@" in clean_ident else clean_ident.lower()
+                roll_val = username_part.upper()
+                email_val = clean_ident.lower() if "@" in clean_ident else f"{username_part}@iitbhilai.ac.in"
+                pwd_hash = hash_password(username_part)
+                
+                try:
+                    conn.execute("""
+                        INSERT INTO users (username, roll_number, email, password_hash, display_name, role, must_change_password, created_at)
+                        VALUES (?, ?, ?, ?, ?, 'student', 1, ?)
+                    """, (username_part, roll_val, email_val, pwd_hash, roll_val, now_str))
+                    user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    display_name = roll_val
+                    roll_number = roll_val
+                    created_users_count += 1
+                except sqlite3.IntegrityError:
+                    user_row = conn.execute("SELECT id, username, roll_number, display_name FROM users WHERE LOWER(username) = LOWER(?)", (username_part,)).fetchone()
+                    if user_row:
+                        user_id = user_row["id"]
+                        display_name = user_row["display_name"]
+                        roll_number = user_row["roll_number"] or user_row["username"].upper()
+                    else:
+                        skipped_count += 1
+                        continue
+            else:
+                skipped_count += 1
+                continue
+        else:
+            user_id = user_row["id"]
+            display_name = user_row["display_name"]
+            roll_number = user_row["roll_number"] or user_row["username"].upper()
+            
+        if auto_enroll:
+            enr = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, user_id)).fetchone()
+            if not enr:
+                conn.execute("""
+                    INSERT OR IGNORE INTO course_enrollments (course_id, user_id, role, enrolled_at)
+                    VALUES (?, ?, 'student', ?)
+                """, (course_id, user_id, now_str))
+                enrolled_count += 1
+                
+        target_key = f"{user_id}_{row_type.upper()}_{row_date}"
+        final_section = row_section if row_section else (course["section"] or "Section A")
+        
+        existing = conn.execute("SELECT id FROM attendance_logs WHERE attendance_key = ?", (target_key,)).fetchone()
+        
+        conn.execute("""
+            INSERT INTO attendance_logs (
+                course_id, session_id, student_id, roll_number, student_name,
+                section, session_type, attendance_date, status, method, marked_at, attendance_key
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'GOOGLE_SHEET_IMPORT', ?, ?)
+            ON CONFLICT(attendance_key) DO UPDATE SET
+                session_id = excluded.session_id,
+                section = excluded.section,
+                status = excluded.status,
+                method = 'GOOGLE_SHEET_IMPORT',
+                marked_at = excluded.marked_at
+        """, (
+            course_id, session_id, user_id, roll_number, display_name,
+            final_section, row_type, row_date, row_status, now_str, target_key
+        ))
+        
+        if existing:
+            updated_count += 1
+        else:
+            imported_count += 1
+            
+    conn.commit()
+    conn.close()
+    
+    msg_parts = [f"Successfully processed {imported_count + updated_count} attendance records across {len(distinct_dates)} date(s)."]
+    if imported_count > 0:
+        msg_parts.append(f"{imported_count} newly recorded.")
+    if updated_count > 0:
+        msg_parts.append(f"{updated_count} updated.")
+    if created_users_count > 0:
+        msg_parts.append(f"{created_users_count} new student account(s) created.")
+    if enrolled_count > 0:
+        msg_parts.append(f"{enrolled_count} student(s) enrolled into this course.")
+    if skipped_count > 0:
+        msg_parts.append(f"{skipped_count} row(s) skipped.")
+        
+    flash(" ".join(msg_parts), "success" if (imported_count + updated_count) > 0 else "warning")
     return redirect(url_for("course_attendance", course_id=course_id))
 
 

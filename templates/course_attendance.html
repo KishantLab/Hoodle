@@ -160,12 +160,16 @@
       </div>
 
       <div class="attendance-action-btns" style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+        <button type="button" class="btn btn-secondary" onclick="openModal('importAttendanceModal')" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 600;">
+          <span>📥</span>
+          <span>Import Past Attendance</span>
+        </button>
         <a href="{{ url_for('attendance_projector', course_id=course.id) }}" target="_blank" class="btn btn-primary" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700;">
           <span>📽️</span>
           <span>Launch QR Projector</span>
         </a>
         <a href="{{ url_for('attendance_export_csv', course_id=course.id) }}" class="btn btn-secondary" style="display: flex; align-items: center; gap: 0.4rem;">
-          <span>📥</span>
+          <span>📤</span>
           <span>Export CSV</span>
         </a>
       </div>
@@ -445,6 +449,85 @@
     <div style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
       <button class="btn btn-secondary btn-sm" onclick="closeModal('studentDetailModal')">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- Import Past Attendance Modal -->
+<div id="importAttendanceModal" class="modal-backdrop">
+  <div class="modal-content" style="max-width: 720px;">
+    <div class="modal-header">
+      <div>
+        <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.2rem;">
+          📥 Import Past Attendance Records
+        </h3>
+        <div style="font-size: 0.85rem; color: var(--text-muted);">
+          Ingest data from Google Sheets, Google Apps Script, or CSV files into <strong>{{ course.code }}</strong>.
+        </div>
+      </div>
+      <button class="modal-close" onclick="closeModal('importAttendanceModal')">&times;</button>
+    </div>
+
+    <form action="{{ url_for('attendance_import', course_id=course.id) }}" method="POST" enctype="multipart/form-data">
+      <div style="background: var(--bg-alt); padding: 0.85rem 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 1.25rem;">
+        <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.35rem;">
+          📋 Supported Formats
+        </div>
+        <div style="font-size: 0.82rem; color: var(--text-main); line-height: 1.5;">
+          Copy and paste rows directly from Google Sheets (Tab-separated) or CSV:
+          <pre style="margin: 0.4rem 0 0 0; padding: 0.5rem; background: var(--bg-card); border-radius: var(--radius-sm); font-size: 0.76rem; overflow-x: auto; color: var(--primary);">9/9/2026	b26cs021@iitbhilai.ac.in	Batch 1	Lecture	PRESENT	b26cs021@iitbhilai.ac.in_LECTURE_2026-09-09
+9/9/2026	b26cs034@iitbhilai.ac.in	Batch 1	Lecture	PRESENT	b26cs034@iitbhilai.ac.in_LECTURE_2026-09-09</pre>
+          <span style="color: var(--text-muted); font-size: 0.78rem;">Supports columns: Date • Email / Roll No • Section • Session Type • Status • Optional Key</span>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1.25rem;">
+        <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+          Paste Sheet Data (TSV / CSV)
+        </label>
+        <textarea name="import_data" rows="7" placeholder="Paste data copied from Google Sheets or CSV here...
+Example:
+9/9/2026	b26cs021@iitbhilai.ac.in	Batch 1	Lecture	PRESENT
+9/9/2026	b26cs034@iitbhilai.ac.in	Batch 1	Lecture	PRESENT" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: monospace; font-size: 0.85rem;"></textarea>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+        <div>
+          <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+            Or Upload File (.csv, .tsv, .txt)
+          </label>
+          <input type="file" name="import_file" accept=".csv,.tsv,.txt" style="width: 100%; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem;">
+        </div>
+        <div>
+          <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+            Default Session Type
+          </label>
+          <select name="default_session_type" style="width: 100%; padding: 0.55rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem;">
+            <option value="Lecture" selected>Lecture</option>
+            <option value="Lab">Lab</option>
+            <option value="Tutorial">Tutorial</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem; color: var(--text-main);">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" name="auto_create_users" value="1" checked>
+          <span><strong>Auto-create student accounts</strong> if email / roll number is not found in user directory</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" name="auto_enroll" value="1" checked>
+          <span><strong>Auto-enroll students into this course</strong> so attendance shows on class roster immediately</span>
+        </label>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('importAttendanceModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700;">
+          <span>📥</span>
+          <span>Process &amp; Import Records</span>
+        </button>
+      </div>
+    </form>
   </div>
 </div>
 

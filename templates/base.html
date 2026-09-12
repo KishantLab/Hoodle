@@ -53,12 +53,13 @@
             <a href="{{ url_for('logout') }}" class="btn-signout" title="Sign Out">Sign Out</a>
           </div>
         {% else %}
+          <a href="{{ url_for('student_guide') }}" class="btn btn-outline btn-sm" style="margin-right: 0.4rem; text-decoration: none; font-size: 0.8rem;">📖 Student Guide</a>
           <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Sign In</a>
         {% endif %}
       </div>
     </div>
 
-    <!-- Row 2: Clean Nav Pills (Courses, Attendance Scanner, Directory, Brand) -->
+    <!-- Row 2: Clean Nav Pills (Courses, Attendance Scanner, Guide, Directory, Brand) -->
     {% if current_user %}
       <nav class="navbar-nav-strip">
         <a href="{{ url_for('dashboard') }}" class="nav-pill {% if request.path == '/dashboard' or request.path == '/' %}active{% endif %}">
@@ -70,6 +71,10 @@
             📷 Scan Attendance
           </button>
         {% endif %}
+
+        <a href="{{ url_for('student_guide') }}" class="nav-pill {% if '/guide' in request.path %}active{% endif %}" title="Student Usage Guide & Tutorials">
+          📖 Student Guide
+        </a>
 
         {% if current_user.role == 'admin' %}
           <a href="{{ url_for('admin_users') }}" class="nav-pill {% if request.path == url_for('admin_users') %}active{% endif %}">
@@ -319,6 +324,9 @@
       if (window.location.protocol === "http:" && !["localhost", "127.0.0.1"].includes(window.location.hostname)) {
         const noticeEl = document.getElementById("httpsUpgradeAlert");
         if (noticeEl) noticeEl.style.display = "flex";
+      }
+      if (new URLSearchParams(window.location.search).get("auto_scan") === "1") {
+        setTimeout(function() { if (typeof openAttendanceScanner === "function") openAttendanceScanner(); }, 250);
       }
     });
   </script>
