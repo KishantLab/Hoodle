@@ -1555,7 +1555,8 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertEqual(res_dash.status_code, 200)
         self.assertIn(b"userProfileModal", res_dash.data)
         self.assertIn(b"Usage Guide", res_dash.data)
-        self.assertIn(b"Messages", res_dash.data)
+        self.assertIn(b"App (.apk)", res_dash.data)
+        self.assertNotIn(b'href="/messages"', res_dash.data)
         self.logout()
 
     def test_custom_attendance_formula_50_percent_cutoff(self):
@@ -1671,6 +1672,10 @@ class ACCLLMSTestCase(unittest.TestCase):
 
         conn.execute("INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at) VALUES ('chat_student_2', 'CST02', 'cst2@test.com', ?, 'Student Beta', 'student', ?)", (pwd, now_str))
         s2_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # Enroll student 1 in course 1 where 'kishan' teaches
+        conn.execute("INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at) VALUES (1, ?, 'student', ?)", (s1_id, now_str))
+        conn.execute("INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at) VALUES (1, ?, 'student', ?)", (s2_id, now_str))
 
         teacher_id = conn.execute("SELECT id FROM users WHERE username = 'kishan'").fetchone()[0]
         conn.commit()
@@ -2054,6 +2059,82 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn(b'Sign Out', res_dash.data)
         self.assertIn(b'class="lms-footer"', res_dash.data)
         self.assertIn(b'class="lms-footer-container"', res_dash.data)
+        self.logout()
+
+    def test_topbar_messaging_removal_and_apk_download(self):
+        """Verify global topbar does not show messages pill and footer has APK download."""
+        self.login("kishan", "password123")
+        res_dash = self.client.get("/dashboard")
+        self.assertEqual(res_dash.status_code, 200)
+
+        # Global nav-strip must NOT contain Messages link
+        self.assertNotIn(b'href="/messages"', res_dash.data)
+        self.assertNotIn("💬 Messages".encode("utf-8"), res_dash.data)
+
+        # Footer must contain APK download button
+        self.assertIn(b'class="footer-apk-btn"', res_dash.data)
+        self.assertIn(b'/download/app.apk', res_dash.data)
+        self.assertIn(b'App (.apk)', res_dash.data)
+
+        # Test APK download route
+        res_apk = self.client.get("/download/app.apk")
+        self.assertEqual(res_apk.status_code, 200)
+        self.assertIn("application/vnd.android.package-archive", res_apk.headers.get("Content-Type", ""))
+        self.assertIn("Hoodle_LMS.apk", res_apk.headers.get("Content-Disposition", ""))
+
+        res_apk2 = self.client.get("/download/hoodle.apk")
+        self.assertEqual(res_apk2.status_code, 200)
+
+        self.logout()
+
+    def test_student_registration_required_for_messaging(self):
+        """Verify student must be registered in a course to send messages to instructors."""
+        # 1. Register a brand new student not enrolled in any course
+        reg_res = self.client.post("/register", data={
+            "roll_number": "CS26BTECH99999",
+            "full_name": "Unregistered Student",
+            "email": "unregistered@iitbhilai.ac.in",
+            "password": "password123",
+            "confirm_password": "password123"
+        }, follow_redirects=True)
+        self.assertIn(b"Registration successful", reg_res.data)
+
+        # 2. Login as this unregistered student
+        self.login("CS26BTECH99999", "password123")
+
+        # 3. View /messages - should display course registration warning
+        res_msgs = self.client.get("/messages")
+        self.assertEqual(res_msgs.status_code, 200)
+        self.assertIn(b"Course Registration Required", res_msgs.data)
+
+        # 4. Attempt to send direct message to instructor (user_id 1) -> Must be blocked (403)
+        res_block = self.client.post("/api/messages/send", json={
+            "recipient_id": 1,
+            "message": "Hello Professor"
+        })
+        self.assertEqual(res_block.status_code, 403)
+        self.assertIn("registered", res_block.get_json()["error"].lower())
+
+        # 5. Enroll the student into Course 1
+        conn = app.get_db()
+        new_user = conn.execute("SELECT id FROM users WHERE roll_number = 'CS26BTECH99999'").fetchone()
+        student_id = new_user["id"]
+        conn.execute("""
+            INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at)
+            VALUES (1, ?, 'student', '2026-09-12 12:00:00')
+        """, (student_id,))
+        conn.commit()
+        conn.close()
+
+        # 6. Attempt to message instructor now that student is registered in Course 1 -> Must succeed
+        res_allow = self.client.post("/api/messages/send", json={
+            "recipient_id": 1,
+            "course_id": 1,
+            "message": "Hello Professor, I am now registered!"
+        })
+        self.assertEqual(res_allow.status_code, 200)
+        self.assertTrue(res_allow.get_json()["success"])
+
         self.logout()
 
 

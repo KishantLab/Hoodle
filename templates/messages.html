@@ -163,19 +163,35 @@
           </form>
         </footer>
       {% else %}
-        <!-- Empty State When No Active Contact Selected -->
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); padding: 2rem; text-align: center;">
-          <div style="width: 72px; height: 72px; border-radius: 50%; background: #eff6ff; color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 2.2rem; margin-bottom: 1rem;">
-            💬
+        {% if current_user.role == 'student' and student_enrolled_courses_count is defined and student_enrolled_courses_count == 0 %}
+          <!-- Empty State When Student Is Not Registered in Any Courses -->
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); padding: 2rem; text-align: center;">
+            <div style="width: 72px; height: 72px; border-radius: 50%; background: #fef3c7; color: #d97706; display: flex; align-items: center; justify-content: center; font-size: 2.2rem; margin-bottom: 1rem;">
+              ⚠️
+            </div>
+            <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.4rem;">Course Registration Required</h3>
+            <p style="font-size: 0.88rem; max-width: 440px; line-height: 1.5; margin-bottom: 1.25rem;">
+              You are not currently registered or enrolled in any courses. Students can only send messages after registering for a course with the respective instructors and TAs.
+            </p>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-primary" style="font-weight: 700; text-decoration: none;">
+              📚 View &amp; Join Courses
+            </a>
           </div>
-          <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.4rem;">Select a Conversation</h3>
-          <p style="font-size: 0.88rem; max-width: 400px; line-height: 1.5; margin-bottom: 1.25rem;">
-            Choose an existing discussion on the left, or start a new conversation with a course instructor or student.
-          </p>
-          <button type="button" onclick="openModal('newChatModal')" class="btn btn-primary" style="font-weight: 700;">
-            ✏️ Start New Message
-          </button>
-        </div>
+        {% else %}
+          <!-- Empty State When No Active Contact Selected -->
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); padding: 2rem; text-align: center;">
+            <div style="width: 72px; height: 72px; border-radius: 50%; background: #eff6ff; color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 2.2rem; margin-bottom: 1rem;">
+              💬
+            </div>
+            <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.4rem;">Select a Conversation</h3>
+            <p style="font-size: 0.88rem; max-width: 400px; line-height: 1.5; margin-bottom: 1.25rem;">
+              Choose an existing discussion on the left, or start a new conversation with a course instructor or student.
+            </p>
+            <button type="button" onclick="openModal('newChatModal')" class="btn btn-primary" style="font-weight: 700;">
+              ✏️ Start New Message
+            </button>
+          </div>
+        {% endif %}
       {% endif %}
     </main>
   </div>

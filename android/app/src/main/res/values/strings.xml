@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Hoodle LMS</string>
+    <string name="server_url">http://10.10.14.104/lms/</string>
+    <string name="offline_title">Hoodle LMS Offline</string>
+    <string name="offline_desc">Unable to reach the Hoodle LMS server at 10.10.14.104. Please verify your campus WiFi or network connection.</string>
+    <string name="retry_btn">Retry Connection</string>
+</resources>

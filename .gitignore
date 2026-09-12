@@ -36,3 +36,10 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Android Build Artifacts
+android/.gradle/
+android/app/build/
+android/local.properties
+android/.idea/
+

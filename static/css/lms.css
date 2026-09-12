@@ -395,18 +395,22 @@ img[src*="accl_logo.png"] {
 
 .footer-guide {
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 .footer-guide-btn {
   color: var(--primary);
   font-weight: 700;
   text-decoration: none;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.35rem;
   background: #eff6ff;
-  padding: 0.4rem 1rem;
+  padding: 0.35rem 0.85rem;
   border-radius: 9999px;
   border: 1px solid #bfdbfe;
   box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08);
@@ -415,6 +419,27 @@ img[src*="accl_logo.png"] {
 
 .footer-guide-btn:hover {
   background: #dbeafe;
+}
+
+.footer-apk-btn {
+  color: #047857;
+  font-weight: 700;
+  text-decoration: none;
+  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #ecfdf5;
+  padding: 0.35rem 0.85rem;
+  border-radius: 9999px;
+  border: 1px solid #a7f3d0;
+  box-shadow: 0 1px 3px rgba(16, 185, 129, 0.08);
+  transition: all 0.15s ease;
+}
+
+.footer-apk-btn:hover {
+  background: #d1fae5;
+  border-color: #6ee7b7;
 }
 
 .footer-credits {
@@ -1202,15 +1227,28 @@ img[src*="accl_logo.png"] {
   }
 
   .footer-guide {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
     margin: 0.15rem 0 !important;
   }
 
   .footer-guide-btn {
-    font-size: 0.72rem !important;
-    padding: 0.2rem 0.65rem !important;
+    font-size: 0.7rem !important;
+    padding: 0.2rem 0.6rem !important;
     background: #ffffff !important;
     box-shadow: none !important;
     border: 1px solid #cbd5e1 !important;
+  }
+
+  .footer-apk-btn {
+    font-size: 0.7rem !important;
+    padding: 0.2rem 0.6rem !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: 1px solid #a7f3d0 !important;
+    color: #047857 !important;
   }
 
   .footer-credits {

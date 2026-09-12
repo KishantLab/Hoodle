@@ -6056,6 +6056,18 @@ def messages_view():
     conn = get_db()
     current_course = None
     course_member_ids = set()
+    student_enrolled_courses_count = 0
+
+    if curr_role == "student":
+        count_row = conn.execute("SELECT COUNT(*) FROM course_enrollments WHERE user_id = ? AND role = 'student'", (curr_id,)).fetchone()
+        student_enrolled_courses_count = count_row[0] if count_row else 0
+        if course_context_id:
+            enrolled = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ? AND role = 'student'", (course_context_id, curr_id)).fetchone()
+            if not enrolled:
+                flash("You must be registered in this course to access its messages.", "warning")
+                conn.close()
+                return redirect(url_for("dashboard"))
+
     if course_context_id:
         current_course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_context_id,)).fetchone()
         if current_course:
@@ -6211,7 +6223,8 @@ def messages_view():
         thread_messages=thread_messages,
         course_context_id=course_context_id,
         current_course=current_course,
-        has_explicit_contact=has_explicit_contact
+        has_explicit_contact=has_explicit_contact,
+        student_enrolled_courses_count=student_enrolled_courses_count
     )
 
 
@@ -6420,6 +6433,36 @@ def api_send_message():
         conn.close()
         return jsonify({"error": "Direct messaging between students is strictly prohibited by academic policy."}), 403
 
+    # Registration Policy: Students must be registered/enrolled in a course to send messages
+    if curr_role == "student":
+        if course_id:
+            enrolled = conn.execute(
+                "SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ? AND role = 'student'",
+                (course_id, curr_id)
+            ).fetchone()
+            if not enrolled:
+                conn.close()
+                return jsonify({"error": "You must be registered in this course to send messages."}), 403
+        else:
+            if recipient["role"] != "admin":
+                shared_course = conn.execute("""
+                    SELECT 1 FROM course_enrollments ce
+                    JOIN courses c ON ce.course_id = c.id
+                    WHERE ce.user_id = ? AND ce.role = 'student'
+                      AND (c.teacher_id = ? OR c.id IN (SELECT course_id FROM course_enrollments WHERE user_id = ? AND role IN ('teacher', 'ta')))
+                """, (curr_id, recipient_id, recipient_id)).fetchone()
+                if not shared_course:
+                    conn.close()
+                    return jsonify({"error": "You must be registered in a course with this instructor or TA to send messages."}), 403
+            else:
+                any_enrollment = conn.execute(
+                    "SELECT 1 FROM course_enrollments WHERE user_id = ? AND role = 'student'",
+                    (curr_id,)
+                ).fetchone()
+                if not any_enrollment:
+                    conn.close()
+                    return jsonify({"error": "You must be registered in a course to send messages."}), 403
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c = conn.cursor()
     c.execute("""
@@ -6465,6 +6508,29 @@ def api_mark_messages_read(other_user_id):
     conn.commit()
     conn.close()
     return jsonify({"success": True})
+
+
+@app.route("/app.apk")
+@app.route("/download/hoodle.apk")
+@app.route("/download/app.apk")
+def download_apk():
+    """Serves the Hoodle LMS Android App APK for direct download."""
+    apk_dir = os.path.join(app.root_path, "static", "downloads")
+    apk_path = os.path.join(apk_dir, "hoodle.apk")
+    if not os.path.exists(apk_path):
+        alt_path = os.path.join(app.root_path, "static", "hoodle.apk")
+        if os.path.exists(alt_path):
+            apk_path = alt_path
+            apk_dir = os.path.join(app.root_path, "static")
+        else:
+            abort(404, "Android App APK is currently being generated. Please check back shortly.")
+    return send_from_directory(
+        apk_dir,
+        os.path.basename(apk_path),
+        as_attachment=True,
+        download_name="Hoodle_LMS.apk",
+        mimetype="application/vnd.android.package-archive"
+    )
 
 
 with app.app_context():

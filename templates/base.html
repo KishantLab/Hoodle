@@ -127,13 +127,6 @@
           </div>
         {% endif %}
 
-        <a href="{{ url_for('messages_view') }}" class="nav-pill {% if request.path.startswith('/messages') %}active{% endif %}" title="1-on-1 Messages with Teachers / TAs">
-          💬 Messages
-          <span id="navUnreadBadge" style="background: #ef4444; color: white; font-size: 0.72rem; font-weight: 800; padding: 1px 6px; border-radius: 9999px; margin-left: 0.3rem; display: {% if unread_messages_count and unread_messages_count > 0 %}inline-block{% else %}none{% endif %};">
-            {{ unread_messages_count or 0 }}
-          </span>
-        </a>
-
         {% if current_user.role == 'student' %}
           <button type="button" class="nav-pill nav-pill-action" onclick="openAttendanceScanner()" title="Scan Attendance QR">
             📷 Scan Attendance
@@ -464,11 +457,15 @@
         <span class="footer-tagline">Accelerated Classroom &amp; Lab Learning</span>
       </div>
 
-      <!-- Center: Usage Guide -->
+      <!-- Center: Usage Guide & App Download -->
       <div class="footer-guide">
-        <a href="{{ url_for('usage_guide') }}" class="footer-guide-btn">
+        <a href="{{ url_for('usage_guide') }}" class="footer-guide-btn" title="Hoodle Student &amp; Instructor Guide">
           <span>📖</span>
-          <span>Usage Guide &amp; Tutorials</span>
+          <span>Usage Guide</span>
+        </a>
+        <a href="{{ url_for('download_apk') }}" class="footer-apk-btn" title="Download Hoodle LMS Android App (.apk)">
+          <span>📱</span>
+          <span>App (.apk)</span>
         </a>
       </div>
 
