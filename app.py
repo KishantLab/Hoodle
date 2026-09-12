@@ -21,6 +21,7 @@ import xml.etree.ElementTree as ET
 import secrets
 import smtplib
 import threading
+import urllib.request
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
@@ -475,6 +476,22 @@ def init_db():
             c.execute("ALTER TABLE courses ADD COLUMN grade_calculation_mode TEXT DEFAULT 'weighted_categories'")
         if "attendance_threshold" not in course_cols:
             c.execute("ALTER TABLE courses ADD COLUMN attendance_threshold REAL DEFAULT 50.0")
+        if "google_sheet_webhook_url" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN google_sheet_webhook_url TEXT DEFAULT ''")
+        if "google_sheet_sync_enabled" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN google_sheet_sync_enabled INTEGER DEFAULT 0")
+        if "google_sheet_last_synced" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN google_sheet_last_synced TEXT DEFAULT NULL")
+        if "google_sheet_sync_status" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN google_sheet_sync_status TEXT DEFAULT NULL")
+        if "attendance_feed_token" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN attendance_feed_token TEXT DEFAULT NULL")
+
+        # Pre-populate missing attendance_feed_tokens
+        c.execute("SELECT id FROM courses WHERE attendance_feed_token IS NULL OR attendance_feed_token = ''")
+        for crow in c.fetchall():
+            cid = crow["id"] if isinstance(crow, sqlite3.Row) else crow[0]
+            c.execute("UPDATE courses SET attendance_feed_token = ? WHERE id = ?", (secrets.token_hex(16), cid))
     except Exception:
         pass
 
@@ -1801,9 +1818,22 @@ def get_course_or_404(course_id):
         JOIN users u ON c.teacher_id = u.id
         WHERE c.id = ?
     """, (course_id,)).fetchone()
-    conn.close()
     if not course:
+        conn.close()
         abort(404, "Course not found")
+
+    if "attendance_feed_token" in course.keys() and not course["attendance_feed_token"]:
+        token = secrets.token_hex(16)
+        conn.execute("UPDATE courses SET attendance_feed_token = ? WHERE id = ?", (token, course_id))
+        conn.commit()
+        course = conn.execute("""
+            SELECT c.*, u.display_name as teacher_name, u.email as teacher_email
+            FROM courses c
+            JOIN users u ON c.teacher_id = u.id
+            WHERE c.id = ?
+        """, (course_id,)).fetchone()
+
+    conn.close()
     return course
 
 
@@ -5736,6 +5766,11 @@ def course_attendance(course_id):
         today_count = (today_row["count"] if today_row else 0) or 0
         
         conn.close()
+
+        token = course["attendance_feed_token"] or ""
+        google_sheet_feed_url = f"https://accllogin.tail77fd8b.ts.net/lms/api/courses/{course_id}/attendance/sheet-feed?token={token}"
+        google_sheet_formula = f'=IMPORTDATA("{google_sheet_feed_url}")'
+
         return render_template(
             "course_attendance.html",
             course=course,
@@ -5746,7 +5781,9 @@ def course_attendance(course_id):
             recent_logs=recent_logs,
             today_str=today_str,
             attendance_pct=0.0,
-            active_tab="attendance"
+            active_tab="attendance",
+            google_sheet_feed_url=google_sheet_feed_url,
+            google_sheet_formula=google_sheet_formula
         )
 
 
@@ -6095,44 +6132,295 @@ def attendance_import(course_id):
     return redirect(url_for("course_attendance", course_id=course_id))
 
 
+def get_course_attendance_matrix(course_id):
+    """
+    Builds the full session-by-session attendance matrix for a course.
+    Returns:
+      sessions: list of dicts [{'date': 'YYYY-MM-DD', 'session_type': 'Lecture', 'label': '2026-09-01 (Lecture)'}, ...]
+      students: list of dicts with student details, session marks, attended count, and percentage
+      matrix: 2D list suitable for CSV / Google Sheets setValues()
+    """
+    conn = get_db()
+    # 1. Fetch all unique sessions in chronological order
+    session_rows = conn.execute("""
+        SELECT DISTINCT attendance_date, session_type
+        FROM attendance_logs
+        WHERE course_id = ?
+        ORDER BY attendance_date ASC, session_type ASC
+    """, (course_id,)).fetchall()
+
+    sessions = []
+    for sr in session_rows:
+        s_date = sr["attendance_date"]
+        s_type = sr["session_type"]
+        sessions.append({
+            "date": s_date,
+            "session_type": s_type,
+            "key": f"{s_date}_{s_type.upper()}",
+            "label": f"{s_date} ({s_type})"
+        })
+    total_sessions = len(sessions)
+
+    # 2. Fetch all enrolled students
+    student_rows = conn.execute("""
+        SELECT u.id, u.roll_number, u.display_name, u.email
+        FROM course_enrollments ce
+        JOIN users u ON ce.user_id = u.id
+        WHERE ce.course_id = ? AND ce.role = 'student'
+        ORDER BY u.roll_number ASC, u.display_name ASC
+    """, (course_id,)).fetchall()
+
+    # 3. Fetch all attendance logs for this course
+    log_rows = conn.execute("""
+        SELECT student_id, attendance_date, session_type, status, method
+        FROM attendance_logs
+        WHERE course_id = ?
+    """, (course_id,)).fetchall()
+    conn.close()
+
+    # Build set of attended sessions per student
+    attended_set = set()
+    for lr in log_rows:
+        attended_set.add((lr["student_id"], lr["attendance_date"], lr["session_type"].upper()))
+
+    # Build headers
+    headers = ["Roll Number", "Student Name", "Email"]
+    for s in sessions:
+        headers.append(s["label"])
+    headers.extend(["Total Attended", "Total Sessions", "Attendance Percentage", "Eligibility Status"])
+
+    matrix_rows = [headers]
+    student_data = []
+
+    for st in student_rows:
+        s_id = st["id"]
+        roll = st["roll_number"] or ""
+        name = st["display_name"]
+        email = st["email"] or ""
+
+        row = [roll, name, email]
+        student_sessions = {}
+        attended_count = 0
+
+        for s in sessions:
+            has_attended = (s_id, s["date"], s["session_type"].upper()) in attended_set
+            if has_attended:
+                row.append("P")
+                student_sessions[s["key"]] = "P"
+                attended_count += 1
+            else:
+                row.append("A")
+                student_sessions[s["key"]] = "A"
+
+        pct = round((attended_count / total_sessions * 100), 1) if total_sessions > 0 else 100.0
+        status = "Satisfactory (>=75%)" if pct >= 75.0 else "Shortage (<75%)"
+
+        row.extend([attended_count, total_sessions, f"{pct}%", status])
+        matrix_rows.append(row)
+
+        student_data.append({
+            "id": s_id,
+            "roll_number": roll,
+            "display_name": name,
+            "email": email,
+            "sessions": student_sessions,
+            "attended_count": attended_count,
+            "total_sessions": total_sessions,
+            "attendance_pct": pct,
+            "status": status
+        })
+
+    return {
+        "sessions": sessions,
+        "students": student_data,
+        "matrix": matrix_rows
+    }
+
+
+def sync_course_attendance_to_google_sheet(course_id):
+    """
+    Pushes the full session-by-session attendance matrix to the configured Google Sheet Webhook URL.
+    """
+    conn = get_db()
+    course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+    if not course or not course["google_sheet_webhook_url"]:
+        conn.close()
+        return False, "No Google Sheet Webhook URL configured."
+
+    webhook_url = course["google_sheet_webhook_url"].strip()
+    data = get_course_attendance_matrix(course_id)
+    payload = {
+        "course_id": course["id"],
+        "course_code": course["code"],
+        "course_title": course["title"],
+        "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total_sessions": len(data["sessions"]),
+        "total_students": len(data["students"]),
+        "matrix": data["matrix"]
+    }
+
+    try:
+        req = urllib.request.Request(
+            webhook_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            msg = f"Success ({len(data['students'])} students synced on {now_str})"
+            conn.execute("""
+                UPDATE courses
+                SET google_sheet_last_synced = ?, google_sheet_sync_status = ?
+                WHERE id = ?
+            """, (now_str, msg, course_id))
+            conn.commit()
+            conn.close()
+            return True, msg
+    except Exception as e:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        err_msg = f"Error: {str(e)[:120]}"
+        conn.execute("""
+            UPDATE courses
+            SET google_sheet_last_synced = ?, google_sheet_sync_status = ?
+            WHERE id = ?
+        """, (now_str, err_msg, course_id))
+        conn.commit()
+        conn.close()
+        return False, err_msg
+
+
 @app.route("/courses/<int:course_id>/attendance/export-csv")
 @teacher_required
 def attendance_export_csv(course_id):
     course = get_course_or_404(course_id)
-    conn = get_db()
-    
-    sessions_row = conn.execute("""
-        SELECT COUNT(DISTINCT attendance_date || '_' || session_type) as total_sessions
-        FROM attendance_logs WHERE course_id = ?
-    """, (course_id,)).fetchone()
-    total_sessions = sessions_row["total_sessions"] or 0
-    
-    students = conn.execute("""
-        SELECT u.roll_number, u.display_name, u.email,
-               (SELECT COUNT(*) FROM attendance_logs al WHERE al.course_id = ? AND al.student_id = u.id) as attended_count
-        FROM course_enrollments ce
-        JOIN users u ON ce.user_id = u.id
-        WHERE ce.course_id = ? AND ce.role = 'student'
-        ORDER BY u.roll_number ASC
-    """, (course_id, course_id)).fetchall()
-    conn.close()
+    matrix_data = get_course_attendance_matrix(course_id)
     
     output = io.StringIO()
-    output.write('"Roll Number","Student Name","Email","Attended Sessions","Total Sessions","Attendance Percentage","Status"\n')
-    
-    for s in students:
-        att = s["attended_count"]
-        pct = round((att / total_sessions * 100), 1) if total_sessions > 0 else 100.0
-        status = "Satisfactory (>=75%)" if pct >= 75.0 else "Shortage (<75%)"
-        output.write(f'"{s["roll_number"] or ""}","{s["display_name"]}","{s["email"] or ""}",{att},{total_sessions},{pct}%,{status}\n')
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+    for row in matrix_data["matrix"]:
+        writer.writerow(row)
         
     output.seek(0)
-    filename = f"{re.sub(r'[^a-zA-Z0-9_-]', '_', course['code'])}_Attendance_{datetime.now().strftime('%Y%m%d')}.csv"
+    safe_code = re.sub(r'[^a-zA-Z0-9_-]', '_', course['code'])
+    filename = f"{safe_code}_Attendance_Matrix_{datetime.now().strftime('%Y%m%d')}.csv"
     return Response(
         output.getvalue(),
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@app.route("/api/courses/<int:course_id>/attendance/sheet-feed")
+def api_course_attendance_sheet_feed(course_id):
+    """
+    Publicly accessible authenticated endpoint for Google Sheets =IMPORTDATA formula.
+    Validates token against courses.attendance_feed_token.
+    """
+    token = request.args.get("token", "").strip()
+    if not token:
+        abort(403, "Missing Google Sheet authentication token.")
+
+    conn = get_db()
+    course = conn.execute("SELECT id, code, attendance_feed_token FROM courses WHERE id = ?", (course_id,)).fetchone()
+    conn.close()
+
+    if not course or not course["attendance_feed_token"] or course["attendance_feed_token"] != token:
+        abort(403, "Invalid Google Sheet authentication token.")
+
+    matrix_data = get_course_attendance_matrix(course_id)
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+    for row in matrix_data["matrix"]:
+        writer.writerow(row)
+
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Type": "text/csv; charset=utf-8",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
+
+
+@app.route("/courses/<int:course_id>/attendance/google-sheet-config", methods=["POST"])
+@teacher_required
+def course_attendance_google_sheet_config(course_id):
+    course = get_course_or_404(course_id)
+    webhook_url = request.form.get("webhook_url", "").strip()
+    daily_sync = 1 if request.form.get("daily_sync") else 0
+
+    conn = get_db()
+    conn.execute("""
+        UPDATE courses
+        SET google_sheet_webhook_url = ?, google_sheet_sync_enabled = ?
+        WHERE id = ?
+    """, (webhook_url, daily_sync, course_id))
+    conn.commit()
+    conn.close()
+
+    flash("Google Sheet backup settings updated successfully.", "success")
+    return redirect(url_for("course_attendance", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/attendance/sync-google-sheet", methods=["POST"])
+@teacher_required
+def course_attendance_sync_google_sheet(course_id):
+    course = get_course_or_404(course_id)
+    success, msg = sync_course_attendance_to_google_sheet(course_id)
+    if success:
+        flash(f"✅ Google Sheet Sync: {msg}", "success")
+    else:
+        flash(f"❌ Google Sheet Sync Failed: {msg}", "danger")
+    return redirect(url_for("course_attendance", course_id=course_id))
+
+
+_daily_sheet_backup_started = False
+
+def start_daily_google_sheet_backup_daemon():
+    """
+    Background daemon that runs periodically to check if courses with
+    google_sheet_sync_enabled = 1 have completed their daily backup to Google Sheets.
+    """
+    global _daily_sheet_backup_started
+    if _daily_sheet_backup_started:
+        return
+    _daily_sheet_backup_started = True
+
+    def _backup_loop():
+        if app.config.get("TESTING"):
+            return
+        time.sleep(15)  # brief warm-up
+        while True:
+            try:
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                conn = get_db()
+                courses_to_sync = conn.execute("""
+                    SELECT id, code, google_sheet_webhook_url, google_sheet_last_synced
+                    FROM courses
+                    WHERE google_sheet_sync_enabled = 1
+                      AND google_sheet_webhook_url IS NOT NULL
+                      AND trim(google_sheet_webhook_url) != ''
+                """).fetchall()
+                conn.close()
+
+                for c in courses_to_sync:
+                    last_synced = c["google_sheet_last_synced"] or ""
+                    if not last_synced.startswith(today_str):
+                        try:
+                            sync_course_attendance_to_google_sheet(c["id"])
+                        except Exception as err:
+                            app.logger.warning("Daily Google Sheet backup error for course %s: %s", c["id"], err)
+            except Exception as e:
+                app.logger.warning("Daily Google Sheet backup loop exception: %s", e)
+
+            time.sleep(1800)  # check every 30 minutes
+
+    t = threading.Thread(target=_backup_loop, daemon=True)
+    t.start()
 
 
 # --- 1-on-1 Chat & Messaging System (Teacher-Student & TA-Student) ---
@@ -6724,6 +7012,7 @@ def download_apk():
 
 with app.app_context():
     init_db()
+    start_daily_google_sheet_backup_daemon()
 
 
 if __name__ == "__main__":

@@ -2365,6 +2365,122 @@ class ACCLLMSTestCase(unittest.TestCase):
         }, follow_redirects=True)
         self.assertEqual(res_dup.status_code, 200)
         self.assertIn(b"Your password has been changed successfully.", res_dup.data)
+    def test_attendance_session_matrix_export_and_google_sheet_backup(self):
+        """Verify session-by-session attendance matrix CSV export, Google Sheets live feed, and automated webhook backup."""
+        from unittest.mock import patch, MagicMock
+
+        conn = app.get_db()
+        # Seed test sessions in attendance_logs for course 1
+        # Student 3 is student1 (roll B26DS001)
+        conn.execute("DELETE FROM attendance_logs WHERE course_id = 1")
+        conn.execute("""
+            INSERT INTO attendance_logs (course_id, student_id, roll_number, student_name, attendance_date, session_type, status, method, marked_at, attendance_key)
+            VALUES (1, 3, 'B26DS001', 'Aarav Sharma', '2026-09-01', 'Lecture', 'present', 'QR_SCAN', '2026-09-01 10:00:00', '3_Lecture_2026-09-01')
+        """)
+        conn.execute("""
+            INSERT INTO attendance_logs (course_id, student_id, roll_number, student_name, attendance_date, session_type, status, method, marked_at, attendance_key)
+            VALUES (1, 3, 'B26DS001', 'Aarav Sharma', '2026-09-03', 'Lab', 'present', 'QR_SCAN', '2026-09-03 14:00:00', '3_Lab_2026-09-03')
+        """)
+        # A third session where another student or nobody attended (simulating an absent session for student1)
+        conn.execute("""
+            INSERT INTO attendance_logs (course_id, student_id, roll_number, student_name, attendance_date, session_type, status, method, marked_at, attendance_key)
+            VALUES (1, 1, 'ADMIN', 'LMS Administrator', '2026-09-05', 'Lecture', 'present', 'MANUAL', '2026-09-05 10:00:00', '1_Lecture_2026-09-05')
+        """)
+        conn.commit()
+        conn.close()
+
+        # 1. Test get_course_attendance_matrix backend function
+        matrix_data = app.get_course_attendance_matrix(1)
+        self.assertEqual(len(matrix_data["sessions"]), 3)
+        headers = matrix_data["matrix"][0]
+        self.assertIn("2026-09-01 (Lecture)", headers)
+        self.assertIn("2026-09-03 (Lab)", headers)
+        self.assertIn("2026-09-05 (Lecture)", headers)
+        self.assertIn("Total Attended", headers)
+        self.assertIn("Attendance Percentage", headers)
+
+        # Check student1 row in matrix
+        student1_row = [r for r in matrix_data["matrix"][1:] if r[0] == 'B26DS001' or 'Aarav' in r[1]]
+        self.assertTrue(len(student1_row) > 0)
+        s_row = student1_row[0]
+        # Should have 'P' for 2026-09-01 and 2026-09-03, 'A' for 2026-09-05
+        date1_idx = headers.index("2026-09-01 (Lecture)")
+        date2_idx = headers.index("2026-09-03 (Lab)")
+        date3_idx = headers.index("2026-09-05 (Lecture)")
+        self.assertEqual(s_row[date1_idx], "P")
+        self.assertEqual(s_row[date2_idx], "P")
+        self.assertEqual(s_row[date3_idx], "A")
+
+        # 2. Test CSV Export Route (session-by-session)
+        self.login("kishan", "password123")
+        res_csv = self.client.get("/courses/1/attendance/export-csv")
+        self.assertEqual(res_csv.status_code, 200)
+        self.assertIn("text/csv", res_csv.headers.get("Content-Type", ""))
+        self.assertIn("attachment", res_csv.headers.get("Content-Disposition", ""))
+        csv_text = res_csv.data.decode("utf-8")
+        self.assertIn("2026-09-01 (Lecture)", csv_text)
+        self.assertIn("2026-09-03 (Lab)", csv_text)
+        self.assertIn("2026-09-05 (Lecture)", csv_text)
+        self.assertIn("Total Attended", csv_text)
+
+        # 3. Test Google Sheet Live Feed Endpoint
+        conn = app.get_db()
+        course = conn.execute("SELECT attendance_feed_token FROM courses WHERE id = 1").fetchone()
+        conn.close()
+        feed_token = course["attendance_feed_token"]
+        self.assertTrue(bool(feed_token))
+
+        # Unauthorized access without token
+        res_feed_bad = self.client.get("/api/courses/1/attendance/sheet-feed")
+        self.assertEqual(res_feed_bad.status_code, 403)
+
+        # Unauthorized access with invalid token
+        res_feed_invalid = self.client.get("/api/courses/1/attendance/sheet-feed?token=invalid_token")
+        self.assertEqual(res_feed_invalid.status_code, 403)
+
+        # Authorized access with valid token
+        res_feed_ok = self.client.get(f"/api/courses/1/attendance/sheet-feed?token={feed_token}")
+        self.assertEqual(res_feed_ok.status_code, 200)
+        self.assertIn("text/csv", res_feed_ok.headers.get("Content-Type", ""))
+        feed_csv = res_feed_ok.data.decode("utf-8")
+        self.assertIn("2026-09-01 (Lecture)", feed_csv)
+        self.assertIn("2026-09-03 (Lab)", feed_csv)
+
+        # 4. Test Google Sheet Webhook Config POST
+        res_config = self.client.post("/courses/1/attendance/google-sheet-config", data={
+            "webhook_url": "https://script.google.com/macros/s/test_token/exec",
+            "daily_sync": "1"
+        }, follow_redirects=True)
+        self.assertEqual(res_config.status_code, 200)
+        self.assertIn(b"Google Sheet backup settings updated successfully.", res_config.data)
+
+        # Verify DB updated
+        conn = app.get_db()
+        updated_course = conn.execute("SELECT google_sheet_webhook_url, google_sheet_sync_enabled FROM courses WHERE id = 1").fetchone()
+        conn.close()
+        self.assertEqual(updated_course["google_sheet_webhook_url"], "https://script.google.com/macros/s/test_token/exec")
+        self.assertEqual(updated_course["google_sheet_sync_enabled"], 1)
+
+        # 5. Test Manual Google Sheet Sync POST with mocked urllib
+        with patch("urllib.request.urlopen") as mock_url:
+            mock_resp = MagicMock()
+            mock_resp.__enter__.return_value = mock_resp
+            mock_resp.status = 200
+            mock_url.return_value = mock_resp
+
+            res_sync = self.client.post("/courses/1/attendance/sync-google-sheet", follow_redirects=True)
+            self.assertEqual(res_sync.status_code, 200)
+            self.assertIn(b"Google Sheet Sync: Success", res_sync.data)
+            mock_url.assert_called_once()
+
+        # 6. Verify Attendance View UI has the new buttons & modal
+        res_view = self.client.get("/courses/1/attendance")
+        self.assertEqual(res_view.status_code, 200)
+        self.assertIn(b"Google Sheet Backup", res_view.data)
+        self.assertIn(b"Export Detailed CSV (Session-by-Session)", res_view.data)
+        self.assertIn(b'id="googleSheetModal"', res_view.data)
+        self.assertIn(b'=IMPORTDATA(', res_view.data)
+        self.assertIn(b'function doPost(e)', res_view.data)
         self.logout()
 
 
