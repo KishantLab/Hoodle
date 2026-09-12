@@ -232,6 +232,7 @@
               <tr>
                 <th>Roll Number</th>
                 <th>Student Email</th>
+                <th>Role</th>
                 <th>Status</th>
                 <th>Invited Date</th>
                 <th style="text-align: right;">Action</th>
@@ -247,13 +248,24 @@
                     {{ inv.student_email or '-' }}
                   </td>
                   <td>
+                    {% if inv.role in ('ta', 'teacher') %}
+                      <span style="font-size: 0.75rem; background: #e0e7ff; color: #3730a3; padding: 2px 7px; border-radius: 4px; font-weight: 700;">
+                        ⭐ Co-Teacher / TA
+                      </span>
+                    {% else %}
+                      <span style="font-size: 0.75rem; background: #f1f5f9; color: #475569; padding: 2px 7px; border-radius: 4px; font-weight: 600;">
+                        👨‍🎓 Student
+                      </span>
+                    {% endif %}
+                  </td>
+                  <td>
                     {% if inv.student_id %}
                       <span style="font-size: 0.75rem; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 600;">
                         Registered (On Home Screen)
                       </span>
                     {% else %}
                       <span style="font-size: 0.75rem; background: #fef3c7; color: #92400e; padding: 2px 7px; border-radius: 4px; font-weight: 600;">
-                        Awaiting Student Signup
+                        Awaiting Signup
                       </span>
                     {% endif %}
                   </td>
@@ -325,29 +337,37 @@
   </div>
 </div>
 
-<!-- Modal: Invite / Add Students in Bulk (Teachers & Admins) -->
+<!-- Modal: Invite / Add Students & TAs in Bulk (Teachers & Admins) -->
 <div id="inviteStudentsModal" class="modal-backdrop">
   <div class="modal-content" style="max-width: 520px;">
     <div class="modal-header">
-      <h3 style="font-size: 1.15rem; font-weight: 700; color: #1e3a8a;">✉️ Invite / Add Students to {{ course.code }}</h3>
+      <h3 style="font-size: 1.15rem; font-weight: 700; color: #1e3a8a;">✉️ Invite Students &amp; TAs to {{ course.code }}</h3>
       <button class="modal-close" onclick="closeModal('inviteStudentsModal')">&times;</button>
     </div>
     <form action="{{ url_for('invite_students', course_id=course.id) }}" method="POST">
       <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.45;">
-        Paste student <strong>Roll Numbers</strong> (e.g. <code>B26CS001, B26CS002</code>) or emails below. You can separate them by commas, spaces, or newlines.
+        Paste <strong>Roll Numbers</strong> (e.g. <code>B26CS001, B26CS002</code>) or emails below. You can separate them by commas, spaces, or newlines.
       </p>
 
       <div class="form-group">
-        <label class="form-label" for="students_input">Student Roll Numbers or Emails *</label>
-        <textarea id="students_input" name="students_input" class="form-control" rows="6" placeholder="B26CS001, B26CS002, B26EE015&#10;b26ds099@iitbhilai.ac.in" style="font-family: monospace; font-size: 0.88rem; line-height: 1.5;" required></textarea>
+        <label class="form-label" for="invite_role_select">Role to Invite As *</label>
+        <select id="invite_role_select" name="role" class="form-control" style="font-size: 0.9rem; font-weight: 600;">
+          <option value="student" selected>👨‍🎓 Student (Class member)</option>
+          <option value="ta">⭐ Teaching Assistant / Co-Teacher (Teaching privileges)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="students_input">Roll Numbers or Emails *</label>
+        <textarea id="students_input" name="students_input" class="form-control" rows="6" placeholder="B26CS001, B26CS002, B26EE015&#10;ta.faculty@iitbhilai.ac.in" style="font-family: monospace; font-size: 0.88rem; line-height: 1.5;" required></textarea>
       </div>
 
       <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.85rem; margin-bottom: 1.25rem; font-size: 0.82rem; color: #475569; line-height: 1.45;">
         <div style="font-weight: 700; margin-bottom: 0.25rem; color: #1e293b;">⚡ How It Works:</div>
         <ul style="margin: 0; padding-left: 1.25rem;">
-          <li><strong>Registered Students</strong>: The invitation will appear immediately on their Home Screen with an instant <strong>"Accept &amp; Join Class"</strong> button.</li>
-          <li><strong>Unregistered Students</strong>: The invitation is recorded under their roll number. As soon as the student signs up with that roll number, the invitation will automatically link and show on their Home Screen.</li>
-          <li>If Gmail delivery is active, an email invitation with a direct 1-click join link will also be dispatched.</li>
+          <li><strong>Registered Users</strong>: The invitation will appear immediately on their Home Screen with an instant <strong>"Accept &amp; Join Class"</strong> button.</li>
+          <li><strong>Unregistered Users</strong>: The invitation is recorded under their roll number/email and linked automatically when they register.</li>
+          <li><strong>Email Notifications</strong>: An email invitation with a direct 1-click join link is dispatched immediately to each recipient's email.</li>
         </ul>
       </div>
 

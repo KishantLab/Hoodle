@@ -1874,6 +1874,93 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertEqual(rst_pwd, "hvrnbggfrzmnvrsh")
         self.logout()
 
+    def test_resolve_portal_url_and_reply_link(self):
+        """Verify resolve_portal_url resolves paths to full URLs and prevents duplicate /lms prefixes."""
+        with app.app.test_request_context():
+            url1 = app.resolve_portal_url("/messages?user_id=2")
+            self.assertTrue(url1.endswith("/messages?user_id=2"))
+            self.assertTrue(url1.startswith("http"))
+
+            url2 = app.resolve_portal_url("/lms/messages?user_id=2")
+            self.assertNotIn("/lms/lms", url2)
+            self.assertTrue(url2.endswith("/lms/messages?user_id=2"))
+
+            url3 = app.resolve_portal_url("http://example.com/custom")
+            self.assertEqual(url3, "http://example.com/custom")
+
+    def test_add_student_and_ta_triggers_email_notification(self):
+        """Verify adding a student or TA triggers send_event_notification_email."""
+        from unittest.mock import patch
+
+        self.login("kishan", "password123")
+        conn = app.get_db()
+        conn.execute("UPDATE users SET email = 'student1@iitbhilai.ac.in' WHERE id = 3")
+        conn.execute("DELETE FROM course_enrollments WHERE course_id = 1 AND user_id = 3")
+        conn.commit()
+        conn.close()
+
+        with patch("app.send_event_notification_email") as mock_notify:
+            res = self.client.post("/courses/1/people/add-coteacher", data={
+                "user_id": "3",
+                "role": "student"
+            }, follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            mock_notify.assert_called_once()
+            args, kwargs = mock_notify.call_args
+            self.assertIn("student1@iitbhilai.ac.in", kwargs["recipient_emails"])
+            self.assertIn("enrolled as a Student", kwargs["heading"])
+
+        with patch("app.send_event_notification_email") as mock_notify:
+            res = self.client.post("/courses/1/people/add-coteacher", data={
+                "user_id": "3",
+                "role": "ta"
+            }, follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            mock_notify.assert_called_once()
+            args, kwargs = mock_notify.call_args
+            self.assertIn("student1@iitbhilai.ac.in", kwargs["recipient_emails"])
+            self.assertIn("Co-Teacher / TA", kwargs["heading"])
+
+        self.logout()
+
+    def test_invite_students_with_ta_role_and_acceptance(self):
+        """Verify inviting a user as TA records role='ta' and enrolls them as TA upon acceptance."""
+        from unittest.mock import patch
+
+        self.login("kishan", "password123")
+        with patch("app.send_course_invitation_email") as mock_inv:
+            res = self.client.post("/courses/1/invite", data={
+                "students_input": "newta@iitbhilai.ac.in",
+                "role": "ta"
+            }, follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            self.assertIn(b"Co-Teacher(s) / TA(s) invitation(s) saved", res.data)
+            mock_inv.assert_called_once()
+            args, kwargs = mock_inv.call_args
+            self.assertEqual(kwargs.get("role"), "ta")
+
+        # Verify invitation row in DB
+        conn = app.get_db()
+        inv = conn.execute("SELECT * FROM course_invitations WHERE course_id = 1 AND student_email = 'newta@iitbhilai.ac.in'").fetchone()
+        conn.close()
+        self.assertIsNotNone(inv)
+        self.assertEqual(inv["role"], "ta")
+
+        # Now accept invitation by token while logged in as student1
+        self.logout()
+        self.login("student1", "student123")
+        res = self.client.get(f"/invitations/accept/{inv['token']}", follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Successfully joined", res.data)
+
+        # Verify enrollment has role='ta'
+        conn = app.get_db()
+        enroll = conn.execute("SELECT * FROM course_enrollments WHERE course_id = 1 AND user_id = 3").fetchone()
+        conn.close()
+        self.assertIsNotNone(enroll)
+        self.assertEqual(enroll["role"], "ta")
+        self.logout()
+
 
 if __name__ == "__main__":
     unittest.main()

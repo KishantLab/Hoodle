@@ -442,6 +442,7 @@ def init_db():
             student_id INTEGER DEFAULT NULL,
             token TEXT UNIQUE NOT NULL,
             status TEXT DEFAULT 'pending',
+            role TEXT DEFAULT 'student',
             sent_at TEXT NOT NULL,
             responded_at TEXT DEFAULT NULL,
             FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
@@ -455,21 +456,36 @@ def init_db():
     c.execute("CREATE INDEX IF NOT EXISTS idx_inv_student ON course_invitations (student_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_inv_token ON course_invitations (token)")
 
+    # Migration for course_invitations table
+    try:
+        c.execute("PRAGMA table_info(course_invitations)")
+        inv_cols = [row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in c.fetchall()]
+        if "role" not in inv_cols:
+            c.execute("ALTER TABLE course_invitations ADD COLUMN role TEXT DEFAULT 'student'")
+    except Exception:
+        pass
+
     # Migration for courses table
-    c.execute("PRAGMA table_info(courses)")
-    course_cols = [row["name"] for row in c.fetchall()]
-    if "grading_formula" not in course_cols:
-        c.execute("ALTER TABLE courses ADD COLUMN grading_formula TEXT DEFAULT NULL")
-    if "grade_calculation_mode" not in course_cols:
-        c.execute("ALTER TABLE courses ADD COLUMN grade_calculation_mode TEXT DEFAULT 'weighted_categories'")
-    if "attendance_threshold" not in course_cols:
-        c.execute("ALTER TABLE courses ADD COLUMN attendance_threshold REAL DEFAULT 50.0")
+    try:
+        c.execute("PRAGMA table_info(courses)")
+        course_cols = [row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in c.fetchall()]
+        if "grading_formula" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN grading_formula TEXT DEFAULT NULL")
+        if "grade_calculation_mode" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN grade_calculation_mode TEXT DEFAULT 'weighted_categories'")
+        if "attendance_threshold" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN attendance_threshold REAL DEFAULT 50.0")
+    except Exception:
+        pass
 
     # Migration for coursework table
-    c.execute("PRAGMA table_info(coursework)")
-    cw_cols = [row["name"] for row in c.fetchall()]
-    if "category_id" not in cw_cols:
-        c.execute("ALTER TABLE coursework ADD COLUMN category_id INTEGER DEFAULT NULL")
+    try:
+        c.execute("PRAGMA table_info(coursework)")
+        cw_cols = [row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in c.fetchall()]
+        if "category_id" not in cw_cols:
+            c.execute("ALTER TABLE coursework ADD COLUMN category_id INTEGER DEFAULT NULL")
+    except Exception:
+        pass
 
     # 13. Direct Messages Table (Student to Teacher/TA, Teacher/TA to Student, strictly no student-student)
     c.execute("""
@@ -611,40 +627,106 @@ def get_smtp_config():
         return default_user, default_pass.replace(" ", ""), default_from
 
 
-def send_course_invitation_email(course, recipient_email, student_roll, teacher_name, token):
+def get_portal_base_url():
+    """
+    Returns the fully qualified base URL of the Hoodle LMS portal (e.g. http://10.10.14.104/lms).
+    Priority:
+    1. SQLite system_settings ('portal_base_url')
+    2. os.environ.get('PORTAL_BASE_URL')
+    3. Active request context (script_root, X-Forwarded-Prefix, host)
+    4. Fallback default: http://10.10.14.104/lms
+    """
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT value FROM system_settings WHERE key = 'portal_base_url'").fetchone()
+        conn.close()
+        if row and row["value"] and row["value"].strip():
+            return row["value"].strip().rstrip("/")
+    except Exception:
+        pass
+
+    env_url = os.environ.get("PORTAL_BASE_URL", "").strip().rstrip("/")
+    if env_url:
+        return env_url
+
+    try:
+        from flask import has_request_context, request
+        if has_request_context():
+            base = request.url_root.rstrip("/")
+            prefix = request.headers.get("X-Forwarded-Prefix", "").strip().rstrip("/")
+            if prefix and not base.endswith(prefix):
+                base = f"{base}{prefix}"
+            if ("10.10.14.104" in base or "accl" in base) and not base.endswith(("/lms", "/hoodle")):
+                base = f"{base}/lms"
+            if base:
+                return base
+    except Exception:
+        pass
+
+    return "http://10.10.14.104/lms"
+
+
+def resolve_portal_url(path_or_url):
+    """
+    Safely resolves any relative or absolute path into a full external URL pointing to Hoodle LMS.
+    Prevents double prefixes like /lms/lms and ensures the correct base URL.
+    """
+    if not path_or_url:
+        return ""
+    if path_or_url.startswith(("http://", "https://")):
+        return path_or_url
+
+    base_url = get_portal_base_url().rstrip("/")
+
+    # If base_url ends with /lms or /hoodle and path_or_url already starts with that prefix, strip it from base_url
+    for prefix in ("/lms", "/hoodle"):
+        if base_url.endswith(prefix) and (path_or_url == prefix or path_or_url.startswith(f"{prefix}/") or path_or_url.startswith(f"{prefix}?")):
+            base_url = base_url[:-len(prefix)].rstrip("/")
+            break
+
+    if not path_or_url.startswith("/"):
+        path_or_url = "/" + path_or_url
+
+    return f"{base_url}{path_or_url}"
+
+
+def send_course_invitation_email(course, recipient_email, student_roll, teacher_name, token, role="student"):
     """
     Sends a course invitation email via Gmail SMTP in a background daemon thread.
     Gracefully logs and exits if Gmail credentials are not configured.
+    Supports both Student and Teaching Assistant (TA) / Co-Teacher invitations.
     """
     gmail_user, gmail_pass, from_name = get_smtp_config()
 
     if not gmail_user or not gmail_pass or not recipient_email:
         return
 
-    # Derive base URL while still inside the active request context
-    base_url = os.environ.get("PORTAL_BASE_URL", "").strip().rstrip("/")
-    if not base_url:
-        try:
-            base_url = request.host_url.rstrip("/")
-        except Exception:
-            base_url = "http://localhost:8095"
-
-    join_url = f"{base_url}/invitations/accept/{token}"
+    join_url = resolve_portal_url(f"/invitations/accept/{token}")
     course_code = course["code"]
     course_title = course["title"]
     course_section = course["section"] if "section" in course.keys() and course["section"] else "Section A"
     join_code = course["join_code"] if "join_code" in course.keys() and course["join_code"] else ""
 
+    is_ta = role in ("ta", "teacher")
+    role_label = "Teaching Assistant / Co-Teacher" if role == "ta" else ("Teacher / Faculty" if role == "teacher" else "Student")
+
     def _worker():
         try:
             msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"Course Invitation: {course_code} - {course_title}"
+            if is_ta:
+                msg["Subject"] = f"Course Invitation: Join {course_code} as {role_label} - {course_title}"
+            else:
+                msg["Subject"] = f"Course Invitation: {course_code} - {course_title}"
             msg["From"] = f"{from_name} <{gmail_user}>"
             msg["To"] = recipient_email
 
+            role_desc = f"as a {role_label}" if is_ta else "to join"
+            role_badge = f"""<div style="font-size: 11px; font-weight: 700; color: #3730a3; background: #e0e7ff; display: inline-block; padding: 2px 8px; border-radius: 9999px; margin-top: 6px; text-transform: uppercase;">Role: {role_label}</div>""" if is_ta else ""
+            btn_text = f"Accept Invitation & Join as {role_label}" if is_ta else "Accept Invitation & Join Class"
+
             plain_text = f"""Hello,
 
-You have been invited by Prof. {teacher_name} to join {course_code}: {course_title} ({course_section}) on Hoodle LMS.
+You have been invited by Prof. {teacher_name} {role_desc} {course_code}: {course_title} ({course_section}) on Hoodle LMS.
 
 To accept this invitation and enroll immediately, visit:
 {join_url}
@@ -666,22 +748,23 @@ ACCL Research Lab, IIT Bhilai
     </div>
     <div style="padding: 28px 24px;">
       <div style="font-size: 15px; margin-bottom: 16px;">
-        Hello <strong>{student_roll or 'Student'}</strong>,
+        Hello <strong>{student_roll or 'Colleague'}</strong>,
       </div>
       <p style="font-size: 14px; line-height: 1.6; color: #475569; margin-bottom: 20px;">
-        <strong>Prof. {teacher_name}</strong> has invited you to join the class on Hoodle:
+        <strong>Prof. {teacher_name}</strong> has invited you to join the class {role_desc} on Hoodle:
       </p>
       
       <div style="background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 6px; padding: 16px; margin-bottom: 24px;">
         <div style="font-size: 12px; font-weight: 700; color: #2563eb; text-transform: uppercase;">Classroom</div>
         <div style="font-size: 18px; font-weight: 800; color: #0f172a; margin-top: 2px;">{course_code}: {course_title}</div>
         <div style="font-size: 13px; color: #64748b; margin-top: 4px;">{course_section}</div>
+        {role_badge}
         <div style="font-size: 12px; color: #64748b; margin-top: 8px;">Class Code: <code style="background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 4px; font-weight: 700;">{join_code}</code></div>
       </div>
 
       <div style="text-align: center; margin: 28px 0;">
         <a href="{join_url}" style="background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 15px; font-weight: 700; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);">
-          Accept Invitation &amp; Join Class &rarr;
+          {btn_text} &rarr;
         </a>
       </div>
 
@@ -704,7 +787,7 @@ ACCL Research Lab, IIT Bhilai
             server.login(gmail_user, gmail_pass)
             server.sendmail(gmail_user, [recipient_email], msg.as_string())
             server.quit()
-            app.logger.info("Course invitation email sent to %s for %s", recipient_email, course_code)
+            app.logger.info("Course invitation email sent to %s for %s (role: %s)", recipient_email, course_code, role)
         except Exception as e:
             app.logger.warning("Failed to send course invitation email to %s: %s", recipient_email, e)
 
@@ -719,6 +802,7 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
     2. Grade & feedback published
     3. Direct messages between student and teacher/TA
     4. Course announcements
+    5. Course enrollment / role assignment
     """
     gmail_user, gmail_pass, from_name = get_smtp_config()
 
@@ -733,16 +817,7 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
     if not clean_emails:
         return
 
-    base_url = os.environ.get("PORTAL_BASE_URL", "").strip().rstrip("/")
-    if not base_url:
-        try:
-            base_url = request.host_url.rstrip("/")
-        except Exception:
-            base_url = "http://localhost:8095"
-
-    full_action_url = action_url
-    if action_url and action_url.startswith("/"):
-        full_action_url = f"{base_url}{action_url}"
+    full_action_url = resolve_portal_url(action_url) if action_url else None
 
     def _worker():
         try:
@@ -2802,11 +2877,25 @@ def course_people(course_id):
 @teacher_required
 def add_co_teacher(course_id):
     course = get_course_or_404(course_id)
+    curr_user = get_current_user()
+    teacher_name = curr_user["display_name"] if curr_user else "Instructor"
+    teacher_role = (curr_user["role"] if curr_user else "Teacher").upper()
+
     target_id = request.form.get("user_id")
     identifier = request.form.get("identifier", "").strip()
     assigned_role = request.form.get("role", "ta").strip().lower()
     if assigned_role not in ("student", "ta", "teacher"):
         assigned_role = "ta"
+
+    if assigned_role == "teacher":
+        enroll_role = "ta"
+        role_label = "Faculty / Teacher"
+    elif assigned_role == "student":
+        enroll_role = "student"
+        role_label = "Student"
+    else:
+        enroll_role = "ta"
+        role_label = "Co-Teacher / TA"
 
     conn = get_db()
     user = None
@@ -2818,25 +2907,58 @@ def add_co_teacher(course_id):
             WHERE LOWER(username) = ? OR LOWER(roll_number) = ? OR (email != '' AND LOWER(email) = ?)
         """, (identifier.lower(), identifier.lower(), identifier.lower())).fetchone()
 
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     if not user:
+        if not identifier:
+            conn.close()
+            flash("Please choose a registered user or enter a roll number or email.", "danger")
+            return redirect(url_for("course_people", course_id=course_id))
+
+        # Identifier provided but user not registered yet: create pending invitation with assigned_role
+        is_email = "@" in identifier
+        if is_email:
+            student_email = identifier.lower()
+            student_roll = None
+        else:
+            student_roll = identifier.upper()
+            student_email = f"{identifier.lower()}@iitbhilai.ac.in"
+
+        # Check existing invitation in this course
+        existing_inv = conn.execute("""
+            SELECT id FROM course_invitations
+            WHERE course_id = ? AND status = 'pending' AND (
+                (student_roll IS NOT NULL AND UPPER(student_roll) = ?) OR 
+                (student_email IS NOT NULL AND LOWER(student_email) = ?)
+            )
+        """, (course_id, student_roll or "", student_email or "")).fetchone()
+
+        invite_token = secrets.token_urlsafe(24)
+        if existing_inv:
+            conn.execute("""
+                UPDATE course_invitations
+                SET token = ?, sent_at = ?, role = ?, student_roll = COALESCE(?, student_roll), student_email = COALESCE(?, student_email)
+                WHERE id = ?
+            """, (invite_token, now_str, assigned_role, student_roll, student_email, existing_inv["id"]))
+        else:
+            conn.execute("""
+                INSERT INTO course_invitations (course_id, invited_by, student_roll, student_email, student_id, token, status, role, sent_at)
+                VALUES (?, ?, ?, ?, NULL, ?, 'pending', ?, ?)
+            """, (course_id, curr_user["id"], student_roll, student_email, invite_token, assigned_role, now_str))
+
+        conn.commit()
         conn.close()
-        flash("User not found. Please verify the roll number, username, or email.", "danger")
+
+        # Send invitation email
+        send_course_invitation_email(course, student_email, student_roll, teacher_name, invite_token, role=assigned_role)
+        flash(f"Invitation to join as {role_label} sent to '{identifier}'. An invitation email has been dispatched.", "success")
         return redirect(url_for("course_people", course_id=course_id))
 
     # If assigning teacher role, elevate user system role to teacher
     if assigned_role == "teacher":
         conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (user["id"],))
-        enroll_role = "ta"
-        role_label = "Faculty / Teacher"
-    elif assigned_role == "student":
-        enroll_role = "student"
-        role_label = "Student"
-    else:
-        enroll_role = "ta"
-        role_label = "Co-Teacher"
 
     existing = conn.execute("SELECT * FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, user["id"])).fetchone()
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if existing:
         conn.execute("UPDATE course_enrollments SET role = ? WHERE course_id = ? AND user_id = ?", (enroll_role, course_id, user["id"]))
@@ -2845,7 +2967,35 @@ def add_co_teacher(course_id):
 
     conn.commit()
     conn.close()
-    flash(f"'{user['display_name']}' is now configured as {role_label} for {course['code']}.", "success")
+
+    # Dispatch email notification to user if email exists
+    if user["email"]:
+        c_code = course["code"]
+        c_title = course["title"]
+        c_sec = course["section"] if "section" in course.keys() and course["section"] else "Section A"
+        if enroll_role == "student":
+            subj = f"[{c_code}] Enrolled in {c_title}"
+            head = f"You have been enrolled as a Student"
+            body = f"Hello {user['display_name']},\n\nProf. {teacher_name} has enrolled you as a Student in {c_code}: {c_title} ({c_sec}).\n\nYou can now access the course stream, classwork, attendance, and grades directly on Hoodle LMS."
+            act_text = "Open Course"
+        else:
+            subj = f"[{c_code}] Added as {role_label}: {c_title}"
+            head = f"You have been added as {role_label}"
+            body = f"Hello {user['display_name']},\n\nProf. {teacher_name} has added you as {role_label} for {c_code}: {c_title} ({c_sec}).\n\nYou now have teaching and course management privileges (classwork creation, grading, attendance tracking, and announcements) for this course on Hoodle LMS."
+            act_text = "Open Course & Manage"
+
+        send_event_notification_email(
+            recipient_emails=[user["email"]],
+            subject=subj,
+            heading=head,
+            body_text=body,
+            action_url=f"/courses/{course_id}",
+            action_text=act_text,
+            actor_name=teacher_name,
+            actor_role=teacher_role
+        )
+
+    flash(f"'{user['display_name']}' is now configured as {role_label} for {course['code']}. Notification email dispatched.", "success")
     return redirect(url_for("course_people", course_id=course_id))
 
 
@@ -2883,6 +3033,22 @@ def change_course_person_role(course_id, target_user_id):
     conn.commit()
     conn.close()
 
+    curr_user = get_current_user()
+    teacher_name = curr_user["display_name"] if curr_user else "Instructor"
+    teacher_role = (curr_user["role"] if curr_user else "Teacher").upper()
+
+    if target_user["email"]:
+        send_event_notification_email(
+            recipient_emails=[target_user["email"]],
+            subject=f"[{course['code']}] Course Role Updated to {label}",
+            heading=f"Role Updated in {course['code']}",
+            body_text=f"Hello {target_user['display_name']},\n\nYour role in {course['code']}: {course['title']} has been updated to {label} by Prof. {teacher_name}.\n\nYou can access the course now on Hoodle LMS.",
+            action_url=f"/courses/{course_id}",
+            action_text="Open Course",
+            actor_name=teacher_name,
+            actor_role=teacher_role
+        )
+
     flash(f"Updated {target_user['display_name']}'s role in {course['code']} to {label}.", "success")
     return redirect(url_for("course_people", course_id=course_id))
 
@@ -2912,6 +3078,9 @@ def invite_students(course_id):
     curr_user = get_current_user()
     teacher_name = curr_user["display_name"]
     raw_input = request.form.get("students_input", "").strip()
+    invite_role = request.form.get("role", "student").strip().lower()
+    if invite_role not in ("student", "ta", "teacher"):
+        invite_role = "student"
 
     if not raw_input:
         flash("Please enter one or more roll numbers or email addresses.", "warning")
@@ -2994,14 +3163,14 @@ def invite_students(course_id):
         if existing_inv:
             conn.execute("""
                 UPDATE course_invitations
-                SET token = ?, sent_at = ?, student_id = COALESCE(?, student_id), student_email = COALESCE(?, student_email)
+                SET token = ?, sent_at = ?, role = ?, student_id = COALESCE(?, student_id), student_email = COALESCE(?, student_email)
                 WHERE id = ?
-            """, (invite_token, now_str, student_id, student_email, existing_inv["id"]))
+            """, (invite_token, now_str, invite_role, student_id, student_email, existing_inv["id"]))
         else:
             conn.execute("""
-                INSERT INTO course_invitations (course_id, invited_by, student_roll, student_email, student_id, token, status, sent_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
-            """, (course_id, curr_user["id"], student_roll, student_email, student_id, invite_token, now_str))
+                INSERT INTO course_invitations (course_id, invited_by, student_roll, student_email, student_id, token, status, role, sent_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            """, (course_id, curr_user["id"], student_roll, student_email, student_id, invite_token, invite_role, now_str))
 
         added_count += 1
         if student_id:
@@ -3011,18 +3180,19 @@ def invite_students(course_id):
 
         # Dispatch background Gmail email if recipient email exists
         if student_email:
-            send_course_invitation_email(course, student_email, student_roll, teacher_name, invite_token)
+            send_course_invitation_email(course, student_email, student_roll, teacher_name, invite_token, role=invite_role)
 
     conn.commit()
     conn.close()
 
-    msg_parts = [f"Processed {len(seen_entries)} entry(ies): {added_count} invitation(s) saved."]
+    role_label = "Student(s)" if invite_role == "student" else "Co-Teacher(s) / TA(s)"
+    msg_parts = [f"Processed {len(seen_entries)} entry(ies): {added_count} {role_label} invitation(s) saved."]
     if registered_now:
-        msg_parts.append(f"{registered_now} registered student(s) will see the invitation immediately on their home screen.")
+        msg_parts.append(f"{registered_now} registered user(s) will see the invitation immediately on their home screen.")
     if pending_signup:
-        msg_parts.append(f"{pending_signup} unregistered roll number(s) will receive the invitation automatically when they sign up.")
+        msg_parts.append(f"{pending_signup} unregistered user(s) will receive the invitation automatically when they sign up.")
     if already_enrolled:
-        msg_parts.append(f"{already_enrolled} already enrolled student(s) were skipped.")
+        msg_parts.append(f"{already_enrolled} already enrolled user(s) were skipped.")
 
     flash(" ".join(msg_parts), "success")
     return redirect(url_for("course_people", course_id=course_id))
@@ -3073,11 +3243,22 @@ def accept_invitation(invite_id):
         return redirect(url_for("dashboard"))
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # Enroll student in course
-    conn.execute("""
-        INSERT OR IGNORE INTO course_enrollments (course_id, user_id, role, enrolled_at)
-        VALUES (?, ?, 'student', ?)
-    """, (inv["course_id"], user_id, now_str))
+    inv_role = "student"
+    if "role" in inv.keys() and inv["role"] in ("student", "ta", "teacher"):
+        inv_role = "ta" if inv["role"] in ("ta", "teacher") else "student"
+
+    if "role" in inv.keys() and inv["role"] == "teacher":
+        conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (user_id,))
+
+    # Enroll user in course
+    existing_enr = conn.execute("SELECT id FROM course_enrollments WHERE course_id = ? AND user_id = ?", (inv["course_id"], user_id)).fetchone()
+    if existing_enr:
+        conn.execute("UPDATE course_enrollments SET role = ? WHERE course_id = ? AND user_id = ?", (inv_role, inv["course_id"], user_id))
+    else:
+        conn.execute("""
+            INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at)
+            VALUES (?, ?, ?, ?)
+        """, (inv["course_id"], user_id, inv_role, now_str))
 
     # Mark invitation accepted
     conn.execute("""
@@ -3088,7 +3269,8 @@ def accept_invitation(invite_id):
     conn.commit()
     conn.close()
 
-    flash(f"Welcome! You have successfully joined {inv['course_code']}: {inv['course_title']}.", "success")
+    role_desc = " as Co-Teacher / TA" if inv_role == "ta" else ""
+    flash(f"Welcome! You have successfully joined {inv['course_code']}: {inv['course_title']}{role_desc}.", "success")
     return redirect(url_for("course_stream", course_id=inv["course_id"]))
 
 
@@ -3145,10 +3327,22 @@ def accept_invitation_by_token(token):
     if "user_id" in session:
         user_id = session["user_id"]
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn.execute("""
-            INSERT OR IGNORE INTO course_enrollments (course_id, user_id, role, enrolled_at)
-            VALUES (?, ?, 'student', ?)
-        """, (inv["course_id"], user_id, now_str))
+        inv_role = "student"
+        if "role" in inv.keys() and inv["role"] in ("student", "ta", "teacher"):
+            inv_role = "ta" if inv["role"] in ("ta", "teacher") else "student"
+
+        if "role" in inv.keys() and inv["role"] == "teacher":
+            conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (user_id,))
+
+        existing_enr = conn.execute("SELECT id FROM course_enrollments WHERE course_id = ? AND user_id = ?", (inv["course_id"], user_id)).fetchone()
+        if existing_enr:
+            conn.execute("UPDATE course_enrollments SET role = ? WHERE course_id = ? AND user_id = ?", (inv_role, inv["course_id"], user_id))
+        else:
+            conn.execute("""
+                INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at)
+                VALUES (?, ?, ?, ?)
+            """, (inv["course_id"], user_id, inv_role, now_str))
+
         conn.execute("""
             UPDATE course_invitations
             SET status = 'accepted', student_id = ?, responded_at = ?
@@ -3156,7 +3350,8 @@ def accept_invitation_by_token(token):
         """, (user_id, now_str, inv["id"]))
         conn.commit()
         conn.close()
-        flash(f"Successfully joined {inv['course_code']}: {inv['course_title']}!", "success")
+        role_desc = " as Co-Teacher / TA" if inv_role == "ta" else ""
+        flash(f"Successfully joined {inv['course_code']}: {inv['course_title']}{role_desc}!", "success")
         return redirect(url_for("course_stream", course_id=inv["course_id"]))
 
     conn.close()
@@ -5015,13 +5210,8 @@ def attendance_qr_svg(course_id):
     session_type = request.args.get("type", "Lecture")
     token = request.args.get("token") or get_dynamic_attendance_token(course_id, session_type)
     
-    # Construct student scan URL
-    # Respect reverse-proxy prefix (e.g. /lms)
-    base_url = request.host_url.rstrip("/")
-    prefix = request.headers.get("X-Forwarded-Prefix", "")
-    if prefix and not prefix.startswith("/"):
-        prefix = "/" + prefix
-    scan_url = f"{base_url}{prefix}/attend/{course_id}?token={token}&type={session_type}"
+    # Construct student scan URL respecting reverse-proxy prefix
+    scan_url = resolve_portal_url(f"/attend/{course_id}?token={token}&type={session_type}")
     
     svg_data = generate_qr_svg(scan_url)
     return Response(svg_data, mimetype="image/svg+xml")
