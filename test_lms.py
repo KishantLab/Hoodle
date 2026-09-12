@@ -1540,6 +1540,213 @@ class ACCLLMSTestCase(unittest.TestCase):
         conn.close()
         self.logout()
 
+    def test_usage_guide_routes_and_navigation(self):
+        """Verify /usage-guide route and course navigation elements."""
+        res1 = self.client.get("/usage-guide")
+        self.assertEqual(res1.status_code, 200)
+        self.assertIn(b"Usage", res1.data)
+
+        res2 = self.client.get("/guide")
+        self.assertEqual(res2.status_code, 200)
+
+        # Login student to check base.html profile modal and course navigation
+        self.login("kishan", "password123")
+        res_dash = self.client.get("/dashboard")
+        self.assertEqual(res_dash.status_code, 200)
+        self.assertIn(b"userProfileModal", res_dash.data)
+        self.assertIn(b"Usage Guide", res_dash.data)
+        self.assertIn(b"Messages", res_dash.data)
+        self.logout()
+
+    def test_custom_attendance_formula_50_percent_cutoff(self):
+        """
+        Verify attendance threshold formula:
+        - <= 50% attendance yields 0 points
+        - > 50% is scaled up to 100% over the remaining 50% range
+        For a 5% weighted category:
+          * 25% att -> 0.0 / 5.0 pts
+          * 50% att -> 0.0 / 5.0 pts
+          * 75% att -> 2.5 / 5.0 pts
+          * 100% att -> 5.0 / 5.0 pts
+        """
+        conn = app.get_db()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Create Course with 50.0% attendance threshold
+        conn.execute("""
+            INSERT INTO courses (code, title, section, join_code, teacher_id, attendance_threshold, created_at)
+            VALUES ('CS999', 'Formula Test Class', 'Sec A', 'FORMULA99', 2, 50.0, ?)
+        """, (now_str,))
+        course_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # Configure categories: Attendance 5%, Assignments 95%
+        conn.execute("DELETE FROM course_grading_categories WHERE course_id = ?", (course_id,))
+        conn.execute("""
+            INSERT INTO course_grading_categories (course_id, name, weight, is_attendance, created_at)
+            VALUES (?, 'Attendance', 5.0, 1, ?), (?, 'Assignments', 95.0, 0, ?)
+        """, (course_id, now_str, course_id, now_str))
+
+        # Create 4 students
+        student_ids = []
+        for i in range(1, 5):
+            pwd = app.hash_password("password123")
+            conn.execute("""
+                INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at)
+                VALUES (?, ?, ?, ?, ?, 'student', ?)
+            """, (f"formula_st_{i}", f"FST00{i}", f"fst{i}@test.com", pwd, f"Student {i}", now_str))
+            sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            student_ids.append(sid)
+            conn.execute("INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at) VALUES (?, ?, 'student', ?)", (course_id, sid, now_str))
+
+        # Create 4 attendance sessions (e.g. 2026-09-01, 2026-09-02, 2026-09-03, 2026-09-04)
+        for d in ("2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"):
+            conn.execute("INSERT INTO attendance_sessions (course_id, title, session_date, session_type, created_by, created_at) VALUES (?, 'Lecture Class', ?, 'Lecture', 2, ?)", (course_id, d, now_str))
+
+        def add_att(sid, roll, name, date_str):
+            att_key = f"{roll}_Lecture_{date_str}"
+            conn.execute("""
+                INSERT INTO attendance_logs (course_id, student_id, roll_number, student_name, session_type, attendance_date, status, method, marked_at, attendance_key)
+                VALUES (?, ?, ?, ?, 'Lecture', ?, 'PRESENT', 'TEST', ?, ?)
+            """, (course_id, sid, roll, name, date_str, now_str, att_key))
+
+        # Student 1: 1 / 4 sessions = 25% (<= 50%)
+        add_att(student_ids[0], "FST001", "Student 1", "2026-09-01")
+
+        # Student 2: 2 / 4 sessions = 50% (<= 50%)
+        for d in ("2026-09-01", "2026-09-02"):
+            add_att(student_ids[1], "FST002", "Student 2", d)
+
+        # Student 3: 3 / 4 sessions = 75% (> 50%)
+        for d in ("2026-09-01", "2026-09-02", "2026-09-03"):
+            add_att(student_ids[2], "FST003", "Student 3", d)
+
+        # Student 4: 4 / 4 sessions = 100% (> 50%)
+        for d in ("2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"):
+            add_att(student_ids[3], "FST004", "Student 4", d)
+
+        conn.commit()
+
+        # Run grade calculation
+        grades = app.calculate_course_grades(course_id, conn=conn)
+        conn.close()
+
+        students_by_id = {s["id"]: s for s in grades["students"]}
+
+        # Student 1: 25% attendance -> 0.0 pts
+        s1 = students_by_id[student_ids[0]]
+        self.assertEqual(s1["attendance"]["percentage"], 25.0)
+        self.assertEqual(s1["attendance"]["weighted_points"], 0.0)
+
+        # Student 2: 50% attendance -> 0.0 pts
+        s2 = students_by_id[student_ids[1]]
+        self.assertEqual(s2["attendance"]["percentage"], 50.0)
+        self.assertEqual(s2["attendance"]["weighted_points"], 0.0)
+
+        # Student 3: 75% attendance -> (75-50)/(100-50)*100 = 50% effective -> 2.50 pts
+        s3 = students_by_id[student_ids[2]]
+        self.assertEqual(s3["attendance"]["percentage"], 75.0)
+        self.assertEqual(s3["attendance"]["effective_percentage"], 50.0)
+        self.assertEqual(s3["attendance"]["weighted_points"], 2.5)
+
+        # Student 4: 100% attendance -> 100% effective -> 5.00 pts
+        s4 = students_by_id[student_ids[3]]
+        self.assertEqual(s4["attendance"]["percentage"], 100.0)
+        self.assertEqual(s4["attendance"]["effective_percentage"], 100.0)
+        self.assertEqual(s4["attendance"]["weighted_points"], 5.0)
+
+    def test_chat_messaging_permissions_and_student_block(self):
+        """
+        Verify chat rules:
+        - Student CAN message instructor/TA.
+        - Instructor CAN message student.
+        - Student CANNOT message another student (strictly 403 Forbidden).
+        """
+        # Create 2 students and 1 teacher
+        conn = app.get_db()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        pwd = app.hash_password("password123")
+
+        conn.execute("INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at) VALUES ('chat_student_1', 'CST01', 'cst1@test.com', ?, 'Student Alpha', 'student', ?)", (pwd, now_str))
+        s1_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        conn.execute("INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at) VALUES ('chat_student_2', 'CST02', 'cst2@test.com', ?, 'Student Beta', 'student', ?)", (pwd, now_str))
+        s2_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        teacher_id = conn.execute("SELECT id FROM users WHERE username = 'kishan'").fetchone()[0]
+        conn.commit()
+        conn.close()
+
+        # 1. Login as Student 1: Send message to teacher (should succeed)
+        self.login("chat_student_1", "password123")
+        res_ok = self.client.post("/api/messages/send", json={
+            "recipient_id": teacher_id,
+            "message": "Hello Professor, I have a question regarding homework 2."
+        })
+        self.assertEqual(res_ok.status_code, 200)
+        self.assertTrue(res_ok.get_json()["success"])
+
+        # 2. Student 1 attempts to message Student 2 (MUST BE 403 FORBIDDEN)
+        res_blocked = self.client.post("/api/messages/send", json={
+            "recipient_id": s2_id,
+            "message": "Hey what is the answer to question 3?"
+        })
+        self.assertEqual(res_blocked.status_code, 403)
+        self.assertIn("strictly prohibited", res_blocked.get_json()["error"].lower())
+
+        # Also test GET api message feed for student-student is 403
+        res_get_blocked = self.client.get(f"/api/messages/{s2_id}")
+        self.assertEqual(res_get_blocked.status_code, 403)
+        self.logout()
+
+        # 3. Login as Teacher: Reply to Student 1 (should succeed)
+        self.login("kishan", "password123")
+        res_teacher = self.client.post("/api/messages/send", json={
+            "recipient_id": s1_id,
+            "message": "Office hours are tomorrow at 3 PM."
+        })
+        self.assertEqual(res_teacher.status_code, 200)
+
+        # Check conversation history
+        res_history = self.client.get(f"/api/messages/{s1_id}")
+        self.assertEqual(res_history.status_code, 200)
+        msgs = res_history.get_json()["messages"]
+        self.assertEqual(len(msgs), 2)
+        self.logout()
+
+    def test_admin_bulk_user_deletion(self):
+        """Verify admin can delete multiple users in bulk while self-deletion is prevented."""
+        conn = app.get_db()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        pwd = app.hash_password("password123")
+
+        u_ids = []
+        for i in range(1, 4):
+            conn.execute("INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, 'student', ?)",
+                         (f"bulk_del_{i}", f"BDEL{i}", f"bdel{i}@test.com", pwd, f"Bulk User {i}", now_str))
+            u_ids.append(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        conn.commit()
+        conn.close()
+
+        # Login as Admin
+        self.login("admin", "admin@accl")
+        admin_id = 1
+
+        # Attempt bulk delete including admin_id
+        res = self.client.post("/admin/users/delete-bulk", data={
+            "user_ids": [str(u_ids[0]), str(u_ids[1]), str(admin_id)]
+        }, follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Successfully deleted 2 user account", res.data)
+
+        # Verify in DB: u_ids[0] and u_ids[1] are deleted, u_ids[2] and admin remain
+        conn = app.get_db()
+        self.assertIsNone(conn.execute("SELECT id FROM users WHERE id = ?", (u_ids[0],)).fetchone())
+        self.assertIsNone(conn.execute("SELECT id FROM users WHERE id = ?", (u_ids[1],)).fetchone())
+        self.assertIsNotNone(conn.execute("SELECT id FROM users WHERE id = ?", (u_ids[2],)).fetchone())
+        self.assertIsNotNone(conn.execute("SELECT id FROM users WHERE id = ?", (admin_id,)).fetchone())
+        conn.close()
+        self.logout()
+
 
 if __name__ == "__main__":
     unittest.main()

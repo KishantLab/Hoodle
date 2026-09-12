@@ -105,6 +105,13 @@
               <span class="role-badge" style="background: #e0e7ff; color: #3730a3; font-weight: 700;">Co-Teacher / TA</span>
             {% endif %}
 
+            {% if current_user and current_user.id != t.id %}
+              <a href="{{ url_for('messages_view', user_id=t.id, course_id=course.id) }}" class="btn btn-secondary btn-sm" style="font-size: 0.76rem; padding: 0.25rem 0.6rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem;" title="Direct Message with {{ t.display_name }}">
+                <span>💬</span>
+                <span>Message</span>
+              </a>
+            {% endif %}
+
             {% if is_teacher_or_admin and t.id != course.teacher_id %}
               <!-- Demote Co-Teacher to Student -->
               <form action="{{ url_for('change_course_person_role', course_id=course.id, target_user_id=t.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Change {{ t.display_name }}\'s role to Student in this class?');">
@@ -170,6 +177,13 @@
                 {% if is_teacher_or_admin %}
                   <td>
                     <div style="display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap;">
+                      {% if current_user.id != s.id %}
+                        <a href="{{ url_for('messages_view', user_id=s.id, course_id=course.id) }}" class="btn btn-secondary btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem;" title="Message {{ s.display_name }}">
+                          <span>💬</span>
+                          <span>Message</span>
+                        </a>
+                      {% endif %}
+
                       <!-- Quick Role Switcher Form -->
                       <form action="{{ url_for('change_course_person_role', course_id=course.id, target_user_id=s.id) }}" method="POST" style="display: inline-flex; align-items: center; gap: 0.25rem;">
                         <select name="role" class="form-control" style="font-size: 0.78rem; padding: 0.2rem 0.4rem; height: auto; font-weight: 600; min-width: 125px;" onchange="if(confirm('Change role for {{ s.display_name }}?')) this.form.submit();">

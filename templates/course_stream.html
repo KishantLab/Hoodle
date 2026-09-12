@@ -289,6 +289,20 @@
         </select>
       </div>
 
+      <!-- Attendance Grading Formula Cutoff -->
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label class="form-label" for="setting_attendance_threshold">
+          📊 Attendance Cutoff Threshold (%)
+        </label>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <input type="number" id="setting_attendance_threshold" name="attendance_threshold" min="0" max="100" step="1" class="form-control" value="{{ course.attendance_threshold or 50.0 }}" style="max-width: 130px;" required>
+          <span style="font-weight: 700; color: var(--text-muted);">% Minimum</span>
+        </div>
+        <p style="font-size: 0.76rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.4;">
+          Attendance &le; threshold receives <strong>0 points</strong>. Attendance above threshold is linearly scaled over the remaining range up to 100% (e.g. with 50% cutoff, 75% attendance gets half weight, 100% gets full weight).
+        </p>
+      </div>
+
       <!-- Class Code & Joining Settings -->
       <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
         <div style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.35rem; color: var(--text-main);">

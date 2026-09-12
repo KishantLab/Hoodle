@@ -20,94 +20,118 @@
     </div>
   </div>
 
-  <!-- Role Filter Tabs -->
-  <div style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem;">
-    <button type="button" class="btn btn-sm user-filter-btn active-filter" onclick="filterUsers('all', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem;">
-      All Accounts ({{ users|length }})
-    </button>
-    <button type="button" class="btn btn-sm user-filter-btn" onclick="filterUsers('teacher', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem; background: white; border: 1px solid var(--border);">
-      Teachers &amp; Admins
-    </button>
-    <button type="button" class="btn btn-sm user-filter-btn" onclick="filterUsers('student', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem; background: white; border: 1px solid var(--border);">
-      Students
-    </button>
-  </div>
+  <!-- Role Filter Tabs & Bulk Action Toolbar -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+      <button type="button" class="btn btn-sm user-filter-btn active-filter" onclick="filterUsers('all', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem;">
+        All Accounts ({{ users|length }})
+      </button>
+      <button type="button" class="btn btn-sm user-filter-btn" onclick="filterUsers('teacher', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem; background: white; border: 1px solid var(--border);">
+        Teachers &amp; Admins
+      </button>
+      <button type="button" class="btn btn-sm user-filter-btn" onclick="filterUsers('student', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem; background: white; border: 1px solid var(--border);">
+        Students
+      </button>
+    </div>
 
-  <div class="card" style="padding: 0; overflow: hidden;">
-    <div style="overflow-x: auto;">
-      <table class="lms-table" style="margin: 0;">
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Roll / ID</th>
-            <th>Email</th>
-            <th>Role</th>
-            <th>Storage Used</th>
-            <th>Enrolled</th>
-            <th>Joined</th>
-            <th>Management</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for u in users %}
-            <tr class="user-row" data-role="{{ u.role }}">
-              <td>
-                <div style="font-weight: 700; color: var(--text-main);">{{ u.display_name }}</div>
-                <div style="font-size: 0.78rem; color: var(--text-muted);">@{{ u.username }}</div>
-              </td>
-              <td style="font-family: monospace; font-weight: 700; color: var(--primary);">
-                {{ u.roll_number or '-' }}
-              </td>
-              <td style="font-size: 0.85rem; color: var(--text-muted);">
-                {{ u.email or '-' }}
-              </td>
-              <td>
-                {% if u.role == 'admin' and current_user.role != 'admin' %}
-                  <span class="role-badge role-admin">Administrator</span>
-                {% else %}
-                  <form action="{{ url_for('admin_change_role', user_id=u.id) }}" method="POST" style="display: inline;">
-                    <select name="role" class="form-control" style="font-size: 0.8rem; padding: 0.25rem 0.5rem; width: auto;" onchange="this.form.submit()">
-                      <option value="student" {% if u.role == 'student' %}selected{% endif %}>Student</option>
-                      <option value="teacher" {% if u.role == 'teacher' %}selected{% endif %}>Teacher / TA</option>
-                      {% if current_user.role == 'admin' %}
-                        <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Administrator</option>
-                      {% endif %}
-                    </select>
-                  </form>
-                {% endif %}
-              </td>
-              <td style="font-size: 0.85rem; color: var(--text-muted);">
-                {{ u.locker_used_bytes | filesize }}
-              </td>
-              <td style="font-size: 0.85rem; color: var(--text-muted);">
-                {{ u.enrolled_courses_count }} courses
-              </td>
-              <td style="font-size: 0.82rem; color: var(--text-muted);">
-                {{ u.created_at | format_dt }}
-              </td>
-              <td>
-                <div style="display: flex; gap: 0.35rem; align-items: center;">
-                  <!-- Reset Password Form -->
-                  <form action="{{ url_for('admin_reset_password', user_id=u.id) }}" method="POST" style="display: flex; gap: 0.25rem;">
-                    <input type="password" name="new_password" placeholder="New pass" class="form-control" style="font-size: 0.75rem; padding: 0.25rem 0.4rem; width: 85px;" required>
-                    <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 0.72rem; padding: 0.25rem 0.5rem;">Reset</button>
-                  </form>
-
-                  {% if current_user.role == 'admin' and u.id != current_user.id %}
-                    <form action="{{ url_for('admin_delete_user', user_id=u.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete user account @{{ u.username }}? This action cannot be undone.');">
-                      <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger); font-size: 0.72rem; padding: 0.25rem 0.5rem;" title="Delete User">
-                        🗑
-                      </button>
-                    </form>
-                  {% endif %}
-                </div>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <!-- Bulk Action Controls -->
+    <div id="bulkToolbar" style="display: none; align-items: center; gap: 0.75rem; background: #fef2f2; border: 1px solid #fecaca; padding: 0.35rem 0.85rem; border-radius: 8px;">
+      <span style="font-size: 0.82rem; font-weight: 700; color: #991b1b;">
+        Selected: <span id="selectedCount">0</span> users
+      </span>
+      <button type="submit" form="bulkDeleteForm" class="btn btn-secondary btn-sm" style="background: #dc2626; color: white; border: none; font-weight: 700; font-size: 0.78rem; padding: 0.25rem 0.75rem;">
+        🗑️ Delete Selected
+      </button>
     </div>
   </div>
+
+  <form id="bulkDeleteForm" action="{{ url_for('admin_delete_users_bulk') }}" method="POST" onsubmit="return confirmBulkDelete();">
+    <div class="card" style="padding: 0; overflow: hidden;">
+      <div style="overflow-x: auto;">
+        <table class="lms-table" style="margin: 0;">
+          <thead>
+            <tr>
+              <th style="width: 42px; text-align: center;">
+                <input type="checkbox" id="selectAllUsers" onclick="toggleSelectAll(this)" title="Select all visible users">
+              </th>
+              <th>User</th>
+              <th>Roll / ID</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Storage Used</th>
+              <th>Enrolled</th>
+              <th>Joined</th>
+              <th>Management</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+              <tr class="user-row" data-role="{{ u.role }}">
+                <td style="text-align: center;">
+                  {% if u.id != current_user.id %}
+                    <input type="checkbox" name="user_ids" value="{{ u.id }}" class="user-select-cb" onchange="updateBulkToolbar()">
+                  {% else %}
+                    <span title="Your active account" style="font-size: 0.85rem; opacity: 0.4;">🔒</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main);">{{ u.display_name }}</div>
+                  <div style="font-size: 0.78rem; color: var(--text-muted);">@{{ u.username }}</div>
+                </td>
+                <td style="font-family: monospace; font-weight: 700; color: var(--primary);">
+                  {{ u.roll_number or '-' }}
+                </td>
+                <td style="font-size: 0.85rem; color: var(--text-muted);">
+                  {{ u.email or '-' }}
+                </td>
+                <td>
+                  {% if u.role == 'admin' and current_user.role != 'admin' %}
+                    <span class="role-badge role-admin">Administrator</span>
+                  {% else %}
+                    <form action="{{ url_for('admin_change_role', user_id=u.id) }}" method="POST" style="display: inline;">
+                      <select name="role" class="form-control" style="font-size: 0.8rem; padding: 0.25rem 0.5rem; width: auto;" onchange="this.form.submit()">
+                        <option value="student" {% if u.role == 'student' %}selected{% endif %}>Student</option>
+                        <option value="teacher" {% if u.role == 'teacher' %}selected{% endif %}>Teacher / TA</option>
+                        {% if current_user.role == 'admin' %}
+                          <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Administrator</option>
+                        {% endif %}
+                      </select>
+                    </form>
+                  {% endif %}
+                </td>
+                <td style="font-size: 0.85rem; color: var(--text-muted);">
+                  {{ u.locker_used_bytes | filesize }}
+                </td>
+                <td style="font-size: 0.85rem; color: var(--text-muted);">
+                  {{ u.enrolled_courses_count }} courses
+                </td>
+                <td style="font-size: 0.82rem; color: var(--text-muted);">
+                  {{ u.created_at | format_dt }}
+                </td>
+                <td>
+                  <div style="display: flex; gap: 0.35rem; align-items: center;">
+                    <!-- Reset Password Form -->
+                    <form action="{{ url_for('admin_reset_password', user_id=u.id) }}" method="POST" style="display: flex; gap: 0.25rem;">
+                      <input type="password" name="new_password" placeholder="New pass" class="form-control" style="font-size: 0.75rem; padding: 0.25rem 0.4rem; width: 85px;" required>
+                      <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 0.72rem; padding: 0.25rem 0.5rem;">Reset</button>
+                    </form>
+
+                    {% if current_user.role == 'admin' and u.id != current_user.id %}
+                      <form action="{{ url_for('admin_delete_user', user_id=u.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete user account @{{ u.username }}? This action cannot be undone.');">
+                        <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger); font-size: 0.72rem; padding: 0.25rem 0.5rem;" title="Delete User">
+                          🗑
+                        </button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </form>
 </div>
 
 <!-- Modal: Add New Teacher / Faculty (Admin Only) -->
@@ -175,6 +199,42 @@ function filterUsers(role, btn) {
       r.style.display = (rowRole === role) ? '' : 'none';
     }
   });
+  updateBulkToolbar();
+}
+
+function toggleSelectAll(masterCb) {
+  const isChecked = masterCb.checked;
+  document.querySelectorAll('.user-row').forEach(row => {
+    if (row.style.display !== 'none') {
+      const cb = row.querySelector('.user-select-cb');
+      if (cb) cb.checked = isChecked;
+    }
+  });
+  updateBulkToolbar();
+}
+
+function updateBulkToolbar() {
+  const checkboxes = document.querySelectorAll('.user-select-cb:checked');
+  const count = checkboxes.length;
+  const countSpan = document.getElementById('selectedCount');
+  const toolbar = document.getElementById('bulkToolbar');
+  if (countSpan) countSpan.textContent = count;
+  if (toolbar) toolbar.style.display = count > 0 ? 'flex' : 'none';
+
+  const masterCb = document.getElementById('selectAllUsers');
+  const totalVisibleCbs = Array.from(document.querySelectorAll('.user-row')).filter(r => r.style.display !== 'none').map(r => r.querySelector('.user-select-cb')).filter(Boolean);
+  if (masterCb) {
+    masterCb.checked = (totalVisibleCbs.length > 0 && totalVisibleCbs.every(cb => cb.checked));
+  }
+}
+
+function confirmBulkDelete() {
+  const count = document.querySelectorAll('.user-select-cb:checked').length;
+  if (count === 0) {
+    alert('Please select at least one user account to delete.');
+    return false;
+  }
+  return confirm(`Are you sure you want to permanently delete ${count} selected user account(s)?\n\nAll course enrollments, attendance records, submissions, and locker files for these accounts will be permanently removed.`);
 }
 </script>
 {% endblock %}

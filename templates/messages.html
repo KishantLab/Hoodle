@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+
+{% block title %}Messages - Hoodle LMS{% endblock %}
+
+{% block content %}
+<div class="messages-container" style="max-width: 1100px; margin: 0 auto; height: calc(100vh - 165px); min-height: 560px; display: flex; flex-direction: column;">
+  <!-- Top Bar Title -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+    <div>
+      <h1 style="font-size: 1.5rem; font-weight: 800; color: #1e3a8a; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <span>💬</span> 1-on-1 Direct Messages
+      </h1>
+      <p style="font-size: 0.84rem; color: var(--text-muted); margin: 0.2rem 0 0 0;">
+        {% if current_user.role == "student" %}
+          Chat directly with your course instructors and Teaching Assistants.
+        {% else %}
+          Direct academic communication with enrolled students and teaching staff.
+        {% endif %}
+      </p>
+    </div>
+
+    <div>
+      <button type="button" onclick="openModal('newChatModal')" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 700; box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);">
+        <span>✏️</span>
+        <span>New Message</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Split Pane Chat App -->
+  <div class="card" style="padding: 0; flex: 1; display: grid; grid-template-columns: 320px 1fr; overflow: hidden; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-sm);">
+    <!-- Left Sidebar: Conversations & Contacts -->
+    <aside style="border-right: 1px solid var(--border); display: flex; flex-direction: column; background: #fafafa; overflow: hidden;">
+      <div style="padding: 0.85rem; border-bottom: 1px solid var(--border); background: white;">
+        <input type="text" id="convoSearchInput" placeholder="Search conversations..." class="form-control" style="font-size: 0.82rem; padding: 0.4rem 0.65rem;" oninput="filterConversations(this.value)">
+      </div>
+
+      <div id="convoList" style="flex: 1; overflow-y: auto;">
+        {% if conversations %}
+          {% for c in conversations %}
+            {% set p = c.partner %}
+            {% set is_active = (active_contact and active_contact.id == p.id) %}
+            <a href="{{ url_for('messages_view', user_id=p.id) }}" class="convo-item" data-name="{{ p.display_name|lower }} {{ p.roll_number|lower if p.roll_number else '' }}" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem; border-bottom: 1px solid var(--border); text-decoration: none; color: inherit; background: {% if is_active %}#eff6ff{% else %}white{% endif %}; border-left: {% if is_active %}4px solid var(--primary){% else %}4px solid transparent{% endif %}; transition: background 0.15s ease;" onmouseover="if(!{{ 'true' if is_active else 'false' }}) this.style.background='#f8fafc'" onmouseout="if(!{{ 'true' if is_active else 'false' }}) this.style.background='white'">
+              <div style="width: 42px; height: 42px; border-radius: 50%; background: {% if p.role in ('teacher', 'ta') %}#e0e7ff{% else %}#ecfdf5{% endif %}; color: {% if p.role in ('teacher', 'ta') %}#3730a3{% else %}#047857{% endif %}; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1rem; flex-shrink: 0;">
+                {{ p.display_name[0]|upper }}
+              </div>
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.15rem;">
+                  <span style="font-weight: 700; font-size: 0.88rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    {{ p.display_name }}
+                  </span>
+                  {% if c.unread_count > 0 %}
+                    <span style="background: #ef4444; color: white; font-size: 0.68rem; font-weight: 800; padding: 1px 6px; border-radius: 9999px;">
+                      {{ c.unread_count }}
+                    </span>
+                  {% endif %}
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem;">
+                  <span class="role-badge role-{{ p.role }}" style="font-size: 0.65rem; padding: 1px 5px;">{{ p.role }}</span>
+                  {% if p.roll_number %}<span style="font-family: monospace;">{{ p.roll_number }}</span>{% endif %}
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.2rem;">
+                  {{ c.last_message or "No messages yet" }}
+                </div>
+              </div>
+            </a>
+          {% endfor %}
+        {% else %}
+          <div style="text-align: center; padding: 3rem 1.5rem; color: var(--text-muted);">
+            <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">💬</div>
+            <div style="font-weight: 700; font-size: 0.9rem;">No Active Conversations</div>
+            <p style="font-size: 0.78rem; margin-top: 0.3rem;">
+              Click <strong>"New Message"</strong> above to start a chat.
+            </p>
+          </div>
+        {% endif %}
+      </div>
+    </aside>
+
+    <!-- Right Area: Chat Thread & Message Box -->
+    <main style="display: flex; flex-direction: column; background: white; overflow: hidden;">
+      {% if active_contact %}
+        <!-- Active Chat Header -->
+        <header style="padding: 0.85rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #ffffff; z-index: 10;">
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div style="width: 40px; height: 40px; border-radius: 50%; background: #eff6ff; color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem;">
+              {{ active_contact.display_name[0]|upper }}
+            </div>
+            <div>
+              <div style="font-weight: 800; font-size: 0.96rem; color: var(--text-main);">
+                {{ active_contact.display_name }}
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem;">
+                <span class="role-badge role-{{ active_contact.role }}" style="font-size: 0.65rem; padding: 1px 5px;">{{ active_contact.role }}</span>
+                {% if active_contact.roll_number %}<span>{{ active_contact.roll_number }} • </span>{% endif %}
+                <span>{{ active_contact.email or "" }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem; background: #f8fafc; padding: 0.3rem 0.65rem; border-radius: 6px; border: 1px solid var(--border);">
+            <span>✉️</span>
+            <span>Email alerts active</span>
+          </div>
+        </header>
+
+        <!-- Message Bubbles Scroll Feed -->
+        <div id="messagesFeed" style="flex: 1; overflow-y: auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; background: #fdfdfd;">
+          {% if thread_messages %}
+            {% for m in thread_messages %}
+              {% set is_mine = (m.sender_id == current_user.id) %}
+              <div style="display: flex; flex-direction: column; align-items: {% if is_mine %}flex-end{% else %}flex-start{% endif %}; max-width: 80%; align-self: {% if is_mine %}flex-end{% else %}flex-start{% endif %};">
+                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.2rem; padding: 0 0.35rem;">
+                  {% if not is_mine %}{{ m.sender_name }} • {% endif %}
+                  {{ m.created_at | format_dt }}
+                </div>
+                <div style="padding: 0.65rem 0.95rem; border-radius: 14px; font-size: 0.88rem; line-height: 1.45; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: {% if is_mine %}linear-gradient(135deg, #1e40af 0%, #2563eb 100%){% else %}#f1f5f9{% endif %}; color: {% if is_mine %}white{% else %}var(--text-main){% endif %}; border-bottom-right-radius: {% if is_mine %}2px{% else %}14px{% endif %}; border-bottom-left-radius: {% if is_mine %}14px{% else %}2px{% endif %};">
+                  {{ m.message | nl2br }}
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div style="text-align: center; margin: auto; color: var(--text-muted);">
+              <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">👋</div>
+              <div style="font-weight: 700; font-size: 0.95rem;">No messages in this thread yet.</div>
+              <p style="font-size: 0.82rem; margin-top: 0.3rem;">Send a message below to initiate the conversation.</p>
+            </div>
+          {% endif %}
+        </div>
+
+        <!-- Chat Input Form -->
+        <footer style="padding: 0.85rem 1.25rem; border-top: 1px solid var(--border); background: white;">
+          <form id="chatSendForm" onsubmit="sendMessage(event)" style="display: flex; gap: 0.5rem; align-items: flex-end;">
+            <input type="hidden" id="recipientId" value="{{ active_contact.id }}">
+            <input type="hidden" id="courseIdContext" value="{{ course_context_id or '' }}">
+            <textarea id="messageInput" placeholder="Type your message... (Shift+Enter for new line)" rows="2" class="form-control" style="resize: none; font-size: 0.88rem;" onkeydown="handleChatKeydown(event)" required></textarea>
+            <button type="submit" id="sendBtn" class="btn btn-primary" style="padding: 0.65rem 1.25rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; height: 58px;">
+              <span>Send</span>
+              <span>✈️</span>
+            </button>
+          </form>
+        </footer>
+      {% else %}
+        <!-- Empty State When No Active Contact Selected -->
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); padding: 2rem; text-align: center;">
+          <div style="width: 72px; height: 72px; border-radius: 50%; background: #eff6ff; color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 2.2rem; margin-bottom: 1rem;">
+            💬
+          </div>
+          <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.4rem;">Select a Conversation</h3>
+          <p style="font-size: 0.88rem; max-width: 400px; line-height: 1.5; margin-bottom: 1.25rem;">
+            Choose an existing discussion on the left, or start a new conversation with a course instructor or student.
+          </p>
+          <button type="button" onclick="openModal('newChatModal')" class="btn btn-primary" style="font-weight: 700;">
+            ✏️ Start New Message
+          </button>
+        </div>
+      {% endif %}
+    </main>
+  </div>
+</div>
+
+<!-- Modal: Start New Chat -->
+<div id="newChatModal" class="modal-backdrop" style="display: none; align-items: center; justify-content: center; z-index: 9999;">
+  <div class="modal-content" style="max-width: 520px;">
+    <div class="modal-header">
+      <h3 style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a;">✏️ Start New Message</h3>
+      <button type="button" class="modal-close" onclick="closeModal('newChatModal')">&times;</button>
+    </div>
+
+    <div style="margin-bottom: 1rem;">
+      <input type="text" id="contactSearchInput" placeholder="Search by name, roll number, or course..." class="form-control" style="font-size: 0.85rem;" oninput="filterEligibleContacts(this.value)">
+    </div>
+
+    <div id="eligibleContactsList" style="max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem;">
+      {% if eligible_contacts %}
+        {% for ec in eligible_contacts %}
+          <a href="{{ url_for('messages_view', user_id=ec.id) }}" class="contact-row" data-search="{{ ec.display_name|lower }} {{ ec.roll_number|lower if ec.roll_number else '' }} {{ ec.course_code|lower if ec.course_code else '' }}" style="display: flex; align-items: center; justify-content: space-between; padding: 0.65rem 0.85rem; border: 1px solid var(--border); border-radius: 8px; text-decoration: none; color: inherit; background: white;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <div style="width: 36px; height: 36px; border-radius: 50%; background: #eff6ff; color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 800;">
+                {{ ec.display_name[0]|upper }}
+              </div>
+              <div>
+                <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-main);">{{ ec.display_name }}</div>
+                <div style="font-size: 0.74rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem;">
+                  <span class="role-badge role-{{ ec.role }}" style="font-size: 0.65rem;">{{ ec.role }}</span>
+                  {% if ec.roll_number %}<span style="font-family: monospace;">{{ ec.roll_number }}</span>{% endif %}
+                  {% if ec.course_code %}<span>• {{ ec.course_code }}</span>{% endif %}
+                </div>
+              </div>
+            </div>
+            <span style="font-size: 0.78rem; font-weight: 700; color: var(--primary);">Chat &rarr;</span>
+          </a>
+        {% endfor %}
+      {% else %}
+        <div style="text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.85rem;">
+          No contacts found for messaging.
+        </div>
+      {% endif %}
+    </div>
+
+    <div style="margin-top: 1rem; text-align: right;">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal('newChatModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function filterConversations(val) {
+    const q = val.toLowerCase().trim();
+    document.querySelectorAll('.convo-item').forEach(el => {
+      const name = el.getAttribute('data-name') || '';
+      el.style.display = (!q || name.includes(q)) ? 'flex' : 'none';
+    });
+  }
+
+  function filterEligibleContacts(val) {
+    const q = val.toLowerCase().trim();
+    document.querySelectorAll('.contact-row').forEach(el => {
+      const s = el.getAttribute('data-search') || '';
+      el.style.display = (!q || s.includes(q)) ? 'flex' : 'none';
+    });
+  }
+
+  function handleChatKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      document.getElementById('chatSendForm').requestSubmit();
+    }
+  }
+
+  function scrollChatToBottom() {
+    const feed = document.getElementById('messagesFeed');
+    if (feed) {
+      feed.scrollTop = feed.scrollHeight;
+    }
+  }
+
+  async function sendMessage(e) {
+    e.preventDefault();
+    const input = document.getElementById('messageInput');
+    const msg = input.value.trim();
+    const recipientId = document.getElementById('recipientId').value;
+    const courseId = document.getElementById('courseIdContext').value;
+    const btn = document.getElementById('sendBtn');
+
+    if (!msg || !recipientId) return;
+
+    btn.disabled = true;
+    input.disabled = true;
+
+    try {
+      const res = await fetch('/api/messages/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient_id: parseInt(recipientId),
+          message: msg,
+          course_id: courseId ? parseInt(courseId) : null
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        alert(data.error || 'Failed to send message.');
+        btn.disabled = false;
+        input.disabled = false;
+        return;
+      }
+
+      // Append message bubble optimistically
+      const feed = document.getElementById('messagesFeed');
+      const bubble = document.createElement('div');
+      bubble.style.cssText = 'display: flex; flex-direction: column; align-items: flex-end; max-width: 80%; align-self: flex-end;';
+      bubble.innerHTML = `
+        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.2rem; padding: 0 0.35rem;">
+          Just now
+        </div>
+        <div style="padding: 0.65rem 0.95rem; border-radius: 14px; font-size: 0.88rem; line-height: 1.45; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%); color: white; border-bottom-right-radius: 2px; border-bottom-left-radius: 14px;">
+          ${msg.replace(/\n/g, "<br>")}
+        </div>
+      `;
+      feed.appendChild(bubble);
+      input.value = '';
+      scrollChatToBottom();
+    } catch (err) {
+      console.error(err);
+      alert('Network error while sending message.');
+    } finally {
+      btn.disabled = false;
+      input.disabled = false;
+      input.focus();
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    scrollChatToBottom();
+  });
+</script>
+{% endblock %}

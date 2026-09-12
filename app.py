@@ -462,12 +462,32 @@ def init_db():
         c.execute("ALTER TABLE courses ADD COLUMN grading_formula TEXT DEFAULT NULL")
     if "grade_calculation_mode" not in course_cols:
         c.execute("ALTER TABLE courses ADD COLUMN grade_calculation_mode TEXT DEFAULT 'weighted_categories'")
+    if "attendance_threshold" not in course_cols:
+        c.execute("ALTER TABLE courses ADD COLUMN attendance_threshold REAL DEFAULT 50.0")
 
     # Migration for coursework table
     c.execute("PRAGMA table_info(coursework)")
     cw_cols = [row["name"] for row in c.fetchall()]
     if "category_id" not in cw_cols:
         c.execute("ALTER TABLE coursework ADD COLUMN category_id INTEGER DEFAULT NULL")
+
+    # 13. Direct Messages Table (Student to Teacher/TA, Teacher/TA to Student, strictly no student-student)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS direct_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course_id INTEGER,
+            sender_id INTEGER NOT NULL,
+            recipient_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            is_read INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL,
+            FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_dm_users ON direct_messages (sender_id, recipient_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_dm_recipient ON direct_messages (recipient_id, is_read)")
 
     conn.commit()
 
@@ -662,6 +682,101 @@ ACCL Research Lab, IIT Bhilai
     t.start()
 
 
+def send_event_notification_email(recipient_emails, subject, heading, body_text, action_url=None, action_text="View in Hoodle"):
+    """
+    Sends notification email via Gmail SMTP in background thread for specific course events:
+    1. Assignment / Exam creation
+    2. Grade & feedback published
+    3. Direct messages between student and teacher/TA
+    4. Course announcements
+    """
+    gmail_user = os.environ.get("GMAIL_SMTP_USER", "").strip()
+    gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
+    from_name = os.environ.get("GMAIL_FROM_NAME", "Hoodle LMS").strip()
+
+    if not gmail_user or not gmail_pass or not recipient_emails:
+        return
+
+    if isinstance(recipient_emails, str):
+        recipient_emails = [recipient_emails]
+
+    # Filter unique valid emails
+    clean_emails = list({e.strip() for e in recipient_emails if e and "@" in e})
+    if not clean_emails:
+        return
+
+    base_url = os.environ.get("PORTAL_BASE_URL", "").strip().rstrip("/")
+    if not base_url:
+        try:
+            base_url = request.host_url.rstrip("/")
+        except Exception:
+            base_url = "http://localhost:8095"
+
+    full_action_url = action_url
+    if action_url and action_url.startswith("/"):
+        full_action_url = f"{base_url}{action_url}"
+
+    def _worker():
+        try:
+            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
+            server.starttls()
+            server.login(gmail_user, gmail_pass)
+
+            for rec_email in clean_emails:
+                try:
+                    msg = MIMEMultipart("alternative")
+                    msg["Subject"] = subject
+                    msg["From"] = f"{from_name} <{gmail_user}>"
+                    msg["To"] = rec_email
+
+                    button_html = ""
+                    if full_action_url:
+                        button_html = f"""
+                        <div style="text-align: center; margin: 26px 0;">
+                          <a href="{full_action_url}" style="background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 15px; font-weight: 700; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);">
+                            {action_text} &rarr;
+                          </a>
+                        </div>
+                        """
+
+                    html_text = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>{subject}</title></head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <div style="max-width: 580px; margin: 30px auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
+    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 24px; text-align: center; color: white;">
+      <h1 style="margin: 0 0 4px; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">Hoodle LMS</h1>
+      <p style="margin: 0; font-size: 13px; opacity: 0.9;">Accelerated Classroom &amp; Lab Learning</p>
+    </div>
+    <div style="padding: 26px 24px;">
+      <h2 style="font-size: 18px; font-weight: 700; color: #0f172a; margin-top: 0; margin-bottom: 14px;">{heading}</h2>
+      <div style="font-size: 14px; line-height: 1.6; color: #475569; white-space: pre-line; margin-bottom: 20px;">
+        {body_text}
+      </div>
+      {button_html}
+    </div>
+    <div style="background: #f8fafc; padding: 14px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
+      Hoodle LMS &bull; Accelerated Computing Research Lab (ACCL), IIT Bhilai
+    </div>
+  </div>
+</body>
+</html>"""
+                    plain_text = f"{heading}\n\n{body_text}\n\n{full_action_url if full_action_url else ''}"
+                    msg.attach(MIMEText(plain_text, "plain"))
+                    msg.attach(MIMEText(html_text, "html"))
+                    server.sendmail(gmail_user, [rec_email], msg.as_string())
+                except Exception as ex_single:
+                    app.logger.warning("Failed to send notification email to %s: %s", rec_email, ex_single)
+
+            server.quit()
+            app.logger.info("Event notification '%s' sent to %d recipients", subject, len(clean_emails))
+        except Exception as e:
+            app.logger.warning("Failed to send event notification emails: %s", e)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+
 # --- Authentication & Authorization Helpers ---
 
 def get_current_user():
@@ -831,12 +946,55 @@ def inject_global_variables():
     user = get_current_user()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     active_exam = None
-    if user and user["role"] == "student":
-        active_exam = get_active_exam_lockdown_for_student(user["id"])
+    user_courses = []
+    unread_messages_count = 0
+    locker_used_bytes = 0
+
+    if user:
+        conn = get_db()
+        if user["role"] == "student":
+            active_exam = get_active_exam_lockdown_for_student(user["id"])
+            user_courses = conn.execute("""
+                SELECT c.id, c.code, c.title, c.section, c.theme_color
+                FROM courses c
+                JOIN course_enrollments ce ON c.id = ce.course_id
+                WHERE ce.user_id = ? AND ce.role = 'student' AND c.is_archived = 0
+                ORDER BY c.title ASC
+            """, (user["id"],)).fetchall()
+        elif user["role"] in ("teacher", "ta"):
+            user_courses = conn.execute("""
+                SELECT DISTINCT c.id, c.code, c.title, c.section, c.theme_color
+                FROM courses c
+                LEFT JOIN course_enrollments ce ON c.id = ce.course_id AND ce.user_id = ?
+                WHERE c.is_archived = 0 AND (c.teacher_id = ? OR ce.role IN ('teacher', 'ta'))
+                ORDER BY c.title ASC
+            """, (user["id"], user["id"])).fetchall()
+        elif user["role"] == "admin":
+            user_courses = conn.execute("""
+                SELECT c.id, c.code, c.title, c.section, c.theme_color
+                FROM courses c
+                WHERE c.is_archived = 0
+                ORDER BY c.title ASC
+            """).fetchall()
+
+        unread_row = conn.execute("""
+            SELECT COUNT(*) FROM direct_messages WHERE recipient_id = ? AND is_read = 0
+        """, (user["id"],)).fetchone()
+        unread_messages_count = unread_row[0] if unread_row else 0
+
+        locker_row = conn.execute("""
+            SELECT COALESCE(SUM(file_size), 0) FROM student_locker_files WHERE user_id = ?
+        """, (user["id"],)).fetchone()
+        locker_used_bytes = locker_row[0] if locker_row else 0
+        conn.close()
+
     return {
         "current_user": user,
         "now_iso": now_str,
-        "active_exam_lockdown": active_exam
+        "active_exam_lockdown": active_exam,
+        "user_courses": user_courses,
+        "unread_messages_count": unread_messages_count,
+        "locker_used_bytes": locker_used_bytes
     }
 
 
@@ -1069,11 +1227,12 @@ def set_password():
 
 # --- Main Dashboard & Course Hub ---
 
+@app.route("/usage-guide")
 @app.route("/guide")
 @app.route("/student-guide")
-def student_guide():
+def usage_guide():
     """
-    Comprehensive visual usage guide for students with step-by-step screenshots:
+    Comprehensive visual usage guide for students and faculty with step-by-step screenshots:
     - Account login & 1-click joining via invite codes / short links
     - Daily attendance scanning (live camera viewfinder, HTTPS switcher, and photo fallback)
     - Exam mode lockdown, real-time countdown timer, immutable deadlines, and SHA-256 submission receipts
@@ -1081,6 +1240,9 @@ def student_guide():
     """
     user = get_current_user() if "user_id" in session else None
     return render_template("student_guide.html", current_user=user)
+
+
+student_guide = usage_guide
 
 
 @app.route("/")
@@ -1399,11 +1561,17 @@ def update_course_settings(course_id):
         flash("Course Code and Title are required.", "danger")
         return redirect(url_for("course_stream", course_id=course_id))
 
+    attendance_threshold_val = request.form.get("attendance_threshold", "50.0").strip()
+    try:
+        attendance_threshold = max(0.0, min(100.0, float(attendance_threshold_val)))
+    except (ValueError, TypeError):
+        attendance_threshold = 50.0
+
     conn.execute("""
         UPDATE courses SET
-            code = ?, title = ?, section = ?, description = ?, theme_color = ?
+            code = ?, title = ?, section = ?, description = ?, theme_color = ?, attendance_threshold = ?
         WHERE id = ?
-    """, (code, title, section, description, theme_color, course_id))
+    """, (code, title, section, description, theme_color, attendance_threshold, course_id))
     conn.commit()
     conn.close()
 
@@ -1529,7 +1697,29 @@ def post_announcement(course_id):
         VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (course_id, session["user_id"], content, att_name, att_path, att_size, now_str))
     conn.commit()
+
+    # Event Notification Email: Teacher/TA created an announcement
+    c_info = conn.execute("SELECT code, title FROM courses WHERE id = ?", (course_id,)).fetchone()
+    student_rows = conn.execute("""
+        SELECT u.email FROM course_enrollments ce
+        JOIN users u ON ce.user_id = u.id
+        WHERE ce.course_id = ? AND ce.role = 'student' AND u.email IS NOT NULL AND u.email != ''
+    """, (course_id,)).fetchall()
+    student_emails = [r["email"] for r in student_rows]
+    curr_user = get_current_user()
+    t_name = curr_user["display_name"] if curr_user else "Instructor"
     conn.close()
+
+    if student_emails and c_info:
+        snippet = (content[:280] + "...") if len(content) > 280 else content
+        send_event_notification_email(
+            recipient_emails=student_emails,
+            subject=f"New Announcement: [{c_info['code']}] {c_info['title']}",
+            heading=f"Class Announcement from {t_name}",
+            body_text=f"{snippet}",
+            action_url=f"/courses/{course_id}/stream",
+            action_text="View in Course Stream"
+        )
 
     flash("Announcement published to course stream.", "success")
     return redirect(url_for("course_stream", course_id=course_id))
@@ -1767,7 +1957,28 @@ def create_coursework(course_id):
             """, (coursework_id, fname, stored, str(dest), dest.stat().st_size, now_str))
 
     conn.commit()
+
+    # Event Notification Email: Teacher/TA created assignment or exam
+    c_info = conn.execute("SELECT code, title FROM courses WHERE id = ?", (course_id,)).fetchone()
+    student_rows = conn.execute("""
+        SELECT u.email FROM course_enrollments ce
+        JOIN users u ON ce.user_id = u.id
+        WHERE ce.course_id = ? AND ce.role = 'student' AND u.email IS NOT NULL AND u.email != ''
+    """, (course_id,)).fetchall()
+    student_emails = [r["email"] for r in student_rows]
+    curr_user = get_current_user()
+    t_name = curr_user["display_name"] if curr_user else "Instructor"
     conn.close()
+
+    if student_emails and c_info:
+        send_event_notification_email(
+            recipient_emails=student_emails,
+            subject=f"New Coursework: [{c_info['code']}] {title}",
+            heading=f"New {cw_type.capitalize()} Assigned",
+            body_text=f"Prof. {t_name} has published a new {cw_type}: '{title}' in {c_info['code']}: {c_info['title']}.\n\nPoints: {points}\nDue Date: {due_date or 'No due date'}",
+            action_url=f"/courses/{course_id}/coursework/{coursework_id}",
+            action_text=f"View {cw_type.capitalize()} Details"
+        )
 
     flash(f"Coursework '{title}' published successfully.", "success")
     return redirect(url_for("course_classwork", course_id=course_id))
@@ -3183,15 +3394,31 @@ def calculate_course_grades(course_id, student_id=None, conn=None):
             is_att = bool(cat["is_attendance"])
 
             if is_att:
-                cat_earned_pct = att_pct
-                cat_weighted_pts = round(cat_earned_pct * (weight / 100.0), 2)
+                threshold = 50.0
+                if course and "attendance_threshold" in course.keys() and course["attendance_threshold"] is not None:
+                    try:
+                        threshold = float(course["attendance_threshold"])
+                    except (ValueError, TypeError):
+                        threshold = 50.0
+
+                if att_pct <= threshold:
+                    effective_att_pct = 0.0
+                else:
+                    denominator = max(0.1, 100.0 - threshold)
+                    effective_att_pct = min(100.0, ((att_pct - threshold) / denominator) * 100.0)
+
+                cat_earned_pct = round(effective_att_pct, 1)
+                cat_weighted_pts = round(effective_att_pct * (weight / 100.0), 2)
                 cat_scores[cat_id] = {
                     "id": cat_id,
                     "name": cat["name"],
                     "weight": weight,
                     "earned_points": present_count,
                     "max_points": total_attendance_sessions,
+                    "raw_percentage": att_pct,
                     "percentage": cat_earned_pct,
+                    "effective_percentage": cat_earned_pct,
+                    "threshold": threshold,
                     "weighted_points": cat_weighted_pts,
                     "is_attendance": True
                 }
@@ -3278,6 +3505,8 @@ def calculate_course_grades(course_id, student_id=None, conn=None):
                 "present_count": present_count,
                 "total_sessions": total_attendance_sessions,
                 "percentage": att_pct,
+                "effective_percentage": cat_scores.get(next((c["id"] for c in categories if c["is_attendance"]), None), {}).get("effective_percentage", att_pct),
+                "threshold": cat_scores.get(next((c["id"] for c in categories if c["is_attendance"]), None), {}).get("threshold", 50.0),
                 "weighted_points": cat_scores.get(next((c["id"] for c in categories if c["is_attendance"]), None), {}).get("weighted_points", 0.0)
             },
             "cat_scores": cat_scores,
@@ -3685,7 +3914,29 @@ def grade_submission(course_id, coursework_id, submission_id):
         WHERE id = ? AND coursework_id = ?
     """, (grade, feedback, session["user_id"], now_str, submission_id, coursework_id))
     conn.commit()
+
+    # Event Notification Email: Teacher/TA graded coursework
+    sub_info = conn.execute("""
+        SELECT s.student_id, u.display_name as student_name, u.email as student_email,
+               cw.title as cw_title, cw.points as cw_points,
+               c.code as course_code, c.title as course_title
+        FROM submissions s
+        JOIN users u ON s.student_id = u.id
+        JOIN coursework cw ON s.coursework_id = cw.id
+        JOIN courses c ON cw.course_id = c.id
+        WHERE s.id = ?
+    """, (submission_id,)).fetchone()
     conn.close()
+
+    if sub_info and sub_info["student_email"]:
+        send_event_notification_email(
+            recipient_emails=[sub_info["student_email"]],
+            subject=f"Grade Published: [{sub_info['course_code']}] {sub_info['cw_title']}",
+            heading="Your Coursework Has Been Graded",
+            body_text=f"Hello {sub_info['student_name']},\n\nYour submission for '{sub_info['cw_title']}' in {sub_info['course_code']}: {sub_info['course_title']} has been evaluated.\n\nScore: {grade} / {sub_info['cw_points'] or 100}\nFeedback: {feedback or 'No written comments'}",
+            action_url=f"/courses/{course_id}/coursework/{coursework_id}",
+            action_text="View Feedback & Submission"
+        )
 
     flash("Grade and feedback saved.", "success")
     return redirect(request.referrer or url_for("course_grades", course_id=course_id))
@@ -4284,6 +4535,38 @@ def admin_delete_user(user_id):
     conn.commit()
     conn.close()
     flash("User deleted.", "info")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/delete-bulk", methods=["POST"])
+@admin_required
+def admin_delete_users_bulk():
+    user_ids = request.form.getlist("user_ids")
+    if not user_ids:
+        flash("No users selected for deletion.", "warning")
+        return redirect(url_for("admin_users"))
+
+    curr_user_id = session.get("user_id")
+    valid_ids = []
+    for uid_str in user_ids:
+        try:
+            uid = int(uid_str)
+            if uid != curr_user_id:
+                valid_ids.append(uid)
+        except (ValueError, TypeError):
+            continue
+
+    if not valid_ids:
+        flash("Cannot delete selected accounts (you cannot delete your own active administrator account).", "warning")
+        return redirect(url_for("admin_users"))
+
+    conn = get_db()
+    placeholders = ",".join("?" for _ in valid_ids)
+    conn.execute(f"DELETE FROM users WHERE id IN ({placeholders})", valid_ids)
+    conn.commit()
+    conn.close()
+
+    flash(f"Successfully deleted {len(valid_ids)} user account(s) and their associated records.", "success")
     return redirect(url_for("admin_users"))
 
 
@@ -5347,6 +5630,260 @@ def attendance_export_csv(course_id):
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+# --- 1-on-1 Chat & Messaging System (Teacher-Student & TA-Student) ---
+
+@app.route("/messages")
+@login_required
+def messages_view():
+    curr_user = get_current_user()
+    curr_id = curr_user["id"]
+    curr_role = curr_user["role"]
+    target_user_id = request.args.get("user_id", type=int)
+    course_context_id = request.args.get("course_id", type=int)
+
+    conn = get_db()
+
+    # 1. Fetch distinct conversation partners
+    raw_convos = conn.execute("""
+        SELECT 
+            CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END as other_user_id,
+            MAX(created_at) as last_activity,
+            (SELECT message FROM direct_messages m2 
+             WHERE (m2.sender_id = ? AND m2.recipient_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END)
+                OR (m2.recipient_id = ? AND m2.sender_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END)
+             ORDER BY m2.id DESC LIMIT 1) as last_message,
+            (SELECT COUNT(*) FROM direct_messages m3
+             WHERE m3.recipient_id = ? AND m3.sender_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END AND m3.is_read = 0) as unread_count
+        FROM direct_messages m
+        WHERE sender_id = ? OR recipient_id = ?
+        GROUP BY other_user_id
+        ORDER BY last_activity DESC
+    """, (curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id)).fetchall()
+
+    conversations = []
+    for c in raw_convos:
+        partner = conn.execute("SELECT id, display_name, roll_number, email, role FROM users WHERE id = ?", (c["other_user_id"],)).fetchone()
+        if partner:
+            # If current user is student, hide any invalid student contacts from conversation list
+            if curr_role == "student" and partner["role"] == "student":
+                continue
+            conversations.append({
+                "partner": partner,
+                "last_activity": c["last_activity"],
+                "last_message": c["last_message"],
+                "unread_count": c["unread_count"]
+            })
+
+    # 2. Eligible contacts to start new chat
+    eligible_contacts = []
+    if curr_role == "student":
+        # Students can ONLY message teachers, TAs, or admins
+        contacts_query = """
+            SELECT DISTINCT u.id, u.display_name, u.email, u.roll_number, u.role, c.code as course_code
+            FROM users u
+            JOIN courses c ON (u.id = c.teacher_id OR u.id IN (SELECT user_id FROM course_enrollments WHERE course_id = c.id AND role IN ('teacher', 'ta')))
+            JOIN course_enrollments ce ON c.id = ce.course_id
+            WHERE ce.user_id = ? AND ce.role = 'student' AND c.is_archived = 0
+            ORDER BY u.display_name ASC
+        """
+        eligible_contacts = conn.execute(contacts_query, (curr_id,)).fetchall()
+    elif curr_role in ("teacher", "ta"):
+        # Instructors/TAs can message any student in their courses + co-instructors
+        contacts_query = """
+            SELECT DISTINCT u.id, u.display_name, u.email, u.roll_number, u.role, c.code as course_code
+            FROM users u
+            JOIN course_enrollments ce ON u.id = ce.user_id
+            JOIN courses c ON ce.course_id = c.id
+            WHERE (c.teacher_id = ? OR c.id IN (SELECT course_id FROM course_enrollments WHERE user_id = ? AND role IN ('teacher', 'ta')))
+              AND u.id != ? AND c.is_archived = 0
+            ORDER BY u.role ASC, u.display_name ASC
+        """
+        eligible_contacts = conn.execute(contacts_query, (curr_id, curr_id, curr_id)).fetchall()
+    else: # admin
+        contacts_query = """
+            SELECT id, display_name, email, roll_number, role, '' as course_code
+            FROM users WHERE id != ?
+            ORDER BY role DESC, display_name ASC
+        """
+        eligible_contacts = conn.execute(contacts_query, (curr_id,)).fetchall()
+
+    # 3. Active contact & thread messages
+    active_contact = None
+    thread_messages = []
+
+    if target_user_id and target_user_id != curr_id:
+        target_user = conn.execute("SELECT id, display_name, roll_number, email, role FROM users WHERE id = ?", (target_user_id,)).fetchone()
+        if target_user:
+            # Enforce academic integrity: students cannot message students
+            if curr_role == "student" and target_user["role"] == "student":
+                flash("Direct messaging between students is strictly prohibited by academic policy.", "danger")
+                conn.close()
+                return redirect(url_for("messages_view"))
+            active_contact = target_user
+    elif conversations:
+        active_contact = conversations[0]["partner"]
+
+    if active_contact:
+        # Mark messages from this contact as read
+        conn.execute("""
+            UPDATE direct_messages SET is_read = 1
+            WHERE recipient_id = ? AND sender_id = ?
+        """, (curr_id, active_contact["id"]))
+        conn.commit()
+
+        thread_messages = conn.execute("""
+            SELECT m.*, s.display_name as sender_name, s.role as sender_role
+            FROM direct_messages m
+            JOIN users s ON m.sender_id = s.id
+            WHERE (m.sender_id = ? AND m.recipient_id = ?)
+               OR (m.sender_id = ? AND m.recipient_id = ?)
+            ORDER BY m.id ASC
+        """, (curr_id, active_contact["id"], active_contact["id"], curr_id)).fetchall()
+
+    conn.close()
+    return render_template(
+        "messages.html",
+        conversations=conversations,
+        eligible_contacts=eligible_contacts,
+        active_contact=active_contact,
+        thread_messages=thread_messages,
+        course_context_id=course_context_id
+    )
+
+
+@app.route("/api/messages/<int:other_user_id>")
+@login_required
+def api_get_messages(other_user_id):
+    curr_user = get_current_user()
+    curr_id = curr_user["id"]
+    curr_role = curr_user["role"]
+
+    conn = get_db()
+    other_user = conn.execute("SELECT id, display_name, roll_number, email, role FROM users WHERE id = ?", (other_user_id,)).fetchone()
+    if not other_user:
+        conn.close()
+        return jsonify({"error": "User not found"}), 404
+
+    if curr_role == "student" and other_user["role"] == "student":
+        conn.close()
+        return jsonify({"error": "Direct messaging between students is strictly prohibited."}), 403
+
+    # Mark as read
+    conn.execute("UPDATE direct_messages SET is_read = 1 WHERE recipient_id = ? AND sender_id = ?", (curr_id, other_user_id))
+    conn.commit()
+
+    messages = conn.execute("""
+        SELECT m.id, m.sender_id, m.recipient_id, m.message, m.is_read, m.created_at,
+               s.display_name as sender_name, s.role as sender_role
+        FROM direct_messages m
+        JOIN users s ON m.sender_id = s.id
+        WHERE (m.sender_id = ? AND m.recipient_id = ?)
+           OR (m.sender_id = ? AND m.recipient_id = ?)
+        ORDER BY m.id ASC
+    """, (curr_id, other_user_id, other_user_id, curr_id)).fetchall()
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "other_user": {
+            "id": other_user["id"],
+            "display_name": other_user["display_name"],
+            "roll_number": other_user["roll_number"],
+            "role": other_user["role"]
+        },
+        "messages": [
+            {
+                "id": m["id"],
+                "sender_id": m["sender_id"],
+                "recipient_id": m["recipient_id"],
+                "message": m["message"],
+                "created_at": m["created_at"],
+                "is_mine": (m["sender_id"] == curr_id),
+                "sender_name": m["sender_name"],
+                "sender_role": m["sender_role"]
+            }
+            for m in messages
+        ]
+    })
+
+
+@app.route("/api/messages/send", methods=["POST"])
+@login_required
+def api_send_message():
+    curr_user = get_current_user()
+    curr_id = curr_user["id"]
+    curr_role = curr_user["role"]
+
+    data = request.get_json(silent=True) or request.form
+    recipient_id = data.get("recipient_id")
+    message = (data.get("message") or "").strip()
+    course_id = data.get("course_id")
+
+    if not recipient_id or not message:
+        return jsonify({"error": "Recipient and message content are required."}), 400
+
+    try:
+        recipient_id = int(recipient_id)
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid recipient ID."}), 400
+
+    if recipient_id == curr_id:
+        return jsonify({"error": "You cannot send a message to yourself."}), 400
+
+    conn = get_db()
+    recipient = conn.execute("SELECT id, display_name, email, role FROM users WHERE id = ?", (recipient_id,)).fetchone()
+    if not recipient:
+        conn.close()
+        return jsonify({"error": "Recipient not found."}), 404
+
+    # Strict Anti-Cheating Protection: Students CANNOT message other students
+    if curr_role == "student" and recipient["role"] == "student":
+        conn.close()
+        return jsonify({"error": "Direct messaging between students is strictly prohibited by academic policy."}), 403
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO direct_messages (course_id, sender_id, recipient_id, message, is_read, created_at)
+        VALUES (?, ?, ?, ?, 0, ?)
+    """, (course_id, curr_id, recipient_id, message, now_str))
+    new_id = c.lastrowid
+    conn.commit()
+    conn.close()
+
+    # Event Notification Email: Send email alert to recipient
+    if recipient["email"]:
+        snippet = (message[:200] + "...") if len(message) > 200 else message
+        send_event_notification_email(
+            recipient_emails=[recipient["email"]],
+            subject=f"New Message from {curr_user['display_name']}",
+            heading=f"New Direct Message from {curr_user['display_name']}",
+            body_text=f"{curr_user['display_name']} ({curr_user['role'].upper()}) sent you a message on Hoodle:\n\n\"{snippet}\"",
+            action_url=f"/messages?user_id={curr_id}",
+            action_text="View & Reply to Message"
+        )
+
+    return jsonify({
+        "success": True,
+        "message_id": new_id,
+        "created_at": now_str,
+        "message": message,
+        "sender_id": curr_id,
+        "recipient_id": recipient_id
+    })
+
+
+@app.route("/api/messages/mark-read/<int:other_user_id>", methods=["POST"])
+@login_required
+def api_mark_messages_read(other_user_id):
+    curr_id = session.get("user_id")
+    conn = get_db()
+    conn.execute("UPDATE direct_messages SET is_read = 1 WHERE recipient_id = ? AND sender_id = ?", (curr_id, other_user_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
 
 
 with app.app_context():
