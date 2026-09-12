@@ -414,19 +414,31 @@
   </div>
   {% endif %}
 
-  <footer style="margin-top:auto; padding:1.75rem 1rem; text-align:center; border-top:1px solid var(--border); background:white;">
-    <div style="margin-bottom: 0.65rem;">
-      <a href="{{ url_for('usage_guide') }}" style="color: var(--primary); font-weight: 700; text-decoration: none; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 0.35rem; background: #eff6ff; padding: 0.35rem 0.85rem; border-radius: 9999px; border: 1px solid #bfdbfe;">
-        <span>📖</span>
-        <span>Usage Guide &amp; Tutorials</span>
-      </a>
+  <footer style="margin-top: auto; padding: 1.15rem 1.5rem; border-top: 1px solid var(--border); background: white;">
+    <div style="max-width: 1300px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+      <!-- Left: Hoodle branding -->
+      <div style="display: flex; align-items: center; gap: 0.4rem; min-width: 220px;">
+        <strong style="font-family: var(--font-display); font-size: 0.95rem; color: var(--text-main); font-weight: 800;">Hoodle</strong>
+        <span style="color: #94a3b8; font-weight: 400;">•</span>
+        <span style="font-size: 0.84rem; color: #475569; font-weight: 600;">Accelerated Classroom &amp; Lab Learning</span>
+      </div>
+
+      <!-- Center: Usage Guide -->
+      <div style="text-align: center;">
+        <a href="{{ url_for('usage_guide') }}" style="color: var(--primary); font-weight: 700; text-decoration: none; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.4rem; background: #eff6ff; padding: 0.4rem 1rem; border-radius: 9999px; border: 1px solid #bfdbfe; box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08); transition: all 0.15s ease;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">
+          <span>📖</span>
+          <span>Usage Guide &amp; Tutorials</span>
+        </a>
+      </div>
+
+      <!-- Right: Developed by -->
+      <div style="font-size: 0.83rem; color: #64748b; font-weight: 500; display: flex; align-items: center; gap: 0.4rem; min-width: 220px; justify-content: flex-end;">
+        <span>Developed by</span>
+        <span style="font-family: var(--font-display); font-weight: 700; color: #0f172a; font-size: 0.86rem; background: #f1f5f9; padding: 2px 7px; border-radius: 4px; border: 1px solid #e2e8f0;">Kishan Tamboli (PhD)</span>
+        <span style="color: #cbd5e1;">•</span>
+        <span style="font-weight: 600; color: #1e3a8a;">ACCL IIT Bhilai</span>
+      </div>
     </div>
-    <p style="font-family:var(--font-display); font-size:0.92rem; font-weight:700; color:var(--text-main); letter-spacing:-0.01em;">
-      <strong>Hoodle</strong> <span style="color:#94a3b8; margin:0 0.35rem; font-weight:400;">•</span> <span style="font-weight:600; color:#475569;">Accelerated Classroom &amp; Lab Learning</span>
-    </p>
-    <p style="font-family:var(--font-sans); font-size:0.84rem; margin-top:0.4rem; color:#64748b; font-weight:500; letter-spacing:0.01em;">
-      Developed by <span style="font-family:var(--font-display); font-weight:700; color:#0f172a; font-size:0.88rem; background:#f1f5f9; padding:2px 8px; border-radius:4px; border:1px solid #e2e8f0;">Kishan Tamboli (PhD)</span> <span style="color:#cbd5e1; margin:0 0.35rem;">•</span> <span style="font-weight:600; color:#1e3a8a;">ACCL IIT Bhilai</span>
-    </p>
   </footer>
 
   <script src="{{ url_for('static', filename='js/lms.js') }}"></script>

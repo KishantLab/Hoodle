@@ -1747,6 +1747,55 @@ class ACCLLMSTestCase(unittest.TestCase):
         conn.close()
         self.logout()
 
+    def test_save_grading_categories_updates_attendance_threshold(self):
+        """Verify teachers and TAs can update attendance cutoff threshold from the grading scheme."""
+        self.login("kishan", "password123")
+        conn = app.get_db()
+        c = conn.execute("SELECT id FROM courses LIMIT 1").fetchone()
+        course_id = c["id"]
+        cat = conn.execute("SELECT id FROM course_grading_categories WHERE course_id = ? AND is_attendance = 1", (course_id,)).fetchone()
+        cat_id = cat["id"] if cat else 1
+        conn.close()
+
+        # Submit updated grading scheme with 40.0% attendance cutoff threshold
+        res = self.client.post(f"/courses/{course_id}/grades/categories", data={
+            "cat_id": [str(cat_id)],
+            "name": ["Class Attendance"],
+            "weight": ["5.0"],
+            "attendance_threshold": "40.0"
+        }, follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+
+        conn = app.get_db()
+        updated_course = conn.execute("SELECT attendance_threshold FROM courses WHERE id = ?", (course_id,)).fetchone()
+        self.assertEqual(float(updated_course["attendance_threshold"]), 40.0)
+        conn.close()
+        self.logout()
+
+    def test_api_send_message_json_endpoint(self):
+        """Verify the direct messaging API endpoint returns valid JSON with correct status."""
+        # Student 1 logs in
+        self.login("student1", "student123")
+        conn = app.get_db()
+        teacher = conn.execute("SELECT id FROM users WHERE role = 'teacher' LIMIT 1").fetchone()
+        teacher_id = teacher["id"]
+        course = conn.execute("SELECT id FROM courses LIMIT 1").fetchone()
+        course_id = course["id"]
+        conn.close()
+
+        # Send direct message via JSON POST
+        res = self.client.post("/api/messages/send", json={
+            "recipient_id": teacher_id,
+            "course_id": course_id,
+            "message": "Hello Professor, regarding tomorrow's lab session..."
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertEqual(data.get("recipient_id"), teacher_id)
+        self.assertIn("lab session", data.get("message"))
+        self.logout()
+
 
 if __name__ == "__main__":
     unittest.main()

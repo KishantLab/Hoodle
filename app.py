@@ -584,7 +584,7 @@ def send_course_invitation_email(course, recipient_email, student_roll, teacher_
     Sends a course invitation email via Gmail SMTP in a background daemon thread.
     Gracefully logs and exits if Gmail credentials are not configured.
     """
-    gmail_user = os.environ.get("GMAIL_SMTP_USER", "").strip()
+    gmail_user = os.environ.get("GMAIL_SMTP_USER", "Hoodle_accl@gmail.com").strip()
     gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
     from_name = os.environ.get("GMAIL_FROM_NAME", "Hoodle LMS").strip()
 
@@ -682,7 +682,7 @@ ACCL Research Lab, IIT Bhilai
     t.start()
 
 
-def send_event_notification_email(recipient_emails, subject, heading, body_text, action_url=None, action_text="View in Hoodle"):
+def send_event_notification_email(recipient_emails, subject, heading, body_text, action_url=None, action_text="View in Hoodle", actor_name=None, actor_role=None):
     """
     Sends notification email via Gmail SMTP in background thread for specific course events:
     1. Assignment / Exam creation
@@ -690,7 +690,7 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
     3. Direct messages between student and teacher/TA
     4. Course announcements
     """
-    gmail_user = os.environ.get("GMAIL_SMTP_USER", "").strip()
+    gmail_user = os.environ.get("GMAIL_SMTP_USER", "Hoodle_accl@gmail.com").strip()
     gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
     from_name = os.environ.get("GMAIL_FROM_NAME", "Hoodle LMS").strip()
 
@@ -722,12 +722,25 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
             server.starttls()
             server.login(gmail_user, gmail_pass)
 
+            from_display = f"{actor_name} via Hoodle LMS" if actor_name else from_name
+
             for rec_email in clean_emails:
                 try:
                     msg = MIMEMultipart("alternative")
                     msg["Subject"] = subject
-                    msg["From"] = f"{from_name} <{gmail_user}>"
+                    msg["From"] = f"{from_display} <{gmail_user}>"
                     msg["To"] = rec_email
+
+                    attribution_html = ""
+                    attribution_plain = ""
+                    if actor_name:
+                        role_badge = f"""<span style="display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-left: 6px;">{actor_role or 'Instructor'}</span>""" if actor_role else ""
+                        attribution_html = f"""
+                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #2563eb; padding: 10px 14px; margin-bottom: 18px; border-radius: 6px; font-size: 13px; color: #334155;">
+                          <strong style="color: #0f172a;">Instructor / Staff:</strong> {actor_name} {role_badge}
+                        </div>
+                        """
+                        attribution_plain = f"Action by: {actor_name} ({actor_role or 'Staff'})\n\n"
 
                     button_html = ""
                     if full_action_url:
@@ -750,6 +763,7 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
     </div>
     <div style="padding: 26px 24px;">
       <h2 style="font-size: 18px; font-weight: 700; color: #0f172a; margin-top: 0; margin-bottom: 14px;">{heading}</h2>
+      {attribution_html}
       <div style="font-size: 14px; line-height: 1.6; color: #475569; white-space: pre-line; margin-bottom: 20px;">
         {body_text}
       </div>
@@ -761,7 +775,7 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
   </div>
 </body>
 </html>"""
-                    plain_text = f"{heading}\n\n{body_text}\n\n{full_action_url if full_action_url else ''}"
+                    plain_text = f"{heading}\n\n{attribution_plain}{body_text}\n\n{full_action_url if full_action_url else ''}"
                     msg.attach(MIMEText(plain_text, "plain"))
                     msg.attach(MIMEText(html_text, "html"))
                     server.sendmail(gmail_user, [rec_email], msg.as_string())
@@ -1708,17 +1722,20 @@ def post_announcement(course_id):
     student_emails = [r["email"] for r in student_rows]
     curr_user = get_current_user()
     t_name = curr_user["display_name"] if curr_user else "Instructor"
+    t_role = (curr_user["role"] if curr_user else "Teacher").upper()
     conn.close()
 
     if student_emails and c_info:
         snippet = (content[:280] + "...") if len(content) > 280 else content
         send_event_notification_email(
             recipient_emails=student_emails,
-            subject=f"New Announcement: [{c_info['code']}] {c_info['title']}",
-            heading=f"Class Announcement from {t_name}",
-            body_text=f"{snippet}",
+            subject=f"[{c_info['code']}] Announcement by {t_name}: {c_info['title']}",
+            heading=f"Class Announcement by {t_name} ({t_role})",
+            body_text=f"Announcement posted by {t_name} ({t_role}) for {c_info['code']}: {c_info['title']}:\n\n{snippet}",
             action_url=f"/courses/{course_id}/stream",
-            action_text="View in Course Stream"
+            action_text="View in Course Stream",
+            actor_name=t_name,
+            actor_role=t_role
         )
 
     flash("Announcement published to course stream.", "success")
@@ -1968,16 +1985,19 @@ def create_coursework(course_id):
     student_emails = [r["email"] for r in student_rows]
     curr_user = get_current_user()
     t_name = curr_user["display_name"] if curr_user else "Instructor"
+    t_role = (curr_user["role"] if curr_user else "Teacher").upper()
     conn.close()
 
     if student_emails and c_info:
         send_event_notification_email(
             recipient_emails=student_emails,
-            subject=f"New Coursework: [{c_info['code']}] {title}",
-            heading=f"New {cw_type.capitalize()} Assigned",
-            body_text=f"Prof. {t_name} has published a new {cw_type}: '{title}' in {c_info['code']}: {c_info['title']}.\n\nPoints: {points}\nDue Date: {due_date or 'No due date'}",
+            subject=f"[{c_info['code']}] New {cw_type.capitalize()} Created by {t_name}: {title}",
+            heading=f"New {cw_type.capitalize()} Created by {t_name}",
+            body_text=f"{t_name} ({t_role}) has created and published a new {cw_type}: '{title}' in {c_info['code']}: {c_info['title']}.\n\nPoints: {points}\nDue Date: {due_date or 'No due date'}",
             action_url=f"/courses/{course_id}/coursework/{coursework_id}",
-            action_text=f"View {cw_type.capitalize()} Details"
+            action_text=f"View {cw_type.capitalize()} Details",
+            actor_name=t_name,
+            actor_role=t_role
         )
 
     flash(f"Coursework '{title}' published successfully.", "success")
@@ -3595,6 +3615,15 @@ def save_grading_categories(course_id):
     course = get_course_or_404(course_id)
     conn = get_db()
 
+    # Process attendance cutoff threshold if provided
+    att_thresh_val = request.form.get("attendance_threshold")
+    if att_thresh_val is not None:
+        try:
+            att_thresh = max(0.0, min(100.0, float(att_thresh_val.strip())))
+            conn.execute("UPDATE courses SET attendance_threshold = ? WHERE id = ?", (att_thresh, course_id))
+        except (ValueError, TypeError):
+            pass
+
     cat_ids = request.form.getlist("cat_id")
     weights = request.form.getlist("weight")
     names = request.form.getlist("name")
@@ -3926,16 +3955,20 @@ def grade_submission(course_id, coursework_id, submission_id):
         JOIN courses c ON cw.course_id = c.id
         WHERE s.id = ?
     """, (submission_id,)).fetchone()
-    conn.close()
+    curr_user = get_current_user()
+    grader_name = curr_user["display_name"] if curr_user else "Instructor"
+    grader_role = (curr_user["role"] if curr_user else "Teacher").upper()
 
     if sub_info and sub_info["student_email"]:
         send_event_notification_email(
             recipient_emails=[sub_info["student_email"]],
-            subject=f"Grade Published: [{sub_info['course_code']}] {sub_info['cw_title']}",
-            heading="Your Coursework Has Been Graded",
-            body_text=f"Hello {sub_info['student_name']},\n\nYour submission for '{sub_info['cw_title']}' in {sub_info['course_code']}: {sub_info['course_title']} has been evaluated.\n\nScore: {grade} / {sub_info['cw_points'] or 100}\nFeedback: {feedback or 'No written comments'}",
+            subject=f"Grade Published by {grader_name}: [{sub_info['course_code']}] {sub_info['cw_title']}",
+            heading=f"Coursework Evaluated & Graded by {grader_name}",
+            body_text=f"Hello {sub_info['student_name']},\n\nYour submission for '{sub_info['cw_title']}' in {sub_info['course_code']}: {sub_info['course_title']} has been evaluated and graded by {grader_name} ({grader_role}).\n\nScore: {grade} / {sub_info['cw_points'] or 100}\nFeedback: {feedback or 'No written comments'}",
             action_url=f"/courses/{course_id}/coursework/{coursework_id}",
-            action_text="View Feedback & Submission"
+            action_text="View Feedback & Submission",
+            actor_name=grader_name,
+            actor_role=grader_role
         )
 
     flash("Grade and feedback saved.", "success")
@@ -5856,13 +5889,16 @@ def api_send_message():
     # Event Notification Email: Send email alert to recipient
     if recipient["email"]:
         snippet = (message[:200] + "...") if len(message) > 200 else message
+        sender_role = curr_user["role"].upper()
         send_event_notification_email(
             recipient_emails=[recipient["email"]],
-            subject=f"New Message from {curr_user['display_name']}",
+            subject=f"New Message from {curr_user['display_name']} ({sender_role})",
             heading=f"New Direct Message from {curr_user['display_name']}",
-            body_text=f"{curr_user['display_name']} ({curr_user['role'].upper()}) sent you a message on Hoodle:\n\n\"{snippet}\"",
+            body_text=f"{curr_user['display_name']} ({sender_role}) sent you a message on Hoodle:\n\n\"{snippet}\"",
             action_url=f"/messages?user_id={curr_id}",
-            action_text="View & Reply to Message"
+            action_text="View & Reply to Message",
+            actor_name=curr_user["display_name"],
+            actor_role=sender_role
         )
 
     return jsonify({

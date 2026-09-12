@@ -251,9 +251,13 @@
     input.disabled = true;
 
     try {
-      const res = await fetch('/api/messages/send', {
+      const sendUrl = "{{ url_for('api_send_message') }}";
+      const res = await fetch(sendUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({
           recipient_id: parseInt(recipientId),
           message: msg,
@@ -261,11 +265,18 @@
         })
       });
 
-      const data = await res.json();
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        data = { error: `Server returned non-JSON response (${res.status} ${res.statusText || 'Error'})` };
+      }
+
       if (!res.ok || data.error) {
         alert(data.error || 'Failed to send message.');
         btn.disabled = false;
         input.disabled = false;
+        input.focus();
         return;
       }
 
@@ -278,7 +289,7 @@
           Just now
         </div>
         <div style="padding: 0.65rem 0.95rem; border-radius: 14px; font-size: 0.88rem; line-height: 1.45; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%); color: white; border-bottom-right-radius: 2px; border-bottom-left-radius: 14px;">
-          ${msg.replace(/\n/g, "<br>")}
+          ${msg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}
         </div>
       `;
       feed.appendChild(bubble);
@@ -286,7 +297,7 @@
       scrollChatToBottom();
     } catch (err) {
       console.error(err);
-      alert('Network error while sending message.');
+      alert('Network or connection error while sending message. Please verify your connection or try again.');
     } finally {
       btn.disabled = false;
       input.disabled = false;

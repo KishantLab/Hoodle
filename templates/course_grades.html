@@ -288,7 +288,7 @@
         </span>
         {% for cat in categories %}
           <div class="category-pill" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; padding: 0.25rem 0.65rem; border-radius: 9999px; font-size: 0.8rem; display: flex; align-items: center; gap: 0.35rem;">
-            <span>{% if cat.is_attendance %}📅{% else %}📝{% endif %} {{ cat.name }}</span>
+            <span>{% if cat.is_attendance %}📅 {{ cat.name }} ({{ course.attendance_threshold or 50.0 }}% Cutoff){% else %}📝 {{ cat.name }}{% endif %}</span>
             <strong style="color: #0284c7;">{{ cat.weight }}%</strong>
           </div>
         {% endfor %}
@@ -565,6 +565,37 @@
           </table>
         </div>
 
+        <!-- Attendance Cutoff Threshold & Formula (Teacher / TA configurable) -->
+        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.25rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.4rem;">
+            <div style="font-size: 0.88rem; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 0.4rem;">
+              <span>📅</span> Attendance Cutoff Threshold &amp; Marking Formula
+            </div>
+            <span style="font-size: 0.72rem; background: #dcfce7; color: #15803d; font-weight: 700; padding: 2px 8px; border-radius: 9999px;">
+              Configured by Teacher / TA
+            </span>
+          </div>
+
+          <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+            <div>
+              <label for="modal_attendance_threshold" style="font-size: 0.78rem; font-weight: 700; color: #374151; display: block; margin-bottom: 0.25rem;">
+                Cutoff Threshold (%)
+              </label>
+              <div style="display: flex; align-items: center; gap: 0.4rem;">
+                <input type="number" step="1" min="0" max="100" name="attendance_threshold" id="modal_attendance_threshold" value="{{ course.attendance_threshold or 50.0 }}" class="form-control" style="width: 95px; text-align: center; font-weight: 700; font-family: monospace;" oninput="updateAttendancePreview(this.value)" required>
+                <span style="font-size: 0.85rem; font-weight: 700; color: #4b5563;">%</span>
+              </div>
+            </div>
+
+            <div style="flex: 1; min-width: 250px; font-size: 0.78rem; color: #166534; line-height: 1.45; border-left: 2px solid #86efac; padding-left: 0.75rem;">
+              <div><strong>Formula:</strong> Student attendance &le; cutoff gets <strong>0 points</strong>. Attendance above cutoff is linearly scaled from 0% to 100% of the Attendance weight.</div>
+              <div id="attendancePreviewText" style="margin-top: 0.35rem; font-family: monospace; font-size: 0.74rem; color: #047857; background: #dcfce7; padding: 3px 8px; border-radius: 4px; display: inline-block;">
+                Preview with {{ course.attendance_threshold or 50.0 }}% cutoff: &le;{{ course.attendance_threshold or 50.0 }}% &rarr; 0 credit | 75% att &rarr; 50% score | 100% att &rarr; 100% score
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Add New Category Sub-form -->
         <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.25rem;">
           <div style="font-size: 0.85rem; font-weight: 700; color: #1e3a8a; margin-bottom: 0.5rem;">
@@ -717,6 +748,14 @@
           display.style.color = '#b45309';
         }
       }
+    }
+
+    function updateAttendancePreview(val) {
+      const t = parseFloat(val) || 0;
+      const el = document.getElementById('attendancePreviewText');
+      if (!el) return;
+      const mid = Math.min(100, Math.round((t + (100 - t) * 0.5) * 10) / 10);
+      el.textContent = `Preview with ${t}% cutoff: \u2264${t}% \u2192 0 credit | ${mid}% att \u2192 50% score | 100% att \u2192 100% score`;
     }
   </script>
 {% endif %}
