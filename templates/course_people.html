@@ -36,6 +36,13 @@
   <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
     📊 Grades
   </a>
+  <a href="{{ url_for('course_messages', course_id=course.id) }}" class="course-tab">
+    💬 Messages
+    {% set c_unread = get_course_unread_count(course.id) %}
+    {% if c_unread > 0 %}
+      <span class="badge" style="background: #ef4444; color: white; border-radius: 9999px; padding: 1px 6px; font-size: 0.7rem; font-weight: 800; margin-left: 0.3rem;">{{ c_unread }}</span>
+    {% endif %}
+  </a>
 </nav>
 
 <div style="max-width: 900px; margin: 0 auto;">
@@ -106,9 +113,13 @@
             {% endif %}
 
             {% if current_user and current_user.id != t.id %}
+              {% set p_unread = get_person_unread_count(t.id, course.id) %}
               <a href="{{ url_for('messages_view', user_id=t.id, course_id=course.id) }}" class="btn btn-secondary btn-sm" style="font-size: 0.76rem; padding: 0.25rem 0.6rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem;" title="Direct Message with {{ t.display_name }}">
                 <span>💬</span>
                 <span>Message</span>
+                {% if p_unread > 0 %}
+                  <span style="background: #ef4444; color: white; border-radius: 9999px; padding: 1px 6px; font-size: 0.68rem; font-weight: 800; margin-left: 0.2rem;">{{ p_unread }}</span>
+                {% endif %}
               </a>
             {% endif %}
 
@@ -178,9 +189,13 @@
                   <td>
                     <div style="display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap;">
                       {% if current_user.id != s.id %}
+                        {% set p_unread = get_person_unread_count(s.id, course.id) %}
                         <a href="{{ url_for('messages_view', user_id=s.id, course_id=course.id) }}" class="btn btn-secondary btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem;" title="Message {{ s.display_name }}">
                           <span>💬</span>
                           <span>Message</span>
+                          {% if p_unread > 0 %}
+                            <span style="background: #ef4444; color: white; border-radius: 9999px; padding: 1px 6px; font-size: 0.68rem; font-weight: 800; margin-left: 0.2rem;">{{ p_unread }}</span>
+                          {% endif %}
                         </a>
                       {% endif %}
 

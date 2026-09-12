@@ -36,6 +36,13 @@
   <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
     📊 Grades
   </a>
+  <a href="{{ url_for('course_messages', course_id=course.id) }}" class="course-tab">
+    💬 Messages
+    {% set c_unread = get_course_unread_count(course.id) %}
+    {% if c_unread > 0 %}
+      <span class="badge" style="background: #ef4444; color: white; border-radius: 9999px; padding: 1px 6px; font-size: 0.7rem; font-weight: 800; margin-left: 0.3rem;">{{ c_unread }}</span>
+    {% endif %}
+  </a>
 </nav>
 
 <!-- Teacher Action Bar -->

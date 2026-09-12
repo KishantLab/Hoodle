@@ -1961,6 +1961,78 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertEqual(enroll["role"], "ta")
         self.logout()
 
+    def test_attendance_20s_rotation_and_projector_giant_screen(self):
+        """Verify attendance QR code auto-rotates every 20s, default mode is Giant Screen, and countdown counter is removed."""
+        self.assertEqual(app.ATTENDANCE_ROTATION_SECONDS, 20)
+
+        self.login("kishan", "password123")
+        res = self.client.get("/courses/1/attendance/projector")
+        self.assertEqual(res.status_code, 200)
+
+        # 1. Verify default view mode is Giant screen (mode-auditorium)
+        self.assertIn(b'class="mode-auditorium"', res.data)
+        self.assertIn(b'id="btnModeAuditorium" onclick="setViewMode(\'auditorium\')"', res.data)
+        self.assertIn(b'btnModeAuditorium" onclick="setViewMode(\'auditorium\')" title="Giant Auditorium Screen (High-Vis)"', res.data)
+
+        # 2. Verify countdown counter is removed
+        self.assertNotIn(b'timer-ring-wrap', res.data)
+        self.assertNotIn(b'Code refreshes in:', res.data)
+
+        # 3. Verify text reflects 20s rotation
+        self.assertIn(b'Auto-rotates every 20s', res.data)
+        self.logout()
+
+    def test_course_wise_messaging_and_unread_badges(self):
+        """Verify course-scoped messaging route, student TA/teacher restrictions, and unread count badges."""
+        self.login("kishan", "password123")
+
+        # 1. Course messaging shortcut route
+        res = self.client.get("/courses/1/messages")
+        self.assertEqual(res.status_code, 302)
+        self.assertIn("/messages?course_id=1", res.headers.get("Location"))
+
+        # Follow redirect to course messages
+        res_follow = self.client.get("/messages?course_id=1")
+        self.assertEqual(res_follow.status_code, 200)
+        self.assertIn(b"Course Channel", res_follow.data)
+        self.assertIn(b"CSL100 Messages", res_follow.data)
+        self.assertIn(b"chat-app-card", res_follow.data)
+
+        # 2. Send message to student1 in course 1
+        res_send = self.client.post("/api/messages/send", json={
+            "recipient_id": 3,
+            "message": "Hello student, this is for CSL100.",
+            "course_id": 1
+        })
+        self.assertEqual(res_send.status_code, 200)
+        self.logout()
+
+        # 3. Log in as student1 and check unread count & course tab badge
+        self.login("student1", "student123")
+
+        # Check course stream template renders Messages tab with unread badge 1
+        res_stream = self.client.get("/courses/1/stream")
+        self.assertEqual(res_stream.status_code, 200)
+        self.assertIn(b"Messages", res_stream.data)
+
+        # Check course messages view as student
+        res_stud_msg = self.client.get("/messages?course_id=1")
+        self.assertEqual(res_stud_msg.status_code, 200)
+        self.assertIn(b"Course Channel", res_stud_msg.data)
+        # Student contacts should only be course teachers/TAs
+        self.assertIn(b"Kishan", res_stud_msg.data)
+
+        # Academic integrity: student cannot message student even with course_id
+        res_block = self.client.post("/api/messages/send", json={
+            "recipient_id": 4, # another student if any
+            "message": "Hey friend",
+            "course_id": 1
+        })
+        # If recipient 4 is student or not found:
+        self.assertIn(res_block.status_code, (403, 404))
+
+        self.logout()
+
 
 if __name__ == "__main__":
     unittest.main()

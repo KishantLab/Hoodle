@@ -2185,3 +2185,140 @@ img[src*="accl_logo.png"] {
 .new-submission-pulse {
   animation: newSubmissionFlash 2.5s ease-out;
 }
+
+/* ==========================================================================
+   Responsive Chat & 1-on-1 Messaging System
+   ========================================================================== */
+.messages-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  height: calc(100vh - 165px);
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-app-card {
+  padding: 0 !important;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  background: white;
+  min-height: 480px;
+}
+
+.chat-sidebar {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  background: #fafafa;
+  overflow: hidden;
+  height: 100%;
+}
+
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  background: white;
+  overflow: hidden;
+  height: 100%;
+}
+
+.chat-header {
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #ffffff;
+  z-index: 10;
+}
+
+.chat-feed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: #fdfdfd;
+}
+
+.chat-footer {
+  padding: 0.85rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: white;
+}
+
+.mobile-back-btn {
+  display: none;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.35rem 0.65rem;
+  margin-right: 0.5rem;
+  border-radius: 6px;
+  text-decoration: none;
+}
+
+@media (max-width: 768px) {
+  .messages-container {
+    height: calc(100vh - 120px);
+    min-height: 460px;
+    padding: 0 0.25rem;
+  }
+
+  .chat-app-card {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100%;
+    border-radius: 8px;
+  }
+
+  /* When an active conversation is open on mobile */
+  .chat-app-card.mobile-active-chat .chat-sidebar {
+    display: none !important;
+  }
+
+  .chat-app-card.mobile-active-chat .chat-main {
+    display: flex !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  /* When viewing the conversation drawer on mobile */
+  .chat-app-card:not(.mobile-active-chat) .chat-sidebar {
+    display: flex !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  .chat-app-card:not(.mobile-active-chat) .chat-main {
+    display: none !important;
+  }
+
+  .mobile-back-btn {
+    display: inline-flex !important;
+  }
+
+  .chat-header {
+    padding: 0.65rem 0.85rem;
+  }
+
+  .chat-feed {
+    padding: 0.75rem;
+  }
+
+  .chat-footer {
+    padding: 0.65rem 0.85rem;
+  }
+
+  .chat-footer textarea {
+    font-size: 16px !important; /* Prevents auto-zoom on iOS Safari */
+  }
+}

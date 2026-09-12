@@ -85,9 +85,6 @@
       width: 440px;
       height: 440px;
     }
-    body.mode-auditorium .timer-val {
-      font-size: 2.2rem;
-    }
 
     /* Multi-Device Mobile / Tablet Mode */
     body.mode-mobile .projector-main,
@@ -148,24 +145,6 @@
       image-rendering: pixelated;
       max-width: 100%;
       height: auto;
-    }
-    .timer-ring-wrap {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      background: rgba(15, 23, 42, 0.8);
-      border: 1px solid #334155;
-      padding: 0.6rem 1.25rem;
-      border-radius: 9999px;
-      margin-top: 0.35rem;
-    }
-    .timer-val {
-      font-family: monospace;
-      font-size: 1.35rem;
-      font-weight: 800;
-      color: #38bdf8;
-      min-width: 32px;
-      text-align: center;
     }
     .status-panel {
       background: #111827;
@@ -275,7 +254,7 @@
     }
   </style>
 </head>
-<body>
+<body class="mode-auditorium">
 
   <!-- Top Navigation -->
   <header class="projector-navbar">
@@ -298,10 +277,10 @@
 
       <!-- Multi-Device View Mode Switcher -->
       <div style="display: flex; align-items: center; gap: 0.25rem;">
-        <button class="view-mode-btn active" id="btnModeStandard" onclick="setViewMode('standard')" title="Standard 2-Column Mode">
+        <button class="view-mode-btn" id="btnModeStandard" onclick="setViewMode('standard')" title="Standard 2-Column Mode">
           📽️ Standard
         </button>
-        <button class="view-mode-btn" id="btnModeAuditorium" onclick="setViewMode('auditorium')" title="Giant Auditorium Screen (High-Vis)">
+        <button class="view-mode-btn active" id="btnModeAuditorium" onclick="setViewMode('auditorium')" title="Giant Auditorium Screen (High-Vis)">
           🖥️ Giant Screen
         </button>
         <button class="view-mode-btn" id="btnModeMobile" onclick="setViewMode('mobile')" title="Mobile / Handheld Mode">
@@ -337,17 +316,10 @@
         <img id="qrImage" src="{{ url_for('attendance_qr_svg', course_id=course.id) }}?type={{ session_type }}&token={{ initial_token }}" alt="Live QR Code">
       </div>
 
-      <div class="timer-ring-wrap">
-        <span style="font-size: 1.05rem;">⏳</span>
-        <span style="font-size: 0.85rem; color: #cbd5e1;">Code refreshes in:</span>
-        <span class="timer-val" id="secondsRemaining">{{ seconds_remaining }}</span>
-        <span style="font-size: 0.85rem; color: #94a3b8;">seconds</span>
-      </div>
-
       <div style="margin-top: 1rem; font-size: 0.78rem; color: #64748b; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center;">
         <span>🛡️ Anti-Proxy Guard Active</span>
         <span>•</span>
-        <span>Auto-rotates every 45s</span>
+        <span>Auto-rotates every 20s</span>
         <span>•</span>
         <span>One scan per student</span>
       </div>
@@ -406,7 +378,14 @@
       } else {
         document.getElementById("btnModeStandard").classList.add("active");
       }
+      try {
+        localStorage.setItem("hoodle_projector_mode", mode);
+      } catch (e) {}
     }
+
+    // Initialize mode from localStorage or default to "auditorium" (Giant Screen)
+    const savedMode = (typeof localStorage !== 'undefined' && localStorage.getItem("hoodle_projector_mode")) || "auditorium";
+    setViewMode(savedMode);
 
     function toggleFullscreen() {
       if (!document.fullscreenElement) {

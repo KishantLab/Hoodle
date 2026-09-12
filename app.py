@@ -1105,13 +1105,49 @@ def inject_global_variables():
         locker_used_bytes = locker_row[0] if locker_row else 0
         conn.close()
 
+    def get_course_unread_count(course_id):
+        if not user or not course_id:
+            return 0
+        try:
+            c_conn = get_db()
+            row = c_conn.execute("""
+                SELECT COUNT(*) FROM direct_messages
+                WHERE recipient_id = ? AND is_read = 0 AND (
+                    course_id = ? OR sender_id IN (
+                        SELECT user_id FROM course_enrollments WHERE course_id = ?
+                        UNION
+                        SELECT teacher_id FROM courses WHERE id = ?
+                    )
+                )
+            """, (user["id"], course_id, course_id, course_id)).fetchone()
+            c_conn.close()
+            return row[0] if row else 0
+        except Exception:
+            return 0
+
+    def get_person_unread_count(other_user_id, course_id=None):
+        if not user or not other_user_id:
+            return 0
+        try:
+            c_conn = get_db()
+            row = c_conn.execute("""
+                SELECT COUNT(*) FROM direct_messages
+                WHERE recipient_id = ? AND sender_id = ? AND is_read = 0
+            """, (user["id"], other_user_id)).fetchone()
+            c_conn.close()
+            return row[0] if row else 0
+        except Exception:
+            return 0
+
     return {
         "current_user": user,
         "now_iso": now_str,
         "active_exam_lockdown": active_exam,
         "user_courses": user_courses,
         "unread_messages_count": unread_messages_count,
-        "locker_used_bytes": locker_used_bytes
+        "locker_used_bytes": locker_used_bytes,
+        "get_course_unread_count": get_course_unread_count,
+        "get_person_unread_count": get_person_unread_count
     }
 
 
@@ -5148,13 +5184,13 @@ def admin_reset_email_settings():
 
 # --- Dynamic Anti-Proxy QR Attendance System ---
 
-ATTENDANCE_ROTATION_SECONDS = 45  # QR code rotates dynamically every 45 seconds
+ATTENDANCE_ROTATION_SECONDS = 20  # QR code rotates dynamically every 20 seconds
 
 
 def get_dynamic_attendance_token(course_id, session_type="Lecture", time_block=None):
     """
-    Generates a cryptographic 8-character rotating token based on 45-second time blocks.
-    Anti-Proxy Protection: Any photo/link shared expires in 45 seconds.
+    Generates a cryptographic 8-character rotating token based on 20-second time blocks.
+    Anti-Proxy Protection: Any photo/link shared expires in 20 seconds.
     """
     if time_block is None:
         time_block = int(time.time() // ATTENDANCE_ROTATION_SECONDS)
@@ -5994,6 +6030,19 @@ def attendance_export_csv(course_id):
 
 # --- 1-on-1 Chat & Messaging System (Teacher-Student & TA-Student) ---
 
+@app.route("/courses/<int:course_id>/messages")
+@login_required
+def course_messages(course_id):
+    """
+    Course-wise messaging shortcut:
+    Redirects to the messages view scoped to this course.
+    """
+    target_user_id = request.args.get("user_id", type=int)
+    if target_user_id:
+        return redirect(url_for("messages_view", course_id=course_id, user_id=target_user_id))
+    return redirect(url_for("messages_view", course_id=course_id))
+
+
 @app.route("/messages")
 @login_required
 def messages_view():
@@ -6002,8 +6051,20 @@ def messages_view():
     curr_role = curr_user["role"]
     target_user_id = request.args.get("user_id", type=int)
     course_context_id = request.args.get("course_id", type=int)
+    has_explicit_contact = bool(target_user_id)
 
     conn = get_db()
+    current_course = None
+    course_member_ids = set()
+    if course_context_id:
+        current_course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_context_id,)).fetchone()
+        if current_course:
+            member_rows = conn.execute("""
+                SELECT user_id FROM course_enrollments WHERE course_id = ?
+                UNION
+                SELECT teacher_id FROM courses WHERE id = ?
+            """, (course_context_id, course_context_id)).fetchall()
+            course_member_ids = {r[0] for r in member_rows if r[0]}
 
     # 1. Fetch distinct conversation partners
     raw_convos = conn.execute("""
@@ -6029,6 +6090,9 @@ def messages_view():
             # If current user is student, hide any invalid student contacts from conversation list
             if curr_role == "student" and partner["role"] == "student":
                 continue
+            # If course_context_id is set, filter to contacts relevant to this course
+            if course_context_id and course_member_ids and (partner["id"] not in course_member_ids):
+                continue
             conversations.append({
                 "partner": partner,
                 "last_activity": c["last_activity"],
@@ -6038,36 +6102,70 @@ def messages_view():
 
     # 2. Eligible contacts to start new chat
     eligible_contacts = []
-    if curr_role == "student":
-        # Students can ONLY message teachers, TAs, or admins
-        contacts_query = """
-            SELECT DISTINCT u.id, u.display_name, u.email, u.roll_number, u.role, c.code as course_code
-            FROM users u
-            JOIN courses c ON (u.id = c.teacher_id OR u.id IN (SELECT user_id FROM course_enrollments WHERE course_id = c.id AND role IN ('teacher', 'ta')))
-            JOIN course_enrollments ce ON c.id = ce.course_id
-            WHERE ce.user_id = ? AND ce.role = 'student' AND c.is_archived = 0
-            ORDER BY u.display_name ASC
-        """
-        eligible_contacts = conn.execute(contacts_query, (curr_id,)).fetchall()
-    elif curr_role in ("teacher", "ta"):
-        # Instructors/TAs can message any student in their courses + co-instructors
-        contacts_query = """
-            SELECT DISTINCT u.id, u.display_name, u.email, u.roll_number, u.role, c.code as course_code
-            FROM users u
-            JOIN course_enrollments ce ON u.id = ce.user_id
-            JOIN courses c ON ce.course_id = c.id
-            WHERE (c.teacher_id = ? OR c.id IN (SELECT course_id FROM course_enrollments WHERE user_id = ? AND role IN ('teacher', 'ta')))
-              AND u.id != ? AND c.is_archived = 0
-            ORDER BY u.role ASC, u.display_name ASC
-        """
-        eligible_contacts = conn.execute(contacts_query, (curr_id, curr_id, curr_id)).fetchall()
-    else: # admin
-        contacts_query = """
-            SELECT id, display_name, email, roll_number, role, '' as course_code
-            FROM users WHERE id != ?
-            ORDER BY role DESC, display_name ASC
-        """
-        eligible_contacts = conn.execute(contacts_query, (curr_id,)).fetchall()
+    if course_context_id and current_course:
+        # Scoped strictly to course teachers/TAs and students
+        if curr_role == "student":
+            contacts_query = """
+                SELECT DISTINCT u.id, u.display_name, u.email, u.roll_number, u.role, ? as course_code
+                FROM users u
+                WHERE (u.id = ? OR u.id IN (SELECT user_id FROM course_enrollments WHERE course_id = ? AND role IN ('teacher', 'ta')))
+                  AND u.id != ?
+                ORDER BY u.role DESC, u.display_name ASC
+            """
+            eligible_contacts = conn.execute(contacts_query, (current_course["code"], current_course["teacher_id"], course_context_id, curr_id)).fetchall()
+        elif curr_role in ("teacher", "ta"):
+            contacts_query = """
+                SELECT DISTINCT u.id, u.display_name, u.email, u.roll_number, u.role, ? as course_code
+                FROM users u
+                JOIN course_enrollments ce ON u.id = ce.user_id
+                WHERE ce.course_id = ? AND u.id != ?
+                UNION
+                SELECT DISTINCT u.id, u.display_name, u.email, u.roll_number, u.role, ? as course_code
+                FROM users u
+                WHERE u.id = ? AND u.id != ?
+                ORDER BY role ASC, display_name ASC
+            """
+            eligible_contacts = conn.execute(contacts_query, (current_course["code"], course_context_id, curr_id, current_course["code"], current_course["teacher_id"], curr_id)).fetchall()
+        else: # admin in course
+            contacts_query = """
+                SELECT DISTINCT u.id, u.display_name, u.email, u.roll_number, u.role, ? as course_code
+                FROM users u
+                WHERE (u.id IN (SELECT user_id FROM course_enrollments WHERE course_id = ?) OR u.id = ?)
+                  AND u.id != ?
+                ORDER BY role ASC, display_name ASC
+            """
+            eligible_contacts = conn.execute(contacts_query, (current_course["code"], course_context_id, current_course["teacher_id"], curr_id)).fetchall()
+    else:
+        if curr_role == "student":
+            # Students can ONLY message teachers, TAs, or admins
+            contacts_query = """
+                SELECT DISTINCT u.id, u.display_name, u.email, u.roll_number, u.role, c.code as course_code
+                FROM users u
+                JOIN courses c ON (u.id = c.teacher_id OR u.id IN (SELECT user_id FROM course_enrollments WHERE course_id = c.id AND role IN ('teacher', 'ta')))
+                JOIN course_enrollments ce ON c.id = ce.course_id
+                WHERE ce.user_id = ? AND ce.role = 'student' AND c.is_archived = 0
+                ORDER BY u.display_name ASC
+            """
+            eligible_contacts = conn.execute(contacts_query, (curr_id,)).fetchall()
+        elif curr_role in ("teacher", "ta"):
+            # Instructors/TAs can message any student in their courses + co-instructors
+            contacts_query = """
+                SELECT DISTINCT u.id, u.display_name, u.email, u.roll_number, u.role, c.code as course_code
+                FROM users u
+                JOIN course_enrollments ce ON u.id = ce.user_id
+                JOIN courses c ON ce.course_id = c.id
+                WHERE (c.teacher_id = ? OR c.id IN (SELECT course_id FROM course_enrollments WHERE user_id = ? AND role IN ('teacher', 'ta')))
+                  AND u.id != ? AND c.is_archived = 0
+                ORDER BY u.role ASC, u.display_name ASC
+            """
+            eligible_contacts = conn.execute(contacts_query, (curr_id, curr_id, curr_id)).fetchall()
+        else: # admin
+            contacts_query = """
+                SELECT id, display_name, email, roll_number, role, '' as course_code
+                FROM users WHERE id != ?
+                ORDER BY role DESC, display_name ASC
+            """
+            eligible_contacts = conn.execute(contacts_query, (curr_id,)).fetchall()
 
     # 3. Active contact & thread messages
     active_contact = None
@@ -6080,6 +6178,8 @@ def messages_view():
             if curr_role == "student" and target_user["role"] == "student":
                 flash("Direct messaging between students is strictly prohibited by academic policy.", "danger")
                 conn.close()
+                if course_context_id:
+                    return redirect(url_for("course_messages", course_id=course_context_id))
                 return redirect(url_for("messages_view"))
             active_contact = target_user
     elif conversations:
@@ -6109,7 +6209,9 @@ def messages_view():
         eligible_contacts=eligible_contacts,
         active_contact=active_contact,
         thread_messages=thread_messages,
-        course_context_id=course_context_id
+        course_context_id=course_context_id,
+        current_course=current_course,
+        has_explicit_contact=has_explicit_contact
     )
 
 
@@ -6183,8 +6285,18 @@ def api_messages_poll():
 
     active_user_id = request.args.get("active_user_id", type=int)
     after_id = request.args.get("after_id", default=0, type=int)
+    course_id = request.args.get("course_id", type=int)
 
     conn = get_db()
+
+    course_member_ids = set()
+    if course_id:
+        member_rows = conn.execute("""
+            SELECT user_id FROM course_enrollments WHERE course_id = ?
+            UNION
+            SELECT teacher_id FROM courses WHERE id = ?
+        """, (course_id, course_id)).fetchall()
+        course_member_ids = {r[0] for r in member_rows if r[0]}
 
     new_messages = []
     if active_user_id and active_user_id != curr_id:
@@ -6245,6 +6357,8 @@ def api_messages_poll():
         if partner:
             if curr_role == "student" and partner["role"] == "student":
                 continue
+            if course_id and course_member_ids and (partner["id"] not in course_member_ids):
+                continue
             unr = c["unread_count"] or 0
             total_unread += unr
             conversations.append({
@@ -6290,6 +6404,11 @@ def api_send_message():
     if recipient_id == curr_id:
         return jsonify({"error": "You cannot send a message to yourself."}), 400
 
+    try:
+        course_id = int(course_id) if course_id else None
+    except (ValueError, TypeError):
+        course_id = None
+
     conn = get_db()
     recipient = conn.execute("SELECT id, display_name, email, role FROM users WHERE id = ?", (recipient_id,)).fetchone()
     if not recipient:
@@ -6315,12 +6434,13 @@ def api_send_message():
     if recipient["email"]:
         snippet = (message[:200] + "...") if len(message) > 200 else message
         sender_role = curr_user["role"].upper()
+        action_url = f"/messages?course_id={course_id}&user_id={curr_id}" if course_id else f"/messages?user_id={curr_id}"
         send_event_notification_email(
             recipient_emails=[recipient["email"]],
             subject=f"New Message from {curr_user['display_name']} ({sender_role})",
             heading=f"New Direct Message from {curr_user['display_name']}",
             body_text=f"{curr_user['display_name']} ({sender_role}) sent you a message on Hoodle:\n\n\"{snippet}\"",
-            action_url=f"/messages?user_id={curr_id}",
+            action_url=action_url,
             action_text="View & Reply to Message",
             actor_name=curr_user["display_name"],
             actor_role=sender_role

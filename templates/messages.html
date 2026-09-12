@@ -3,12 +3,33 @@
 {% block title %}Messages - Hoodle LMS{% endblock %}
 
 {% block content %}
-<div class="messages-container" style="max-width: 1100px; margin: 0 auto; height: calc(100vh - 165px); min-height: 560px; display: flex; flex-direction: column;">
+<div class="messages-container">
+  {% if current_course %}
+    <!-- Course Messaging Header Banner -->
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 0.65rem 1rem; margin-bottom: 0.85rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <span style="font-size: 1.25rem;">📚</span>
+        <div>
+          <span style="font-weight: 800; color: #1e3a8a; font-size: 0.96rem;">{{ current_course.code }}: {{ current_course.title }}</span>
+          <span style="font-size: 0.72rem; color: #2563eb; background: #dbeafe; padding: 2px 8px; border-radius: 9999px; font-weight: 700; margin-left: 0.35rem;">Course Channel</span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 0.4rem; align-items: center;">
+        <a href="{{ url_for('course_people', course_id=current_course.id) }}" class="btn btn-secondary btn-sm" style="font-size: 0.78rem; padding: 0.25rem 0.6rem;">
+          👥 People
+        </a>
+        <a href="{{ url_for('course_stream', course_id=current_course.id) }}" class="btn btn-secondary btn-sm" style="font-size: 0.78rem; padding: 0.25rem 0.6rem;">
+          ← Back to Stream
+        </a>
+      </div>
+    </div>
+  {% endif %}
+
   <!-- Top Bar Title -->
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
     <div>
-      <h1 style="font-size: 1.5rem; font-weight: 800; color: #1e3a8a; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-        <span>💬</span> 1-on-1 Direct Messages
+      <h1 style="font-size: 1.45rem; font-weight: 800; color: #1e3a8a; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <span>💬</span> {% if current_course %}{{ current_course.code }} Messages{% else %}Direct Messages{% endif %}
       </h1>
       <p style="font-size: 0.84rem; color: var(--text-muted); margin: 0.2rem 0 0 0;">
         {% if current_user.role == "student" %}
@@ -27,10 +48,10 @@
     </div>
   </div>
 
-  <!-- Split Pane Chat App -->
-  <div class="card" style="padding: 0; flex: 1; display: grid; grid-template-columns: 320px 1fr; overflow: hidden; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-sm);">
-    <!-- Left Sidebar: Conversations & Contacts -->
-    <aside style="border-right: 1px solid var(--border); display: flex; flex-direction: column; background: #fafafa; overflow: hidden;">
+  <!-- Split Pane Chat App Card -->
+  <div class="card chat-app-card {% if has_explicit_contact %}mobile-active-chat{% endif %}">
+    <!-- Left Sidebar: Conversations & Contacts Drawer -->
+    <aside class="chat-sidebar">
       <div style="padding: 0.85rem; border-bottom: 1px solid var(--border); background: white;">
         <input type="text" id="convoSearchInput" placeholder="Search conversations..." class="form-control" style="font-size: 0.82rem; padding: 0.4rem 0.65rem;" oninput="filterConversations(this.value)">
       </div>
@@ -40,7 +61,7 @@
           {% for c in conversations %}
             {% set p = c.partner %}
             {% set is_active = (active_contact and active_contact.id == p.id) %}
-            <a href="{{ url_for('messages_view', user_id=p.id) }}" class="convo-item" data-user-id="{{ p.id }}" data-name="{{ p.display_name|lower }} {{ p.roll_number|lower if p.roll_number else '' }}" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem; border-bottom: 1px solid var(--border); text-decoration: none; color: inherit; background: {% if is_active %}#eff6ff{% else %}white{% endif %}; border-left: {% if is_active %}4px solid var(--primary){% else %}4px solid transparent{% endif %}; transition: background 0.15s ease;" onmouseover="if(!{{ 'true' if is_active else 'false' }}) this.style.background='#f8fafc'" onmouseout="if(!{{ 'true' if is_active else 'false' }}) this.style.background='white'">
+            <a href="{{ url_for('messages_view', user_id=p.id, course_id=course_context_id) if course_context_id else url_for('messages_view', user_id=p.id) }}" class="convo-item" data-user-id="{{ p.id }}" data-name="{{ p.display_name|lower }} {{ p.roll_number|lower if p.roll_number else '' }}" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem; border-bottom: 1px solid var(--border); text-decoration: none; color: inherit; background: {% if is_active %}#eff6ff{% else %}white{% endif %}; border-left: {% if is_active %}4px solid var(--primary){% else %}4px solid transparent{% endif %}; transition: background 0.15s ease;" onmouseover="if(!{{ 'true' if is_active else 'false' }}) this.style.background='#f8fafc'" onmouseout="if(!{{ 'true' if is_active else 'false' }}) this.style.background='white'">
               <div style="width: 42px; height: 42px; border-radius: 50%; background: {% if p.role in ('teacher', 'ta') %}#e0e7ff{% else %}#ecfdf5{% endif %}; color: {% if p.role in ('teacher', 'ta') %}#3730a3{% else %}#047857{% endif %}; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1rem; flex-shrink: 0;">
                 {{ p.display_name[0]|upper }}
               </div>
@@ -76,34 +97,37 @@
     </aside>
 
     <!-- Right Area: Chat Thread & Message Box -->
-    <main style="display: flex; flex-direction: column; background: white; overflow: hidden;">
+    <main class="chat-main">
       {% if active_contact %}
         <!-- Active Chat Header -->
-        <header style="padding: 0.85rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #ffffff; z-index: 10;">
-          <div style="display: flex; align-items: center; gap: 0.75rem;">
-            <div style="width: 40px; height: 40px; border-radius: 50%; background: #eff6ff; color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem;">
+        <header class="chat-header">
+          <div style="display: flex; align-items: center; gap: 0.6rem; min-width: 0;">
+            <a href="{{ url_for('messages_view', course_id=course_context_id) if course_context_id else url_for('messages_view') }}" class="mobile-back-btn btn btn-secondary btn-sm" title="Back to conversations">
+              ← Chats
+            </a>
+            <div style="width: 40px; height: 40px; border-radius: 50%; background: #eff6ff; color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem; flex-shrink: 0;">
               {{ active_contact.display_name[0]|upper }}
             </div>
-            <div>
-              <div style="font-weight: 800; font-size: 0.96rem; color: var(--text-main);">
+            <div style="min-width: 0;">
+              <div style="font-weight: 800; font-size: 0.96rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                 {{ active_contact.display_name }}
               </div>
-              <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem;">
+              <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
                 <span class="role-badge role-{{ active_contact.role }}" style="font-size: 0.65rem; padding: 1px 5px;">{{ active_contact.role }}</span>
                 {% if active_contact.roll_number %}<span>{{ active_contact.roll_number }} • </span>{% endif %}
-                <span>{{ active_contact.email or "" }}</span>
+                <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ active_contact.email or "" }}</span>
               </div>
             </div>
           </div>
 
-          <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem; background: #f8fafc; padding: 0.3rem 0.65rem; border-radius: 6px; border: 1px solid var(--border);">
+          <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem; background: #f8fafc; padding: 0.3rem 0.65rem; border-radius: 6px; border: 1px solid var(--border); flex-shrink: 0;">
             <span>✉️</span>
             <span>Email alerts active</span>
           </div>
         </header>
 
         <!-- Message Bubbles Scroll Feed -->
-        <div id="messagesFeed" style="flex: 1; overflow-y: auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; background: #fdfdfd;">
+        <div id="messagesFeed" class="chat-feed">
           {% if thread_messages %}
             {% for m in thread_messages %}
               {% set is_mine = (m.sender_id == current_user.id) %}
@@ -127,7 +151,7 @@
         </div>
 
         <!-- Chat Input Form -->
-        <footer style="padding: 0.85rem 1.25rem; border-top: 1px solid var(--border); background: white;">
+        <footer class="chat-footer">
           <form id="chatSendForm" onsubmit="sendMessage(event)" style="display: flex; gap: 0.5rem; align-items: flex-end;">
             <input type="hidden" id="recipientId" value="{{ active_contact.id }}">
             <input type="hidden" id="courseIdContext" value="{{ course_context_id or '' }}">
@@ -172,7 +196,7 @@
     <div id="eligibleContactsList" style="max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem;">
       {% if eligible_contacts %}
         {% for ec in eligible_contacts %}
-          <a href="{{ url_for('messages_view', user_id=ec.id) }}" class="contact-row" data-search="{{ ec.display_name|lower }} {{ ec.roll_number|lower if ec.roll_number else '' }} {{ ec.course_code|lower if ec.course_code else '' }}" style="display: flex; align-items: center; justify-content: space-between; padding: 0.65rem 0.85rem; border: 1px solid var(--border); border-radius: 8px; text-decoration: none; color: inherit; background: white;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+          <a href="{{ url_for('messages_view', user_id=ec.id, course_id=course_context_id) if course_context_id else url_for('messages_view', user_id=ec.id) }}" class="contact-row" data-search="{{ ec.display_name|lower }} {{ ec.roll_number|lower if ec.roll_number else '' }} {{ ec.course_code|lower if ec.course_code else '' }}" style="display: flex; align-items: center; justify-content: space-between; padding: 0.65rem 0.85rem; border: 1px solid var(--border); border-radius: 8px; text-decoration: none; color: inherit; background: white;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
             <div style="display: flex; align-items: center; gap: 0.75rem;">
               <div style="width: 36px; height: 36px; border-radius: 50%; background: #eff6ff; color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 800;">
                 {{ ec.display_name[0]|upper }}
@@ -287,6 +311,10 @@
       let fetchUrl = pollUrl + '?after_id=' + highestMsgId;
       if (activeUserId) {
         fetchUrl += '&active_user_id=' + activeUserId;
+      }
+      const courseIdEl = document.getElementById('courseIdContext');
+      if (courseIdEl && courseIdEl.value) {
+        fetchUrl += '&course_id=' + encodeURIComponent(courseIdEl.value);
       }
 
       const res = await fetch(fetchUrl, {
