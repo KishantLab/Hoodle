@@ -141,13 +141,15 @@
             <!-- Author Header -->
             <div class="announcement-header">
               <div class="announcement-author-info">
-                <div class="announcement-avatar">
+                <div class="announcement-avatar" style="background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; box-shadow: 0 2px 6px rgba(37,99,235,0.25);">
                   {{ ann.author_name[0] | upper }}
                 </div>
                 <div>
                   <div class="announcement-author-name">
                     {{ ann.author_name }}
-                    {% if ann.author_role in ('teacher', 'admin') %}
+                    {% if ann.author_role == 'ta' %}
+                      <span class="role-badge" style="background: #ecfdf5; color: #047857; font-weight: 700;">Teaching Assistant</span>
+                    {% elif ann.author_role in ('teacher', 'admin') %}
                       <span class="role-badge role-teacher">Instructor</span>
                     {% endif %}
                   </div>
@@ -162,7 +164,7 @@
 
               <!-- Pin & Delete Controls -->
               <div class="announcement-actions">
-                {% if current_user.role in ('teacher', 'admin') %}
+                {% if current_user.role in ('teacher', 'admin') or (course and course.teacher_id == current_user.id) %}
                   <form action="{{ url_for('toggle_pin_announcement', announcement_id=ann.id) }}" method="POST" style="display: inline;">
                     <button type="submit" class="btn btn-secondary btn-sm action-icon-btn" title="{% if ann.is_pinned %}Unpin{% else %}Pin to Top{% endif %}">
                       {% if ann.is_pinned %}Unpin{% else %}📌 Pin{% endif %}
@@ -170,7 +172,7 @@
                   </form>
                 {% endif %}
 
-                {% if ann.user_id == current_user.id or current_user.role in ('teacher', 'admin') %}
+                {% if ann.user_id == current_user.id or current_user.role in ('teacher', 'admin') or (course and course.teacher_id == current_user.id) %}
                   <form action="{{ url_for('delete_announcement', announcement_id=ann.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete this announcement?');">
                     <button type="submit" class="btn btn-secondary btn-sm action-icon-btn delete-btn" title="Delete Announcement">
                       🗑
@@ -185,23 +187,23 @@
               {{ ann.content | nl2br }}
             </div>
 
-            <!-- Attachment File -->
+            <!-- Attachment File Tile -->
             {% if ann.attachment_name %}
               <div class="announcement-attachment-box">
                 <div class="attachment-file-meta">
-                  <span style="font-size: 1.15rem;">📄</span>
+                  <span style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; font-size: 1.1rem; flex-shrink: 0;">📄</span>
                   <div style="min-width: 0;">
                     <div class="attachment-filename">{{ ann.attachment_name }}</div>
                     <div class="attachment-size">({{ ann.attachment_size | filesize }})</div>
                   </div>
                 </div>
-                <div style="display: flex; gap: 0.35rem; align-items: center;">
+                <div style="display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap;">
                   {% if ann.attachment_name.lower().endswith('.pdf') %}
                     <button type="button" class="btn btn-secondary btn-sm" onclick="openPdfViewer('{{ url_for('download_attachment', att_id=ann.id, view=1) }}', '{{ ann.attachment_name | escape }}', '{{ url_for('download_attachment', att_id=ann.id) }}')" style="color: #b91c1c; font-weight: 700;">
                       📖 View PDF
                     </button>
                   {% endif %}
-                  <a href="{{ url_for('download_attachment', att_id=ann.id) }}" class="btn btn-secondary btn-sm download-btn">
+                  <a href="{{ url_for('download_attachment', att_id=ann.id) }}" class="btn btn-secondary btn-sm download-btn" style="font-weight: 700;">
                     Download
                   </a>
                 </div>

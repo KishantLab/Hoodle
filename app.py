@@ -663,7 +663,7 @@ def get_portal_base_url():
     except Exception:
         pass
 
-    return "http://10.10.14.104/lms"
+    return "https://10.10.14.104/lms"
 
 
 def resolve_portal_url(path_or_url):
@@ -902,6 +902,8 @@ def get_current_user():
     conn = get_db()
     user = conn.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     conn.close()
+    if user and session.get("role") != user["role"]:
+        session["role"] = user["role"]
     return user
 
 
@@ -1851,23 +1853,28 @@ def post_announcement(course_id):
     """, (course_id, session["user_id"], content, att_name, att_path, att_size, now_str))
     conn.commit()
 
-    # Event Notification Email: Teacher/TA created an announcement
+    # Event Notification Email: Teacher/TA created an announcement (Notify all students & TAs)
     c_info = conn.execute("SELECT code, title FROM courses WHERE id = ?", (course_id,)).fetchone()
-    student_rows = conn.execute("""
-        SELECT u.email FROM course_enrollments ce
-        JOIN users u ON ce.user_id = u.id
-        WHERE ce.course_id = ? AND ce.role = 'student' AND u.email IS NOT NULL AND u.email != ''
-    """, (course_id,)).fetchall()
-    student_emails = [r["email"] for r in student_rows]
+    recipient_rows = conn.execute("""
+        SELECT DISTINCT u.email FROM (
+            SELECT ce.user_id FROM course_enrollments ce
+            WHERE ce.course_id = ? AND ce.role IN ('student', 'ta', 'teacher', 'co-teacher')
+            UNION
+            SELECT c.teacher_id as user_id FROM courses c WHERE c.id = ?
+        ) rec
+        JOIN users u ON rec.user_id = u.id
+        WHERE rec.user_id != ? AND u.email IS NOT NULL AND u.email != ''
+    """, (course_id, course_id, session["user_id"])).fetchall()
+    recipient_emails = [r["email"] for r in recipient_rows]
     curr_user = get_current_user()
     t_name = curr_user["display_name"] if curr_user else "Instructor"
     t_role = (curr_user["role"] if curr_user else "Teacher").upper()
     conn.close()
 
-    if student_emails and c_info:
+    if recipient_emails and c_info:
         snippet = (content[:280] + "...") if len(content) > 280 else content
         send_event_notification_email(
-            recipient_emails=student_emails,
+            recipient_emails=recipient_emails,
             subject=f"[{c_info['code']}] Announcement by {t_name}: {c_info['title']}",
             heading=f"Class Announcement by {t_name} ({t_role})",
             body_text=f"Announcement posted by {t_name} ({t_role}) for {c_info['code']}: {c_info['title']}:\n\n{snippet}",
@@ -2114,22 +2121,27 @@ def create_coursework(course_id):
 
     conn.commit()
 
-    # Event Notification Email: Teacher/TA created assignment or exam
+    # Event Notification Email: Teacher/TA created assignment, exam, or material (Notify all students & TAs)
     c_info = conn.execute("SELECT code, title FROM courses WHERE id = ?", (course_id,)).fetchone()
-    student_rows = conn.execute("""
-        SELECT u.email FROM course_enrollments ce
-        JOIN users u ON ce.user_id = u.id
-        WHERE ce.course_id = ? AND ce.role = 'student' AND u.email IS NOT NULL AND u.email != ''
-    """, (course_id,)).fetchall()
-    student_emails = [r["email"] for r in student_rows]
+    recipient_rows = conn.execute("""
+        SELECT DISTINCT u.email FROM (
+            SELECT ce.user_id FROM course_enrollments ce
+            WHERE ce.course_id = ? AND ce.role IN ('student', 'ta', 'teacher', 'co-teacher')
+            UNION
+            SELECT c.teacher_id as user_id FROM courses c WHERE c.id = ?
+        ) rec
+        JOIN users u ON rec.user_id = u.id
+        WHERE rec.user_id != ? AND u.email IS NOT NULL AND u.email != ''
+    """, (course_id, course_id, session["user_id"])).fetchall()
+    recipient_emails = [r["email"] for r in recipient_rows]
     curr_user = get_current_user()
     t_name = curr_user["display_name"] if curr_user else "Instructor"
     t_role = (curr_user["role"] if curr_user else "Teacher").upper()
     conn.close()
 
-    if student_emails and c_info:
+    if recipient_emails and c_info:
         send_event_notification_email(
-            recipient_emails=student_emails,
+            recipient_emails=recipient_emails,
             subject=f"[{c_info['code']}] New {cw_type.capitalize()} Created by {t_name}: {title}",
             heading=f"New {cw_type.capitalize()} Created by {t_name}",
             body_text=f"{t_name} ({t_role}) has created and published a new {cw_type}: '{title}' in {c_info['code']}: {c_info['title']}.\n\nPoints: {points}\nDue Date: {due_date or 'No due date'}",
@@ -2990,9 +3002,9 @@ def add_co_teacher(course_id):
         flash(f"Invitation to join as {role_label} sent to '{identifier}'. An invitation email has been dispatched.", "success")
         return redirect(url_for("course_people", course_id=course_id))
 
-    # If assigning teacher role, elevate user system role to teacher
-    if assigned_role == "teacher":
-        conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (user["id"],))
+    # If assigning teacher or TA role, elevate user system role to allow messaging and staff features immediately
+    if assigned_role in ("teacher", "ta") and user["role"] == "student":
+        conn.execute("UPDATE users SET role = ? WHERE id = ?", (assigned_role, user["id"]))
 
     existing = conn.execute("SELECT * FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, user["id"])).fetchone()
 
@@ -3055,15 +3067,19 @@ def change_course_person_role(course_id, target_user_id):
         abort(404)
 
     if new_role == "teacher":
-        if session.get("role") == "admin":
-            conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (target_user_id,))
+        conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (target_user_id,))
         conn.execute("UPDATE course_enrollments SET role = 'ta' WHERE course_id = ? AND user_id = ?", (course_id, target_user_id))
         label = "Teacher / Co-Instructor"
     elif new_role == "ta":
+        if target_user["role"] == "student":
+            conn.execute("UPDATE users SET role = 'ta' WHERE id = ?", (target_user_id,))
         conn.execute("UPDATE course_enrollments SET role = 'ta' WHERE course_id = ? AND user_id = ?", (course_id, target_user_id))
         label = "Co-Teacher"
     else:  # student
         conn.execute("UPDATE course_enrollments SET role = 'student' WHERE course_id = ? AND user_id = ?", (course_id, target_user_id))
+        other_staff_role = conn.execute("SELECT 1 FROM course_enrollments WHERE user_id = ? AND role IN ('ta', 'teacher', 'co-teacher')", (target_user_id,)).fetchone()
+        if not other_staff_role and target_user["role"] in ("ta", "teacher"):
+            conn.execute("UPDATE users SET role = 'student' WHERE id = ?", (target_user_id,))
         label = "Student"
 
     conn.commit()
@@ -6187,7 +6203,19 @@ def messages_view():
         target_user = conn.execute("SELECT id, display_name, roll_number, email, role FROM users WHERE id = ?", (target_user_id,)).fetchone()
         if target_user:
             # Enforce academic integrity: students cannot message students
-            if curr_role == "student" and target_user["role"] == "student":
+            target_is_staff = target_user["role"] in ("teacher", "ta", "admin")
+            if not target_is_staff:
+                target_ta = conn.execute("SELECT 1 FROM course_enrollments WHERE user_id = ? AND role IN ('ta', 'teacher', 'co-teacher')", (target_user_id,)).fetchone()
+                if target_ta:
+                    target_is_staff = True
+
+            sender_is_staff = curr_role in ("teacher", "ta", "admin")
+            if not sender_is_staff:
+                sender_ta = conn.execute("SELECT 1 FROM course_enrollments WHERE user_id = ? AND role IN ('ta', 'teacher', 'co-teacher')", (curr_id,)).fetchone()
+                if sender_ta:
+                    sender_is_staff = True
+
+            if not sender_is_staff and not target_is_staff:
                 flash("Direct messaging between students is strictly prohibited by academic policy.", "danger")
                 conn.close()
                 if course_context_id:
@@ -6428,16 +6456,36 @@ def api_send_message():
         conn.close()
         return jsonify({"error": "Recipient not found."}), 404
 
+    # Determine if recipient is staff (instructor, TA, or admin)
+    is_recipient_staff = recipient["role"] in ("teacher", "ta", "admin")
+    if not is_recipient_staff:
+        ta_rec = conn.execute("""
+            SELECT 1 FROM course_enrollments
+            WHERE user_id = ? AND role IN ('ta', 'teacher', 'co-teacher')
+        """, (recipient_id,)).fetchone()
+        if ta_rec:
+            is_recipient_staff = True
+
+    # Determine if sender is staff
+    is_sender_staff = curr_role in ("teacher", "ta", "admin")
+    if not is_sender_staff:
+        ta_snd = conn.execute("""
+            SELECT 1 FROM course_enrollments
+            WHERE user_id = ? AND role IN ('ta', 'teacher', 'co-teacher')
+        """, (curr_id,)).fetchone()
+        if ta_snd:
+            is_sender_staff = True
+
     # Strict Anti-Cheating Protection: Students CANNOT message other students
-    if curr_role == "student" and recipient["role"] == "student":
+    if not is_sender_staff and not is_recipient_staff:
         conn.close()
         return jsonify({"error": "Direct messaging between students is strictly prohibited by academic policy."}), 403
 
     # Registration Policy: Students must be registered/enrolled in a course to send messages
-    if curr_role == "student":
+    if not is_sender_staff:
         if course_id:
             enrolled = conn.execute(
-                "SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ? AND role = 'student'",
+                "SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?",
                 (course_id, curr_id)
             ).fetchone()
             if not enrolled:
@@ -6448,43 +6496,93 @@ def api_send_message():
                 shared_course = conn.execute("""
                     SELECT 1 FROM course_enrollments ce
                     JOIN courses c ON ce.course_id = c.id
-                    WHERE ce.user_id = ? AND ce.role = 'student'
-                      AND (c.teacher_id = ? OR c.id IN (SELECT course_id FROM course_enrollments WHERE user_id = ? AND role IN ('teacher', 'ta')))
+                    WHERE ce.user_id = ?
+                      AND (c.teacher_id = ? OR c.id IN (SELECT course_id FROM course_enrollments WHERE user_id = ? AND role IN ('teacher', 'ta', 'co-teacher')))
                 """, (curr_id, recipient_id, recipient_id)).fetchone()
                 if not shared_course:
                     conn.close()
                     return jsonify({"error": "You must be registered in a course with this instructor or TA to send messages."}), 403
             else:
                 any_enrollment = conn.execute(
-                    "SELECT 1 FROM course_enrollments WHERE user_id = ? AND role = 'student'",
+                    "SELECT 1 FROM course_enrollments WHERE user_id = ?",
                     (curr_id,)
                 ).fetchone()
                 if not any_enrollment:
                     conn.close()
                     return jsonify({"error": "You must be registered in a course to send messages."}), 403
 
+    # Lookup course details for notification and context
+    course_info = None
+    if course_id:
+        c_row = conn.execute("SELECT id, code, title FROM courses WHERE id = ?", (course_id,)).fetchone()
+        if c_row:
+            course_info = dict(c_row)
+    if not course_info:
+        c_row = conn.execute("""
+            SELECT c.id, c.code, c.title FROM courses c
+            JOIN course_enrollments ce ON c.id = ce.course_id
+            WHERE (ce.user_id = ? OR c.teacher_id = ?)
+              AND c.id IN (
+                  SELECT course_id FROM course_enrollments WHERE user_id = ?
+                  UNION
+                  SELECT id FROM courses WHERE teacher_id = ?
+              )
+            LIMIT 1
+        """, (curr_id, curr_id, recipient_id, recipient_id)).fetchone()
+        if c_row:
+            course_info = dict(c_row)
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c = conn.cursor()
     c.execute("""
         INSERT INTO direct_messages (course_id, sender_id, recipient_id, message, is_read, created_at)
         VALUES (?, ?, ?, ?, 0, ?)
-    """, (course_id, curr_id, recipient_id, message, now_str))
+    """, (course_id or (course_info["id"] if course_info else None), curr_id, recipient_id, message, now_str))
     new_id = c.lastrowid
     conn.commit()
     conn.close()
 
-    # Event Notification Email: Send email alert to recipient
+    # Event Notification Email: Send email alert to recipient via Gmail SMTP
     if recipient["email"]:
-        snippet = (message[:200] + "...") if len(message) > 200 else message
-        sender_role = curr_user["role"].upper()
-        action_url = f"/messages?course_id={course_id}&user_id={curr_id}" if course_id else f"/messages?user_id={curr_id}"
+        snippet = (message[:280] + "...") if len(message) > 280 else message
+        sender_role = "STUDENT" if not is_sender_staff else ("TA" if curr_role == "ta" else curr_role.upper())
+
+        if not is_sender_staff:
+            # Student sending to Instructor or TA
+            curr_dict = dict(curr_user) if curr_user else {}
+            roll_str = f" (Roll: {curr_dict.get('roll_number')})" if curr_dict.get("roll_number") else ""
+            if course_info:
+                subject = f"[{course_info['code']}] New Message from Student {curr_user['display_name']}"
+                heading = f"Student Message from {curr_user['display_name']}"
+                body_text = f"Student {curr_user['display_name']}{roll_str} sent you a message regarding {course_info['code']}: {course_info['title']}:\n\n\"{snippet}\""
+                action_url = f"/courses/{course_info['id']}/messages?user_id={curr_id}"
+            else:
+                subject = f"New Message from Student {curr_user['display_name']}"
+                heading = f"Student Message from {curr_user['display_name']}"
+                body_text = f"Student {curr_user['display_name']}{roll_str} sent you a direct message on Hoodle LMS:\n\n\"{snippet}\""
+                action_url = f"/messages?user_id={curr_id}"
+            action_text = "Reply to Student on Hoodle"
+        else:
+            # Instructor/TA sending to Student or staff
+            if course_info:
+                subject = f"[{course_info['code']}] New Message from {curr_user['display_name']} ({sender_role})"
+                heading = f"New Message from {curr_user['display_name']}"
+                body_text = f"{curr_user['display_name']} ({sender_role}) sent you a message for {course_info['code']}: {course_info['title']}:\n\n\"{snippet}\""
+                action_url = f"/courses/{course_info['id']}/messages?user_id={curr_id}"
+            else:
+                subject = f"New Message from {curr_user['display_name']} ({sender_role})"
+                heading = f"New Message from {curr_user['display_name']}"
+                body_text = f"{curr_user['display_name']} ({sender_role}) sent you a direct message on Hoodle LMS:\n\n\"{snippet}\""
+                action_url = f"/messages?user_id={curr_id}"
+            action_text = "View & Reply on Hoodle"
+
         send_event_notification_email(
             recipient_emails=[recipient["email"]],
-            subject=f"New Message from {curr_user['display_name']} ({sender_role})",
-            heading=f"New Direct Message from {curr_user['display_name']}",
-            body_text=f"{curr_user['display_name']} ({sender_role}) sent you a message on Hoodle:\n\n\"{snippet}\"",
+            subject=subject,
+            heading=heading,
+            body_text=body_text,
             action_url=action_url,
-            action_text="View & Reply to Message",
+            action_text=action_text,
             actor_name=curr_user["display_name"],
             actor_role=sender_role
         )

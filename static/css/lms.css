@@ -358,6 +358,10 @@ img[src*="accl_logo.png"] {
   background: white;
 }
 
+body.is-android-app .lms-footer {
+  display: none !important;
+}
+
 .lms-footer-container {
   max-width: 1300px;
   margin: 0 auto;
@@ -517,6 +521,37 @@ img[src*="accl_logo.png"] {
   background: #eff6ff;
   color: var(--primary);
   border-color: #bfdbfe;
+}
+
+.nav-pill-bordered,
+.nav-pill-courses,
+.nav-pill-scan-qr {
+  border: 1.5px solid #2563eb !important;
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  font-weight: 700 !important;
+  border-radius: 9999px !important;
+  padding: 0.35rem 0.9rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.4rem !important;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.12) !important;
+  transition: all 0.15s ease !important;
+}
+
+.nav-pill-bordered:hover,
+.nav-pill-courses:hover,
+.nav-pill-scan-qr:hover {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border-color: #1d4ed8 !important;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25) !important;
+}
+
+.nav-pill-courses.active {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border-color: #1d4ed8 !important;
 }
 
 .nav-pill-action {
@@ -1135,9 +1170,9 @@ img[src*="accl_logo.png"] {
 
 /* Mobile Devices & Portrait Mode (<= 768px) */
 @media (max-width: 768px) {
-  /* Show Floating Camera Button on Mobile for 1-tap scan */
+  /* Floating Camera Button removed in favor of top-bar Scan QR button */
   .scanner-fab {
-    display: flex;
+    display: none !important;
   }
 
   /* Compact 2-Tier Mobile Header: Row 1 = Brand + User; Row 2 = Nav Pills */
@@ -1197,79 +1232,9 @@ img[src*="accl_logo.png"] {
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
   }
 
-  /* Mobile Footer: Slim, unobtrusive, small font */
+  /* Mobile & In-App Footer: Hidden to maximize workspace screen area */
   .lms-footer {
-    padding: 0.55rem 0.75rem !important;
-    background: #f8fafc !important;
-    border-top: 1px solid #e2e8f0 !important;
-  }
-
-  .lms-footer-container {
-    flex-direction: column !important;
-    align-items: center !important;
-    text-align: center !important;
-    gap: 0.3rem !important;
-  }
-
-  .footer-branding {
-    min-width: 0 !important;
-    justify-content: center !important;
-    gap: 0.25rem !important;
-  }
-
-  .footer-brand-name {
-    font-size: 0.78rem !important;
-  }
-
-  .footer-tagline {
-    font-size: 0.7rem !important;
-    color: #64748b !important;
-  }
-
-  .footer-guide {
-    display: flex !important;
-    justify-content: center !important;
-    align-items: center !important;
-    gap: 0.35rem !important;
-    margin: 0.15rem 0 !important;
-  }
-
-  .footer-guide-btn {
-    font-size: 0.7rem !important;
-    padding: 0.2rem 0.6rem !important;
-    background: #ffffff !important;
-    box-shadow: none !important;
-    border: 1px solid #cbd5e1 !important;
-  }
-
-  .footer-apk-btn {
-    font-size: 0.7rem !important;
-    padding: 0.2rem 0.6rem !important;
-    background: #ffffff !important;
-    box-shadow: none !important;
-    border: 1px solid #a7f3d0 !important;
-    color: #047857 !important;
-  }
-
-  .footer-credits {
-    min-width: 0 !important;
-    justify-content: center !important;
-    font-size: 0.68rem !important;
-    color: #94a3b8 !important;
-    gap: 0.25rem !important;
-  }
-
-  .footer-author-badge {
-    font-size: 0.7rem !important;
-    padding: 1px 5px !important;
-    background: #ffffff !important;
-    border-color: #cbd5e1 !important;
-    color: #1e293b !important;
-  }
-
-  .footer-org {
-    font-size: 0.68rem !important;
-    color: #475569 !important;
+    display: none !important;
   }
 
   .navbar-nav-strip {
@@ -1405,30 +1370,175 @@ img[src*="accl_logo.png"] {
     max-height: 280px;
   }
 
-  /* Stream Page Mobile Layout */
+  /* Stream Page Mobile Layout: Polished Coursework-Like Tiles */
   .stream-layout-grid {
     display: flex !important;
     flex-direction: column !important;
-    gap: 1rem !important;
+    gap: 0.85rem !important;
   }
 
   .stream-sidebar {
     display: grid !important;
     grid-template-columns: 1fr 1fr !important;
+    gap: 0.65rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  .stream-sidebar .card {
+    padding: 0.75rem 0.85rem !important;
+    border-radius: var(--radius-md) !important;
+    border: 1px solid var(--border) !important;
+    background: #ffffff !important;
+    box-shadow: var(--shadow-sm) !important;
+  }
+
+  .stream-card-label {
+    font-size: 0.75rem !important;
+    margin-bottom: 0.35rem !important;
+  }
+
+  .stream-code-box {
+    font-size: 1.05rem !important;
+    padding: 0.4rem 0.65rem !important;
+  }
+
+  .stream-desc-text {
+    font-size: 0.78rem !important;
+    line-height: 1.4 !important;
+  }
+
+  .announcement-composer-card {
+    padding: 0.95rem 0.85rem !important;
+    border-radius: var(--radius-md) !important;
+    border: 1px solid var(--border) !important;
+    background: #ffffff !important;
+    box-shadow: var(--shadow-sm) !important;
+    margin-bottom: 0.85rem !important;
+  }
+
+  .announcements-list {
+    display: flex !important;
+    flex-direction: column !important;
     gap: 0.75rem !important;
   }
 
+  /* Polished Stream Tile matching .classwork-card */
   .announcement-card {
-    padding: 1.15rem 0.95rem !important;
+    padding: 1rem 0.85rem !important;
+    border-radius: var(--radius-md) !important;
+    border: 1px solid var(--border) !important;
+    background: #ffffff !important;
+    box-shadow: var(--shadow-sm) !important;
+    margin-bottom: 0 !important;
+    transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+  }
+
+  .announcement-card:hover {
+    box-shadow: var(--shadow-md) !important;
+  }
+
+  .announcement-header {
+    margin-bottom: 0.65rem !important;
+    gap: 0.55rem !important;
+    align-items: center !important;
+  }
+
+  .announcement-author-info {
+    gap: 0.65rem !important;
+  }
+
+  .announcement-avatar {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 0.95rem !important;
+    border-radius: 50% !important;
+    flex-shrink: 0 !important;
+  }
+
+  .announcement-author-name {
+    font-size: 0.9rem !important;
+    font-weight: 700 !important;
+    gap: 0.35rem !important;
+  }
+
+  .announcement-meta-sub {
+    font-size: 0.72rem !important;
+    margin-top: 0.1rem !important;
+  }
+
+  .announcement-actions .btn-sm {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.74rem !important;
+  }
+
+  .announcement-body {
+    font-size: 0.88rem !important;
+    line-height: 1.55 !important;
+    margin-bottom: 0.75rem !important;
+    color: #334155 !important;
+  }
+
+  /* Sleek attachment tile matching classwork resource tile */
+  .announcement-attachment-box {
+    padding: 0.6rem 0.75rem !important;
+    border-radius: 8px !important;
+    margin-bottom: 0.65rem !important;
+    gap: 0.5rem !important;
+    background: #f8fafc !important;
+    border: 1px solid var(--border) !important;
   }
 
   .attachment-filename {
-    max-width: 180px !important;
+    max-width: 140px !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+  }
+
+  .announcement-attachment-box .btn-sm {
+    padding: 0.25rem 0.55rem !important;
+    font-size: 0.75rem !important;
+    font-weight: 700 !important;
+  }
+
+  /* Comments section separated with subtle dashed line */
+  .announcement-comments-wrap {
+    border-top: 1px dashed var(--border) !important;
+    padding-top: 0.65rem !important;
+    margin-top: 0.35rem !important;
+  }
+
+  .comment-item {
+    gap: 0.5rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  .comment-avatar {
+    width: 26px !important;
+    height: 26px !important;
+    font-size: 0.75rem !important;
+  }
+
+  .comment-bubble {
+    padding: 0.45rem 0.65rem !important;
+    border-radius: 8px !important;
+  }
+
+  .comment-author {
+    font-size: 0.76rem !important;
+  }
+
+  .comment-time {
+    font-size: 0.68rem !important;
+  }
+
+  .comment-text {
+    font-size: 0.8rem !important;
   }
 
   .composer-actions-row {
     flex-direction: column !important;
     align-items: stretch !important;
+    gap: 0.5rem !important;
   }
 
   .composer-actions-row .attach-file-btn {
@@ -1444,7 +1554,7 @@ img[src*="accl_logo.png"] {
   .composer-post-btn {
     width: 100% !important;
     justify-content: center !important;
-    padding: 0.6rem !important;
+    padding: 0.55rem !important;
   }
 }
 

@@ -84,6 +84,16 @@
                 <span>Change Password</span>
               </a>
 
+              <a href="{{ url_for('usage_guide') }}" class="user-dropdown-link">
+                <span>📖</span>
+                <span>Usage Guide</span>
+              </a>
+
+              <a href="{{ url_for('download_apk') }}" class="user-dropdown-link">
+                <span>📱</span>
+                <span>Download App (.apk)</span>
+              </a>
+
               <div class="user-dropdown-separator"></div>
 
               <a href="{{ url_for('logout') }}" class="user-dropdown-link user-dropdown-danger">
@@ -102,7 +112,7 @@
     <!-- Row 2: Clean Nav Pills (Highlighted Courses, Course Switcher, Messages, Scanner, Directory, Backup) -->
     {% if current_user %}
       <nav class="navbar-nav-strip">
-        <a href="{{ url_for('dashboard') }}" class="nav-pill {% if request.path == '/dashboard' or request.path == '/' or request.path.startswith('/courses') %}active{% endif %}" style="{% if request.path.startswith('/courses') %}background: var(--primary); color: white; font-weight: 700; box-shadow: 0 2px 4px rgba(79, 70, 229, 0.25);{% endif %}">
+        <a href="{{ url_for('dashboard') }}" class="nav-pill nav-pill-bordered nav-pill-courses {% if request.path == '/dashboard' or request.path == '/' or request.path.startswith('/courses') %}active{% endif %}">
           {% if request.path.startswith('/courses') %}← 📚 All Courses{% else %}📚 Courses{% endif %}
         </a>
 
@@ -128,8 +138,9 @@
         {% endif %}
 
         {% if current_user.role == 'student' %}
-          <button type="button" class="nav-pill nav-pill-action" onclick="openAttendanceScanner()" title="Scan Attendance QR">
-            📷 Scan Attendance
+          <button type="button" class="nav-pill nav-pill-bordered nav-pill-scan-qr" onclick="openAttendanceScanner()" title="Scan Attendance QR Code">
+            <span>📷</span>
+            <span>Scan QR</span>
           </button>
         {% endif %}
 
@@ -347,13 +358,6 @@
     </div>
   </div>
 
-  <!-- Mobile Floating Action Button (FAB) for Students -->
-  {% if current_user and current_user.role == 'student' %}
-    <button type="button" class="scanner-fab" onclick="openAttendanceScanner()" title="Scan Attendance QR">
-      <span>📷</span>
-      <span class="fab-text">Scan QR</span>
-    </button>
-  {% endif %}
 
   <!-- User Profile Modal (Triggered by clicking user chip in top bar) -->
   {% if current_user %}
@@ -432,6 +436,18 @@
           {% else %}
             <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">No enrolled courses yet.</div>
           {% endif %}
+        </div>
+
+        <!-- Quick Access: Usage Guide & Android App -->
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.85rem;">
+          <a href="{{ url_for('usage_guide') }}" class="btn btn-secondary btn-sm" style="flex: 1; text-align: center; text-decoration: none; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;">
+            <span>📖</span>
+            <span>Usage Guide</span>
+          </a>
+          <a href="{{ url_for('download_apk') }}" class="btn btn-secondary btn-sm" style="flex: 1; text-align: center; text-decoration: none; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; color: #047857; background: #ecfdf5; border-color: #a7f3d0;">
+            <span>📱</span>
+            <span>Download App (.apk)</span>
+          </a>
         </div>
 
         <!-- Action Buttons -->
@@ -558,6 +574,11 @@
     }
 
     document.addEventListener("DOMContentLoaded", function() {
+      if (window.Android) {
+        document.body.classList.add("is-android-app");
+        const footer = document.querySelector(".lms-footer");
+        if (footer) footer.style.display = "none";
+      }
       if (window.location.protocol === "http:" && !["localhost", "127.0.0.1"].includes(window.location.hostname)) {
         const noticeEl = document.getElementById("httpsUpgradeAlert");
         if (noticeEl) noticeEl.style.display = "flex";

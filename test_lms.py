@@ -2135,6 +2135,143 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertEqual(res_allow.status_code, 200)
         self.assertTrue(res_allow.get_json()["success"])
 
+    def test_topbar_scan_qr_and_courses_border(self):
+        """Verify Courses and Scan QR buttons have uniform border class and bottom scanner-fab is removed."""
+        self.login("student1", "student123")
+        res = self.client.get("/dashboard")
+        self.assertEqual(res.status_code, 200)
+
+        # 1. Courses button has nav-pill-bordered and nav-pill-courses
+        self.assertIn(b"nav-pill-bordered nav-pill-courses", res.data)
+
+        # 2. Top bar Scan QR button has nav-pill-bordered, nav-pill-scan-qr, and 'Scan QR' label
+        self.assertIn(b"nav-pill-bordered nav-pill-scan-qr", res.data)
+        self.assertIn(b"Scan QR", res.data)
+
+        # 3. Floating downside scanner button is completely removed
+        self.assertNotIn(b'class="scanner-fab"', res.data)
+        self.logout()
+
+    def test_user_icon_menu_has_guide_and_apk(self):
+        """Verify both userDropdownMenu and userProfileModal include Usage Guide and APK download links."""
+        self.login("student1", "student123")
+        res = self.client.get("/dashboard")
+        self.assertEqual(res.status_code, 200)
+
+        # 1. User dropdown menu has Usage Guide and APK download
+        self.assertIn(b'id="userDropdownMenu"', res.data)
+        self.assertIn(b'href="/student-guide"', res.data)
+        self.assertIn(b'href="/download/app.apk"', res.data)
+
+        # 2. User profile modal has Usage Guide and APK download
+        self.assertIn(b'id="userProfileModal"', res.data)
+        self.assertIn(b'Usage Guide', res.data)
+        self.assertIn(b'Download App (.apk)', res.data)
+        self.logout()
+
+    def test_teacher_promoted_ta_messaging_allowed(self):
+        """Verify that when a teacher promotes a student to TA, messaging to and from the TA is allowed without admin intervention."""
+        from unittest.mock import patch
+
+        # Enroll student1 and a second student in Course 1
+        conn = app.get_db()
+        pwd = app.hash_password("password123")
+        conn.execute("INSERT OR IGNORE INTO users (id, username, password_hash, display_name, email, role, created_at) VALUES (4, 'student2', ?, 'Second Student', 'student2@iitbhilai.ac.in', 'student', '2026-09-12 12:00:00')", (pwd,))
+        conn.execute("INSERT OR REPLACE INTO course_enrollments (course_id, user_id, role, enrolled_at) VALUES (1, 3, 'student', '2026-09-12 12:00:00')")
+        conn.execute("INSERT OR REPLACE INTO course_enrollments (course_id, user_id, role, enrolled_at) VALUES (1, 4, 'student', '2026-09-12 12:00:00')")
+        conn.commit()
+        conn.close()
+
+        # Teacher promotes student1 to TA
+        self.login("kishan", "password123")
+        res_promote = self.client.post("/courses/1/people/4/role", data={
+            "role": "ta"
+        }, follow_redirects=True)
+        self.assertEqual(res_promote.status_code, 200)
+        self.logout()
+
+        with patch("app.send_event_notification_email"):
+            # Student1 logs in and messages the newly promoted TA (user_id 4) -> must succeed!
+            self.login("student1", "student123")
+            res_msg = self.client.post("/api/messages/send", json={
+                "recipient_id": 4,
+                "course_id": 1,
+                "message": "Hi TA, question regarding lab 1."
+            })
+            self.assertEqual(res_msg.status_code, 200)
+            self.assertTrue(res_msg.get_json()["success"])
+            self.logout()
+
+            # Promoted TA logs in and replies to student1 -> must succeed!
+            self.login("student2", "password123")
+            res_reply = self.client.post("/api/messages/send", json={
+                "recipient_id": 3,
+                "course_id": 1,
+                "message": "Sure, office hours are tomorrow at 4pm."
+            })
+            self.assertEqual(res_reply.status_code, 200)
+            self.assertTrue(res_reply.get_json()["success"])
+            self.logout()
+
+    def test_student_message_sends_gmail_notification(self):
+        """Verify student sending message to teacher/TA triggers email notification with course details."""
+        from unittest.mock import patch
+
+        self.login("student1", "student123")
+        with patch("app.send_event_notification_email") as mock_mail:
+            res = self.client.post("/api/messages/send", json={
+                "recipient_id": 2, # Prof. Kishan
+                "course_id": 1,
+                "message": "Dear Professor, I have a doubt regarding homework 2."
+            })
+            self.assertEqual(res.status_code, 200)
+            mock_mail.assert_called_once()
+            args, kwargs = mock_mail.call_args
+            self.assertIn("kishan@iitbhilai.ac.in", kwargs["recipient_emails"])
+            self.assertIn("[CSL100]", kwargs["subject"])
+            self.assertIn("Student", kwargs["subject"])
+            self.assertIn("Aarav Sharma", kwargs["heading"])
+            self.assertIn("Reply to Student on Hoodle", kwargs["action_text"])
+        self.logout()
+
+    def test_ta_included_in_announcement_and_coursework_notifications(self):
+        """Verify all enrolled TAs receive email notifications alongside students for announcements and coursework."""
+        from unittest.mock import patch
+
+        conn = app.get_db()
+        conn.execute("INSERT OR IGNORE INTO users (id, username, password_hash, display_name, email, role, created_at) VALUES (4, 'ta_user', 'hash', 'TA Person', 'ta_person@iitbhilai.ac.in', 'ta', '2026-09-12 12:00:00')")
+        conn.execute("INSERT OR REPLACE INTO course_enrollments (course_id, user_id, role, enrolled_at) VALUES (1, 4, 'ta', '2026-09-12 12:00:00')")
+        conn.commit()
+        conn.close()
+
+        self.login("kishan", "password123")
+
+        # 1. Post announcement
+        with patch("app.send_event_notification_email") as mock_ann:
+            res = self.client.post("/courses/1/announcements", data={
+                "content": "Important class announcement for all students and TAs."
+            }, follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            mock_ann.assert_called_once()
+            args, kwargs = mock_ann.call_args
+            self.assertIn("ta_person@iitbhilai.ac.in", kwargs["recipient_emails"])
+            self.assertIn("b26ds001@iitbhilai.ac.in", kwargs["recipient_emails"])
+
+        # 2. Create coursework
+        with patch("app.send_event_notification_email") as mock_cw:
+            res_cw = self.client.post("/courses/1/coursework/create", data={
+                "title": "Lab Assignment 3",
+                "type": "assignment",
+                "points": "50",
+                "due_date": "2026-09-20T23:59",
+                "instructions": "Complete all exercises."
+            }, follow_redirects=True)
+            self.assertEqual(res_cw.status_code, 200)
+            mock_cw.assert_called_once()
+            args, kwargs = mock_cw.call_args
+            self.assertIn("ta_person@iitbhilai.ac.in", kwargs["recipient_emails"])
+            self.assertIn("b26ds001@iitbhilai.ac.in", kwargs["recipient_emails"])
+
         self.logout()
 
 
