@@ -35,9 +35,12 @@ function openAttendanceScanner() {
     statusEl.style.color = "var(--text-muted)";
   }
 
-  // Detect insecure HTTP context (where browsers strictly disable getUserMedia)
+  // Detect insecure HTTP context only when getUserMedia is truly unavailable in standard browser
+  const isAndroidApp = !!window.Android;
+  const hasGetUserMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   const isSecure = window.isSecureContext || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  if (!isSecure && window.location.protocol === "http:") {
+
+  if (!isAndroidApp && !hasGetUserMedia && !isSecure && window.location.protocol === "http:") {
     showCameraInsecureHttpNotice();
     return;
   }

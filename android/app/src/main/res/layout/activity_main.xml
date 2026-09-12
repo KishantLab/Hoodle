@@ -85,7 +85,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Server: http://10.10.14.104/lms/"
+            android:text="Server: https://10.10.14.104/lms/"
             android:textColor="@color/primary"
             android:textSize="12sp"
             android:gravity="center" />

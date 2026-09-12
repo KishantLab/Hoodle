@@ -17,12 +17,14 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.net.http.SslError;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
+import android.webkit.SslErrorHandler;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -59,7 +61,8 @@ public class MainActivity extends AppCompatActivity {
     public static final String KEY_AUTH_TOKEN = "auth_token";
     public static final String KEY_USER_ID = "user_id";
 
-    public static final String URL_LAN = "http://10.10.14.104/lms/";
+    public static final String URL_LAN = "https://10.10.14.104/lms/";
+    public static final String URL_HTTP = "http://10.10.14.104/lms/";
     public static final String URL_DIRECT = "http://10.10.14.104:8095/";
     private static final String CHANNEL_ID = "hoodle_notifications_channel";
 
@@ -151,7 +154,7 @@ public class MainActivity extends AppCompatActivity {
 
         btnSwitchLan.setOnClickListener(v -> {
             setSavedServerUrl(URL_LAN);
-            Toast.makeText(this, "Switched to Campus Proxy (/lms)", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Switched to Secure Campus HTTPS (/lms)", Toast.LENGTH_SHORT).show();
             loadPortalUrl();
         });
 
@@ -170,7 +173,7 @@ public class MainActivity extends AppCompatActivity {
         builder.setMessage("Enter campus IP, reverse proxy URL, or domain:");
 
         final EditText input = new EditText(this);
-        input.setHint("http://10.10.14.104/lms/");
+        input.setHint("https://10.10.14.104/lms/");
         input.setText(getSavedServerUrl());
         builder.setView(input);
 
@@ -178,7 +181,7 @@ public class MainActivity extends AppCompatActivity {
             String newUrl = input.getText().toString().trim();
             if (!newUrl.isEmpty()) {
                 if (!newUrl.startsWith("http://") && !newUrl.startsWith("https://")) {
-                    newUrl = "http://" + newUrl;
+                    newUrl = "https://" + newUrl;
                 }
                 if (!newUrl.endsWith("/")) {
                     newUrl = newUrl + "/";
@@ -193,7 +196,12 @@ public class MainActivity extends AppCompatActivity {
 
     private String getSavedServerUrl() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getString(KEY_SERVER_URL, URL_LAN);
+        String url = prefs.getString(KEY_SERVER_URL, URL_LAN);
+        if (url != null && url.startsWith("http://10.10.14.104/lms/")) {
+            url = url.replaceFirst("http://", "https://");
+            prefs.edit().putString(KEY_SERVER_URL, url).apply();
+        }
+        return url;
     }
 
     private void setSavedServerUrl(String url) {
@@ -253,6 +261,12 @@ public class MainActivity extends AppCompatActivity {
                 if (request.isForMainFrame()) {
                     showOfflineView();
                 }
+            }
+
+            @Override
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                // Campus intranet server on 10.10.14.104 uses self-signed SSL for local HTTPS
+                handler.proceed();
             }
 
             @Override
@@ -460,6 +474,14 @@ public class MainActivity extends AppCompatActivity {
             if (message != null) {
                 activity.runOnUiThread(() -> Toast.makeText(activity, message, Toast.LENGTH_SHORT).show());
             }
+        }
+
+        @JavascriptInterface
+        public void switchToHttps() {
+            activity.runOnUiThread(() -> {
+                activity.setSavedServerUrl(URL_LAN);
+                activity.loadPortalUrl();
+            });
         }
     }
 }

@@ -541,14 +541,20 @@
     });
 
     function switchToHttps(e) {
-      if (e) e.preventDefault();
-      const host = window.location.hostname;
-      let path = window.location.pathname;
-      const search = window.location.search;
+      if (e) {
+        try { e.preventDefault(); e.stopPropagation(); } catch(err) {}
+      }
+      if (window.Android && typeof window.Android.switchToHttps === "function") {
+        window.Android.switchToHttps();
+        return;
+      }
+      const host = window.location.hostname || "10.10.14.104";
+      let path = window.location.pathname || "/";
+      const search = window.location.search || "";
       if (!path.startsWith('/lms') && !path.startsWith('/hoodle')) {
         path = '/lms' + (path.startsWith('/') ? path : '/' + path);
       }
-      window.location.href = `https://${host}${path}${search}`;
+      window.location.assign(`https://${host}${path}${search}`);
     }
 
     document.addEventListener("DOMContentLoaded", function() {
