@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}Gmail & Email Setup - Hoodle Admin{% endblock %}
+
+{% block content %}
+<div style="max-width: 960px; margin: 0 auto; padding-bottom: 2.5rem;">
+  <!-- Header & Breadcrumbs -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.35rem;">
+        <a href="{{ url_for('admin_users') }}" style="color: var(--primary); text-decoration: none;">Admin</a>
+        <span>&rsaquo;</span>
+        <span>Gmail &amp; Notifications</span>
+      </div>
+      <h1 style="font-size: 1.75rem; font-weight: 800; color: #1e3a8a; margin: 0; display: flex; align-items: center; gap: 0.6rem;">
+        <span>✉️</span> Gmail &amp; Notification Configuration
+      </h1>
+      <p style="color: var(--text-muted); font-size: 0.88rem; margin: 0.25rem 0 0 0;">
+        Manage outgoing Gmail SMTP authentication, sender identity, and test verification emails.
+      </p>
+    </div>
+
+    <div>
+      <form action="{{ url_for('admin_reset_email_settings') }}" method="POST" onsubmit="return confirm('Reset Gmail credentials back to the default hoodle.lms@gmail.com setup?');" style="margin: 0;">
+        <button type="submit" class="btn btn-secondary btn-sm" style="color: #b91c1c; border-color: #fca5a5; display: inline-flex; align-items: center; gap: 0.35rem;">
+          <span>🔄</span>
+          <span>Reset to Defaults</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Status Overview Cards -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.75rem;">
+    <!-- Active Sender Card -->
+    <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; border-left: 4px solid #2563eb;">
+      <div style="width: 48px; height: 48px; border-radius: 12px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
+        📧
+      </div>
+      <div style="flex: 1; min-width: 0;">
+        <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+          Active Sender Account
+        </div>
+        <div style="font-weight: 800; font-size: 1.05rem; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          {{ gmail_user }}
+        </div>
+        <div style="font-size: 0.74rem; color: #166534; font-weight: 600; margin-top: 0.15rem; display: flex; align-items: center; gap: 0.3rem;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block;"></span>
+          <span>Authenticated via Google App Password</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Security & Encryption Card -->
+    <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; border-left: 4px solid #16a34a;">
+      <div style="width: 48px; height: 48px; border-radius: 12px; background: #f0fdf4; color: #16a34a; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
+        🔒
+      </div>
+      <div>
+        <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+          Encryption Protocol
+        </div>
+        <div style="font-weight: 800; font-size: 1.05rem; color: #0f172a;">
+          STARTTLS (Port 587)
+        </div>
+        <div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.15rem;">
+          Host: <code>smtp.gmail.com</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 1.5rem; align-items: start;">
+    <!-- Left: Update Configuration Form -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem;">
+        <h2 style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a; margin: 0; display: flex; align-items: center; gap: 0.4rem;">
+          <span>⚙️</span> Edit Gmail Credentials
+        </h2>
+        <span style="font-size: 0.75rem; background: #eff6ff; color: #1e40af; font-weight: 700; padding: 2px 8px; border-radius: 9999px;">
+          Instant Hot Reload
+        </span>
+      </div>
+
+      <form action="{{ url_for('admin_update_email_settings') }}" method="POST">
+        <div class="form-group" style="margin-bottom: 1.15rem;">
+          <label class="form-label" for="gmail_user">
+            Gmail Address (Username)
+          </label>
+          <input type="email" id="gmail_user" name="gmail_user" value="{{ gmail_user }}" class="form-control" placeholder="e.g. hoodle.lms@gmail.com" required>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+            Emails for assignments, grades, announcements, and direct messages will be dispatched from this address.
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.15rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+            <label class="form-label" for="gmail_password" style="margin-bottom: 0;">
+              Google App Password (16 Characters)
+            </label>
+            <span style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">
+              Current: {{ masked_pass }}
+            </span>
+          </div>
+          <input type="password" id="gmail_password" name="gmail_password" class="form-control" placeholder="Leave blank to keep current password" autocomplete="new-password">
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.45;">
+            💡 <strong>How to get Google App Password:</strong> In your Google Account &rarr; Security &rarr; Turn on 2-Step Verification &rarr; Search "App Passwords" &rarr; Create one named "Hoodle" &rarr; Paste the 16 characters here.
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.15rem;">
+          <label class="form-label" for="from_name">
+            Sender Display Name
+          </label>
+          <input type="text" id="from_name" name="from_name" value="{{ from_name }}" class="form-control" placeholder="e.g. Hoodle LMS" required>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+          <label class="form-label" for="portal_base_url">
+            Portal Base URL for Action Buttons
+          </label>
+          <input type="url" id="portal_base_url" name="portal_base_url" value="{{ portal_base_url }}" class="form-control" placeholder="http://10.10.14.104/lms">
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+            Links inside notification emails will point to this base address.
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+          <button type="submit" class="btn btn-primary" style="font-weight: 700; padding: 0.6rem 1.5rem;">
+            💾 Save Email Configuration
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Right: Test SMTP Card -->
+    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+      <div class="card" style="border: 1px solid #bfdbfe; background: #f8fafc;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+          <span style="font-size: 1.25rem;">🧪</span>
+          <h3 style="font-size: 1.05rem; font-weight: 800; color: #1e3a8a; margin: 0;">
+            Send Test Verification Email
+          </h3>
+        </div>
+        <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.45; margin-bottom: 1rem;">
+          Verify that Gmail SMTP authenticates and delivers messages without issues. A verification email will be dispatched immediately.
+        </p>
+
+        <form action="{{ url_for('admin_test_email_settings') }}" method="POST">
+          <div class="form-group" style="margin-bottom: 0.85rem;">
+            <label class="form-label" for="test_recipient" style="font-size: 0.8rem;">
+              Recipient Email Address
+            </label>
+            <input type="email" id="test_recipient" name="test_recipient" class="form-control" placeholder="e.g. your_email@domain.com" required style="font-size: 0.85rem;">
+          </div>
+          <button type="submit" class="btn btn-secondary btn-sm" style="width: 100%; font-weight: 700; background: white; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; gap: 0.35rem; padding: 0.5rem;">
+            <span>📨</span>
+            <span>Send Verification Email</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- Information & Policy Card -->
+      <div class="card" style="background: #ffffff; border: 1px solid var(--border); font-size: 0.8rem; color: var(--text-muted); line-height: 1.5;">
+        <div style="font-weight: 700; color: var(--text-main); margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.35rem;">
+          <span>📋</span> Automated Email Notifications
+        </div>
+        <ul style="padding-left: 1.2rem; margin: 0; display: flex; flex-direction: column; gap: 0.35rem;">
+          <li><strong>Coursework:</strong> Sent to enrolled students when new assignments/exams are published.</li>
+          <li><strong>Grades:</strong> Sent to student when score &amp; feedback are published.</li>
+          <li><strong>Announcements:</strong> Sent to course students when instructor posts on stream.</li>
+          <li><strong>Direct Messages:</strong> Sent to recipient when a teacher or student messages them.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -89,11 +89,9 @@
 
         <a href="{{ url_for('messages_view') }}" class="nav-pill {% if request.path.startswith('/messages') %}active{% endif %}" title="1-on-1 Messages with Teachers / TAs">
           💬 Messages
-          {% if unread_messages_count and unread_messages_count > 0 %}
-            <span style="background: #ef4444; color: white; font-size: 0.72rem; font-weight: 800; padding: 1px 6px; border-radius: 9999px; margin-left: 0.3rem;">
-              {{ unread_messages_count }}
-            </span>
-          {% endif %}
+          <span id="navUnreadBadge" style="background: #ef4444; color: white; font-size: 0.72rem; font-weight: 800; padding: 1px 6px; border-radius: 9999px; margin-left: 0.3rem; display: {% if unread_messages_count and unread_messages_count > 0 %}inline-block{% else %}none{% endif %};">
+            {{ unread_messages_count or 0 }}
+          </span>
         </a>
 
         {% if current_user.role == 'student' %}
@@ -105,6 +103,9 @@
         {% if current_user.role == 'admin' %}
           <a href="{{ url_for('admin_users') }}" class="nav-pill {% if request.path == url_for('admin_users') %}active{% endif %}">
             ⚙️ User Directory
+          </a>
+          <a href="{{ url_for('admin_email_settings') }}" class="nav-pill {% if request.path == url_for('admin_email_settings') %}active{% endif %}" title="Gmail &amp; Notification Settings">
+            ✉️ Gmail Settings
           </a>
           <a href="{{ url_for('admin_backup') }}" class="nav-pill {% if request.path == url_for('admin_backup') %}active{% endif %}" title="Disaster Recovery & GPU2 Backup">
             🛡️ Backup &amp; Recovery

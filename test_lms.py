@@ -1796,6 +1796,84 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn("lab session", data.get("message"))
         self.logout()
 
+    def test_api_messages_poll_returns_messages_and_convos(self):
+        """Verify the live chat polling endpoint returns new messages and conversation metadata."""
+        self.login("student1", "student123")
+        conn = app.get_db()
+        st1 = conn.execute("SELECT id FROM users WHERE username = 'student1'").fetchone()
+        teacher = conn.execute("SELECT id FROM users WHERE role = 'teacher' LIMIT 1").fetchone()
+        st1_id = st1["id"]
+        t_id = teacher["id"]
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Insert a new unread message from teacher to student1
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO direct_messages (sender_id, recipient_id, message, is_read, created_at)
+            VALUES (?, ?, ?, 0, ?)
+        """, (t_id, st1_id, "Don't forget your lab manual today!", now_str))
+        msg_id = c.lastrowid
+        conn.commit()
+        conn.close()
+
+        # Poll active thread with after_id = msg_id - 1
+        res = self.client.get(f"/api/messages/poll?active_user_id={t_id}&after_id={msg_id - 1}")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertGreaterEqual(len(data.get("new_messages", [])), 1)
+        self.assertEqual(data["new_messages"][0]["id"], msg_id)
+        self.assertIn("lab manual", data["new_messages"][0]["message"])
+        self.assertFalse(data["new_messages"][0]["is_mine"])
+
+        # Check that it automatically marked the message as read
+        conn = app.get_db()
+        read_check = conn.execute("SELECT is_read FROM direct_messages WHERE id = ?", (msg_id,)).fetchone()
+        self.assertEqual(read_check["is_read"], 1)
+        conn.close()
+        self.logout()
+
+    def test_admin_email_settings_view_update_reset(self):
+        """Verify Admin can view, update, and reset Gmail SMTP settings."""
+        # 1. Check default configuration
+        user, pwd, name = app.get_smtp_config()
+        self.assertEqual(user, "hoodle.lms@gmail.com")
+        self.assertEqual(pwd, "hvrnbggfrzmnvrsh")
+
+        # 2. Login as Admin and view settings
+        self.login("admin", "admin@accl")
+        res = self.client.get("/admin/email")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Gmail &amp; Notification Configuration", res.data)
+        self.assertIn(b"hoodle.lms@gmail.com", res.data)
+
+        # 3. Update Gmail credentials
+        res = self.client.post("/admin/email/update", data={
+            "gmail_user": "custom_accl_admin@gmail.com",
+            "gmail_password": "customapppass123",
+            "from_name": "ACCL IIT Bhilai LMS",
+            "portal_base_url": "http://10.10.14.104/lms"
+        }, follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Gmail SMTP settings saved successfully", res.data)
+
+        # Verify get_smtp_config reflects the DB update
+        up_user, up_pwd, up_name = app.get_smtp_config()
+        self.assertEqual(up_user, "custom_accl_admin@gmail.com")
+        self.assertEqual(up_pwd, "customapppass123")
+        self.assertEqual(up_name, "ACCL IIT Bhilai LMS")
+
+        # 4. Reset to system defaults
+        res = self.client.post("/admin/email/reset", follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"reset to system defaults", res.data)
+
+        # Verify fallback to default hoodle.lms@gmail.com
+        rst_user, rst_pwd, rst_name = app.get_smtp_config()
+        self.assertEqual(rst_user, "hoodle.lms@gmail.com")
+        self.assertEqual(rst_pwd, "hvrnbggfrzmnvrsh")
+        self.logout()
+
 
 if __name__ == "__main__":
     unittest.main()

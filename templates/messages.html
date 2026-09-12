@@ -40,7 +40,7 @@
           {% for c in conversations %}
             {% set p = c.partner %}
             {% set is_active = (active_contact and active_contact.id == p.id) %}
-            <a href="{{ url_for('messages_view', user_id=p.id) }}" class="convo-item" data-name="{{ p.display_name|lower }} {{ p.roll_number|lower if p.roll_number else '' }}" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem; border-bottom: 1px solid var(--border); text-decoration: none; color: inherit; background: {% if is_active %}#eff6ff{% else %}white{% endif %}; border-left: {% if is_active %}4px solid var(--primary){% else %}4px solid transparent{% endif %}; transition: background 0.15s ease;" onmouseover="if(!{{ 'true' if is_active else 'false' }}) this.style.background='#f8fafc'" onmouseout="if(!{{ 'true' if is_active else 'false' }}) this.style.background='white'">
+            <a href="{{ url_for('messages_view', user_id=p.id) }}" class="convo-item" data-user-id="{{ p.id }}" data-name="{{ p.display_name|lower }} {{ p.roll_number|lower if p.roll_number else '' }}" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem; border-bottom: 1px solid var(--border); text-decoration: none; color: inherit; background: {% if is_active %}#eff6ff{% else %}white{% endif %}; border-left: {% if is_active %}4px solid var(--primary){% else %}4px solid transparent{% endif %}; transition: background 0.15s ease;" onmouseover="if(!{{ 'true' if is_active else 'false' }}) this.style.background='#f8fafc'" onmouseout="if(!{{ 'true' if is_active else 'false' }}) this.style.background='white'">
               <div style="width: 42px; height: 42px; border-radius: 50%; background: {% if p.role in ('teacher', 'ta') %}#e0e7ff{% else %}#ecfdf5{% endif %}; color: {% if p.role in ('teacher', 'ta') %}#3730a3{% else %}#047857{% endif %}; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1rem; flex-shrink: 0;">
                 {{ p.display_name[0]|upper }}
               </div>
@@ -49,17 +49,15 @@
                   <span style="font-weight: 700; font-size: 0.88rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                     {{ p.display_name }}
                   </span>
-                  {% if c.unread_count > 0 %}
-                    <span style="background: #ef4444; color: white; font-size: 0.68rem; font-weight: 800; padding: 1px 6px; border-radius: 9999px;">
-                      {{ c.unread_count }}
-                    </span>
-                  {% endif %}
+                  <span class="convo-unread-badge" style="background: #ef4444; color: white; font-size: 0.68rem; font-weight: 800; padding: 1px 6px; border-radius: 9999px; display: {% if c.unread_count > 0 %}inline-block{% else %}none{% endif %};">
+                    {{ c.unread_count or 0 }}
+                  </span>
                 </div>
                 <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem;">
                   <span class="role-badge role-{{ p.role }}" style="font-size: 0.65rem; padding: 1px 5px;">{{ p.role }}</span>
                   {% if p.roll_number %}<span style="font-family: monospace;">{{ p.roll_number }}</span>{% endif %}
                 </div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.2rem;">
+                <div class="convo-snippet" style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.2rem;">
                   {{ c.last_message or "No messages yet" }}
                 </div>
               </div>
@@ -109,7 +107,7 @@
           {% if thread_messages %}
             {% for m in thread_messages %}
               {% set is_mine = (m.sender_id == current_user.id) %}
-              <div style="display: flex; flex-direction: column; align-items: {% if is_mine %}flex-end{% else %}flex-start{% endif %}; max-width: 80%; align-self: {% if is_mine %}flex-end{% else %}flex-start{% endif %};">
+              <div class="msg-bubble-container" data-msg-id="{{ m.id }}" style="display: flex; flex-direction: column; align-items: {% if is_mine %}flex-end{% else %}flex-start{% endif %}; max-width: 80%; align-self: {% if is_mine %}flex-end{% else %}flex-start{% endif %};">
                 <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.2rem; padding: 0 0.35rem;">
                   {% if not is_mine %}{{ m.sender_name }} • {% endif %}
                   {{ m.created_at | format_dt }}
@@ -207,6 +205,15 @@
 
 {% block extra_js %}
 <script>
+  function escapeHtml(str) {
+    return (str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   function filterConversations(val) {
     const q = val.toLowerCase().trim();
     document.querySelectorAll('.convo-item').forEach(el => {
@@ -230,10 +237,150 @@
     }
   }
 
-  function scrollChatToBottom() {
+  function scrollChatToBottom(smooth = true) {
     const feed = document.getElementById('messagesFeed');
     if (feed) {
-      feed.scrollTop = feed.scrollHeight;
+      if (smooth) {
+        feed.scrollTo({ top: feed.scrollHeight, behavior: 'smooth' });
+      } else {
+        feed.scrollTop = feed.scrollHeight;
+      }
+    }
+  }
+
+  // Pure Web Audio API chime for new incoming messages (zero external dependencies)
+  function playChatChime() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880.00, ctx.currentTime + 0.1); // A5
+      gain.gain.setValueAtTime(0.06, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch (_) {}
+  }
+
+  // Track the highest message ID currently visible
+  let highestMsgId = 0;
+  document.querySelectorAll('.msg-bubble-container').forEach(el => {
+    const id = parseInt(el.getAttribute('data-msg-id') || '0', 10);
+    if (id > highestMsgId) highestMsgId = id;
+  });
+
+  const activeRecipientEl = document.getElementById('recipientId');
+  const activeUserId = activeRecipientEl ? parseInt(activeRecipientEl.value || '0', 10) : 0;
+  const pollUrl = "{{ url_for('api_messages_poll') }}";
+  let isPolling = false;
+  let pollTimer = null;
+
+  async function pollChatUpdates() {
+    if (isPolling) return;
+    isPolling = true;
+
+    try {
+      let fetchUrl = pollUrl + '?after_id=' + highestMsgId;
+      if (activeUserId) {
+        fetchUrl += '&active_user_id=' + activeUserId;
+      }
+
+      const res = await fetch(fetchUrl, {
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (!res.ok) {
+        isPolling = false;
+        return;
+      }
+
+      const data = await res.json();
+      if (!data.success) {
+        isPolling = false;
+        return;
+      }
+
+      // 1. Process new incoming messages in active thread
+      if (data.new_messages && data.new_messages.length > 0) {
+        const feed = document.getElementById('messagesFeed');
+        let hasIncomingFromPartner = false;
+
+        data.new_messages.forEach(m => {
+          if (m.id > highestMsgId) highestMsgId = m.id;
+
+          // Check if already rendered
+          if (feed && !feed.querySelector(`[data-msg-id="${m.id}"]`)) {
+            const isMine = m.is_mine;
+            if (!isMine) hasIncomingFromPartner = true;
+
+            const bubble = document.createElement('div');
+            bubble.className = 'msg-bubble-container';
+            bubble.setAttribute('data-msg-id', m.id);
+            bubble.style.cssText = `display: flex; flex-direction: column; align-items: ${isMine ? 'flex-end' : 'flex-start'}; max-width: 80%; align-self: ${isMine ? 'flex-end' : 'flex-start'}; transition: all 0.2s ease;`;
+
+            const senderLabel = !isMine ? `${escapeHtml(m.sender_name)} &bull; ` : '';
+            const bgGradient = isMine 
+              ? 'background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%); color: white; border-bottom-right-radius: 2px; border-bottom-left-radius: 14px;' 
+              : 'background: #f1f5f9; color: var(--text-main); border-bottom-right-radius: 14px; border-bottom-left-radius: 2px;';
+
+            bubble.innerHTML = `
+              <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.2rem; padding: 0 0.35rem;">
+                ${senderLabel}Just now
+              </div>
+              <div style="padding: 0.65rem 0.95rem; border-radius: 14px; font-size: 0.88rem; line-height: 1.45; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05); ${bgGradient}">
+                ${escapeHtml(m.message).replace(/\n/g, '<br>')}
+              </div>
+            `;
+            feed.appendChild(bubble);
+          }
+        });
+
+        if (hasIncomingFromPartner) {
+          playChatChime();
+        }
+        scrollChatToBottom(true);
+      }
+
+      // 2. Synchronize left conversation items (snippets, unread badges)
+      if (data.conversations && data.conversations.length > 0) {
+        data.conversations.forEach(c => {
+          const item = document.querySelector(`.convo-item[data-user-id="${c.partner_id}"]`);
+          if (item) {
+            const snip = item.querySelector('.convo-snippet');
+            if (snip && c.last_message) {
+              snip.textContent = c.last_message;
+            }
+            const badge = item.querySelector('.convo-unread-badge');
+            if (badge) {
+              if (c.unread_count > 0 && c.partner_id !== activeUserId) {
+                badge.textContent = c.unread_count;
+                badge.style.display = 'inline-block';
+              } else {
+                badge.style.display = 'none';
+              }
+            }
+          }
+        });
+      }
+
+      // 3. Synchronize top header unread counter
+      const navBadge = document.getElementById('navUnreadBadge');
+      if (navBadge && data.total_unread !== undefined) {
+        if (data.total_unread > 0) {
+          navBadge.textContent = data.total_unread;
+          navBadge.style.display = 'inline-block';
+        } else {
+          navBadge.style.display = 'none';
+        }
+      }
+    } catch (err) {
+      console.debug('Polling error (non-fatal):', err);
+    } finally {
+      isPolling = false;
     }
   }
 
@@ -280,21 +427,33 @@
         return;
       }
 
-      // Append message bubble optimistically
+      // Track highest message ID
+      if (data.message_id && data.message_id > highestMsgId) {
+        highestMsgId = data.message_id;
+      }
+
+      // Append message bubble immediately
       const feed = document.getElementById('messagesFeed');
       const bubble = document.createElement('div');
+      bubble.className = 'msg-bubble-container';
+      if (data.message_id) {
+        bubble.setAttribute('data-msg-id', data.message_id);
+      }
       bubble.style.cssText = 'display: flex; flex-direction: column; align-items: flex-end; max-width: 80%; align-self: flex-end;';
       bubble.innerHTML = `
         <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.2rem; padding: 0 0.35rem;">
           Just now
         </div>
         <div style="padding: 0.65rem 0.95rem; border-radius: 14px; font-size: 0.88rem; line-height: 1.45; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%); color: white; border-bottom-right-radius: 2px; border-bottom-left-radius: 14px;">
-          ${msg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}
+          ${escapeHtml(msg).replace(/\n/g, "<br>")}
         </div>
       `;
       feed.appendChild(bubble);
       input.value = '';
-      scrollChatToBottom();
+      scrollChatToBottom(true);
+
+      // Trigger instant background poll
+      setTimeout(pollChatUpdates, 300);
     } catch (err) {
       console.error(err);
       alert('Network or connection error while sending message. Please verify your connection or try again.');
@@ -306,7 +465,20 @@
   }
 
   document.addEventListener('DOMContentLoaded', function() {
-    scrollChatToBottom();
+    scrollChatToBottom(false);
+
+    // Start Real-time Auto-polling (every 2.5s when focused, 5s when blurred)
+    let pollInterval = 2500;
+    pollTimer = setInterval(pollChatUpdates, pollInterval);
+
+    document.addEventListener('visibilitychange', function() {
+      clearInterval(pollTimer);
+      pollInterval = document.hidden ? 5000 : 2500;
+      if (!document.hidden) {
+        pollChatUpdates();
+      }
+      pollTimer = setInterval(pollChatUpdates, pollInterval);
+    });
   });
 </script>
 {% endblock %}

@@ -489,6 +489,15 @@ def init_db():
     c.execute("CREATE INDEX IF NOT EXISTS idx_dm_users ON direct_messages (sender_id, recipient_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_dm_recipient ON direct_messages (recipient_id, is_read)")
 
+    # 14. System Configuration & Dynamic Settings Table
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
     conn.commit()
 
     # Pre-seed initial default accounts if not existing
@@ -579,14 +588,35 @@ def init_db():
 
 # --- Gmail Notification & Email Services ---
 
+def get_smtp_config():
+    """
+    Returns (gmail_user, gmail_pass, from_name) tuple.
+    Checks SQLite system_settings table first, then environment variables,
+    defaulting to the verified account hoodle.lms@gmail.com with configured App Password.
+    """
+    default_user = os.environ.get("GMAIL_SMTP_USER", "hoodle.lms@gmail.com").strip()
+    default_pass = os.environ.get("GMAIL_APP_PASSWORD", "hvrnbggfrzmnvrsh").strip()
+    default_from = os.environ.get("GMAIL_FROM_NAME", "Hoodle LMS").strip()
+
+    try:
+        conn = get_db()
+        rows = conn.execute("SELECT key, value FROM system_settings WHERE key IN ('gmail_smtp_user', 'gmail_app_password', 'gmail_from_name')").fetchall()
+        conn.close()
+        settings = {r["key"]: r["value"] for r in rows if r["value"]}
+        user = settings.get("gmail_smtp_user") or default_user
+        password = settings.get("gmail_app_password") or default_pass
+        from_name = settings.get("gmail_from_name") or default_from
+        return user.strip(), password.strip().replace(" ", ""), from_name.strip()
+    except Exception:
+        return default_user, default_pass.replace(" ", ""), default_from
+
+
 def send_course_invitation_email(course, recipient_email, student_roll, teacher_name, token):
     """
     Sends a course invitation email via Gmail SMTP in a background daemon thread.
     Gracefully logs and exits if Gmail credentials are not configured.
     """
-    gmail_user = os.environ.get("GMAIL_SMTP_USER", "Hoodle_accl@gmail.com").strip()
-    gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
-    from_name = os.environ.get("GMAIL_FROM_NAME", "Hoodle LMS").strip()
+    gmail_user, gmail_pass, from_name = get_smtp_config()
 
     if not gmail_user or not gmail_pass or not recipient_email:
         return
@@ -690,9 +720,7 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
     3. Direct messages between student and teacher/TA
     4. Course announcements
     """
-    gmail_user = os.environ.get("GMAIL_SMTP_USER", "Hoodle_accl@gmail.com").strip()
-    gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
-    from_name = os.environ.get("GMAIL_FROM_NAME", "Hoodle LMS").strip()
+    gmail_user, gmail_pass, from_name = get_smtp_config()
 
     if not gmail_user or not gmail_pass or not recipient_emails:
         return
@@ -4813,6 +4841,115 @@ def admin_backup_download_latest():
     )
 
 
+# --- Admin Gmail & Notification Settings ---
+
+@app.route("/admin/email")
+@admin_required
+def admin_email_settings():
+    gmail_user, gmail_pass, from_name = get_smtp_config()
+    conn = get_db()
+    portal_url_row = conn.execute("SELECT value FROM system_settings WHERE key = 'portal_base_url'").fetchone()
+    conn.close()
+    portal_base_url = portal_url_row["value"] if portal_url_row else os.environ.get("PORTAL_BASE_URL", "http://10.10.14.104/lms")
+
+    masked_pass = ("•" * 12 + gmail_pass[-4:]) if len(gmail_pass) >= 4 else ("•" * 8 if gmail_pass else "Not configured")
+
+    return render_template(
+        "admin_email.html",
+        gmail_user=gmail_user,
+        masked_pass=masked_pass,
+        raw_pass_len=len(gmail_pass),
+        from_name=from_name,
+        portal_base_url=portal_base_url
+    )
+
+
+@app.route("/admin/email/update", methods=["POST"])
+@admin_required
+def admin_update_email_settings():
+    new_user = request.form.get("gmail_user", "").strip()
+    new_pass = request.form.get("gmail_password", "").strip().replace(" ", "")
+    new_from = request.form.get("from_name", "").strip()
+    new_base_url = request.form.get("portal_base_url", "").strip().rstrip("/")
+
+    if not new_user:
+        flash("Gmail address cannot be empty.", "danger")
+        return redirect(url_for("admin_email_settings"))
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('gmail_smtp_user', ?, ?)", (new_user, now_str))
+    if new_pass:
+        conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('gmail_app_password', ?, ?)", (new_pass, now_str))
+    if new_from:
+        conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('gmail_from_name', ?, ?)", (new_from, now_str))
+    if new_base_url:
+        conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('portal_base_url', ?, ?)", (new_base_url, now_str))
+    conn.commit()
+    conn.close()
+
+    flash("Gmail SMTP settings saved successfully. New settings take effect immediately.", "success")
+    return redirect(url_for("admin_email_settings"))
+
+
+@app.route("/admin/email/test", methods=["POST"])
+@admin_required
+def admin_test_email_settings():
+    test_recipient = request.form.get("test_recipient", "").strip()
+    if not test_recipient or "@" not in test_recipient:
+        flash("Please enter a valid recipient email to send test verification.", "danger")
+        return redirect(url_for("admin_email_settings"))
+
+    gmail_user, gmail_pass, from_name = get_smtp_config()
+    if not gmail_user or not gmail_pass:
+        flash("Gmail user or App Password is not configured.", "danger")
+        return redirect(url_for("admin_email_settings"))
+
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
+        server.starttls()
+        server.login(gmail_user, gmail_pass)
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Hoodle LMS - Gmail SMTP Test Verification"
+        msg["From"] = f"{from_name} <{gmail_user}>"
+        msg["To"] = test_recipient
+
+        html = f"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; max-width: 520px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+          <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: white; padding: 16px 20px; border-radius: 8px; margin-bottom: 20px;">
+            <h2 style="margin: 0; font-size: 18px;">Hoodle LMS &bull; SMTP Verification</h2>
+          </div>
+          <p style="font-size: 14px; color: #334155; line-height: 1.5;">This email confirms that Gmail SMTP credentials for <strong>{gmail_user}</strong> are authenticated and actively transmitting emails.</p>
+          <div style="background: #f8fafc; border-left: 4px solid #22c55e; padding: 12px 16px; border-radius: 4px; font-size: 13px; color: #15803d; margin: 18px 0;">
+            &check; Gmail SMTP Authentication: Verified OK
+          </div>
+          <p style="font-size: 11px; color: #94a3b8; margin: 0; border-top: 1px solid #f1f5f9; padding-top: 12px;">Dispatched by Hoodle LMS Administrator.</p>
+        </div>"""
+        plain = f"Hoodle LMS SMTP Test Verification.\nSent from {gmail_user} to {test_recipient}.\nSMTP Status: Verified OK."
+        msg.attach(MIMEText(plain, "plain"))
+        msg.attach(MIMEText(html, "html"))
+
+        server.sendmail(gmail_user, [test_recipient], msg.as_string())
+        server.quit()
+        flash(f"✅ Success! Test email was verified and sent to {test_recipient} via {gmail_user}.", "success")
+    except Exception as e:
+        app.logger.warning("SMTP test verification failed: %s", e)
+        flash(f"❌ SMTP verification failed: {str(e)}. Please check your Google App Password.", "danger")
+
+    return redirect(url_for("admin_email_settings"))
+
+
+@app.route("/admin/email/reset", methods=["POST"])
+@admin_required
+def admin_reset_email_settings():
+    conn = get_db()
+    conn.execute("DELETE FROM system_settings WHERE key IN ('gmail_smtp_user', 'gmail_app_password', 'gmail_from_name', 'portal_base_url')")
+    conn.commit()
+    conn.close()
+    flash("Gmail SMTP settings reset to system defaults (hoodle.lms@gmail.com).", "info")
+    return redirect(url_for("admin_email_settings"))
+
+
 
 # --- Dynamic Anti-Proxy QR Attendance System ---
 
@@ -5839,6 +5976,104 @@ def api_get_messages(other_user_id):
             }
             for m in messages
         ]
+    })
+
+
+@app.route("/api/messages/poll")
+@login_required
+def api_messages_poll():
+    """
+    Live real-time polling endpoint for auto-updating chat.
+    Returns any new messages for the currently open conversation thread (id > after_id),
+    updates conversation list status with unread badges, and returns global unread count.
+    """
+    curr_user = get_current_user()
+    curr_id = curr_user["id"]
+    curr_role = curr_user["role"]
+
+    active_user_id = request.args.get("active_user_id", type=int)
+    after_id = request.args.get("after_id", default=0, type=int)
+
+    conn = get_db()
+
+    new_messages = []
+    if active_user_id and active_user_id != curr_id:
+        other_user = conn.execute("SELECT id, role FROM users WHERE id = ?", (active_user_id,)).fetchone()
+        if other_user and not (curr_role == "student" and other_user["role"] == "student"):
+            # Mark incoming unread messages as read in real-time as user views them
+            conn.execute("""
+                UPDATE direct_messages 
+                SET is_read = 1 
+                WHERE recipient_id = ? AND sender_id = ? AND is_read = 0
+            """, (curr_id, active_user_id))
+            conn.commit()
+
+            rows = conn.execute("""
+                SELECT m.id, m.sender_id, m.recipient_id, m.message, m.is_read, m.created_at,
+                       s.display_name as sender_name, s.role as sender_role
+                FROM direct_messages m
+                JOIN users s ON m.sender_id = s.id
+                WHERE ((m.sender_id = ? AND m.recipient_id = ?)
+                    OR (m.sender_id = ? AND m.recipient_id = ?))
+                  AND m.id > ?
+                ORDER BY m.id ASC
+            """, (curr_id, active_user_id, active_user_id, curr_id, after_id)).fetchall()
+
+            for r in rows:
+                new_messages.append({
+                    "id": r["id"],
+                    "sender_id": r["sender_id"],
+                    "recipient_id": r["recipient_id"],
+                    "message": r["message"],
+                    "created_at": r["created_at"],
+                    "is_mine": (r["sender_id"] == curr_id),
+                    "sender_name": r["sender_name"],
+                    "sender_role": r["sender_role"]
+                })
+
+    # Fetch updated conversations summary
+    raw_convos = conn.execute("""
+        SELECT 
+            CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END as other_user_id,
+            MAX(created_at) as last_activity,
+            (SELECT message FROM direct_messages m2 
+             WHERE (m2.sender_id = ? AND m2.recipient_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END)
+                OR (m2.recipient_id = ? AND m2.sender_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END)
+             ORDER BY m2.id DESC LIMIT 1) as last_message,
+            (SELECT COUNT(*) FROM direct_messages m3
+             WHERE m3.recipient_id = ? AND m3.sender_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END AND m3.is_read = 0) as unread_count
+        FROM direct_messages m
+        WHERE sender_id = ? OR recipient_id = ?
+        GROUP BY other_user_id
+        ORDER BY last_activity DESC
+    """, (curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id)).fetchall()
+
+    conversations = []
+    total_unread = 0
+    for c in raw_convos:
+        partner = conn.execute("SELECT id, display_name, roll_number, email, role FROM users WHERE id = ?", (c["other_user_id"],)).fetchone()
+        if partner:
+            if curr_role == "student" and partner["role"] == "student":
+                continue
+            unr = c["unread_count"] or 0
+            total_unread += unr
+            conversations.append({
+                "partner_id": partner["id"],
+                "display_name": partner["display_name"],
+                "roll_number": partner["roll_number"] or "",
+                "role": partner["role"],
+                "last_activity": c["last_activity"],
+                "last_message": c["last_message"] or "",
+                "unread_count": unr
+            })
+
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "new_messages": new_messages,
+        "conversations": conversations,
+        "total_unread": total_unread
     })
 
 
