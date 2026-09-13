@@ -2539,6 +2539,148 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertNotIn(b'<a href="https://accllogin.tail77fd8b.ts.net', res.data)
         self.assertNotIn(b'<a href="https://10.10.14.104', res.data)
 
+    def test_course_archive_and_unarchive_lifecycle(self):
+        """Test archiving and unarchiving courses by creator/admin and rejection for unauthorized users."""
+        # 1. Student cannot archive course 1
+        self.login("student1", "student123")
+        res_stud = self.client.post("/courses/1/archive", follow_redirects=True)
+        self.assertIn(b"Only the course creator or an administrator can archive", res_stud.data)
+
+        # Verify DB still has is_archived = 0
+        conn = app.get_db()
+        c = conn.execute("SELECT is_archived FROM courses WHERE id = 1").fetchone()
+        self.assertEqual(c["is_archived"], 0)
+        conn.close()
+        self.logout()
+
+        # 2. Creator (kishan) archives course 1
+        self.login("kishan", "password123")
+        res_arch = self.client.post("/courses/1/archive", follow_redirects=True)
+        self.assertEqual(res_arch.status_code, 200)
+        self.assertIn(b"has been archived", res_arch.data)
+
+        # Verify DB is_archived = 1
+        conn = app.get_db()
+        c = conn.execute("SELECT is_archived FROM courses WHERE id = 1").fetchone()
+        self.assertEqual(c["is_archived"], 1)
+        conn.close()
+
+        # Check course stream page shows archived read-only banner
+        res_stream = self.client.get("/courses/1", follow_redirects=True)
+        self.assertEqual(res_stream.status_code, 200)
+        self.assertIn(b"This course is ARCHIVED", res_stream.data)
+        self.assertIn(b"Unarchive Course", res_stream.data)
+
+        # Check dashboard has Archived Courses section with course 1
+        res_dash = self.client.get("/dashboard")
+        self.assertEqual(res_dash.status_code, 200)
+        self.assertIn(b"Archived Courses", res_dash.data)
+
+        # 3. Creator unarchives course 1
+        res_unarch = self.client.post("/courses/1/unarchive", follow_redirects=True)
+        self.assertEqual(res_unarch.status_code, 200)
+        self.assertIn(b"restored to active status", res_unarch.data)
+
+        conn = app.get_db()
+        c = conn.execute("SELECT is_archived FROM courses WHERE id = 1").fetchone()
+        self.assertEqual(c["is_archived"], 0)
+        conn.close()
+        self.logout()
+
+        # 4. Admin can also archive and unarchive course 1
+        self.login("admin", "admin@accl")
+        res_admin_arch = self.client.post("/courses/1/archive", follow_redirects=True)
+        self.assertEqual(res_admin_arch.status_code, 200)
+        self.assertIn(b"has been archived", res_admin_arch.data)
+
+        res_admin_unarch = self.client.post("/courses/1/unarchive", follow_redirects=True)
+        self.assertEqual(res_admin_unarch.status_code, 200)
+        self.assertIn(b"restored to active status", res_admin_unarch.data)
+        self.logout()
+
+    def test_course_export_archive_zip(self):
+        """Test exporting full course ZIP archive with roster, attendance, coursework, and manifest."""
+        # 1. Student cannot export archive
+        self.login("student1", "student123")
+        res_stud = self.client.get("/courses/1/export-archive", follow_redirects=True)
+        self.assertIn(b"Only the course creator or an administrator can export", res_stud.data)
+        self.logout()
+
+        # 2. Creator (kishan) exports course 1
+        self.login("kishan", "password123")
+        res_exp = self.client.get("/courses/1/export-archive")
+        self.assertEqual(res_exp.status_code, 200)
+        self.assertEqual(res_exp.mimetype, "application/zip")
+        self.assertIn("attachment", res_exp.headers.get("Content-Disposition", ""))
+
+        # Verify ZIP contents
+        with zipfile.ZipFile(io.BytesIO(res_exp.data), "r") as zf:
+            file_names = zf.namelist()
+            self.assertIn("manifest.json", file_names)
+            self.assertIn("course_summary.txt", file_names)
+            self.assertIn("students_roster.csv", file_names)
+            self.assertIn("attendance/raw_attendance_logs.csv", file_names)
+            self.assertIn("coursework/coursework_overview.csv", file_names)
+
+            # Check manifest json content
+            import json
+            manifest_raw = zf.read("manifest.json").decode("utf-8")
+            manifest = json.loads(manifest_raw)
+            self.assertEqual(manifest["code"], "CSL100")
+            self.assertIn("exported_by", manifest)
+
+            # Check students roster
+            roster_csv = zf.read("students_roster.csv").decode("utf-8")
+            self.assertIn("Student ID", roster_csv)
+
+        self.logout()
+
+        # 3. Admin can also export archive
+        self.login("admin", "admin@accl")
+        res_admin_exp = self.client.get("/courses/1/export-archive")
+        self.assertEqual(res_admin_exp.status_code, 200)
+        self.assertEqual(res_admin_exp.mimetype, "application/zip")
+        self.logout()
+
+    def test_course_deletion_lifecycle_and_cascades(self):
+        """Test deleting a course cascades through database tables and physical files, and checks permissions."""
+        # Create a new course owned by kishan for deletion test
+        self.login("kishan", "password123")
+        res_create = self.client.post("/courses/create", data={
+            "title": "Course To Delete",
+            "code": "DEL101",
+            "department": "CSE",
+            "section": "A",
+            "description": "Will be deleted"
+        }, follow_redirects=True)
+        self.assertEqual(res_create.status_code, 200)
+
+        conn = app.get_db()
+        course = conn.execute("SELECT id FROM courses WHERE code = 'DEL101'").fetchone()
+        self.assertIsNotNone(course)
+        del_course_id = course["id"]
+        conn.close()
+        self.logout()
+
+        # 1. Student cannot delete course
+        self.login("student1", "student123")
+        res_stud_del = self.client.post(f"/courses/{del_course_id}/delete", follow_redirects=True)
+        self.assertIn(b"Only the course creator or an administrator can delete", res_stud_del.data)
+        self.logout()
+
+        # 2. Creator can delete course
+        self.login("kishan", "password123")
+        res_del = self.client.post(f"/courses/{del_course_id}/delete", follow_redirects=True)
+        self.assertEqual(res_del.status_code, 200)
+        self.assertIn(b"permanently deleted", res_del.data)
+
+        # Verify course is removed from DB
+        conn = app.get_db()
+        check_c = conn.execute("SELECT id FROM courses WHERE id = ?", (del_course_id,)).fetchone()
+        self.assertIsNone(check_c)
+        conn.close()
+        self.logout()
+
 
 if __name__ == "__main__":
     unittest.main()

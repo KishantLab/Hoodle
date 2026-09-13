@@ -21,6 +21,11 @@
       <button type="button" class="btn btn-sm" onclick="openModal('classSettingsModal')" style="background: rgba(255, 255, 255, 0.2); color: white; border: 1px solid rgba(255, 255, 255, 0.35); backdrop-filter: blur(4px); font-weight: 700; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.8rem; border-radius: 9999px; cursor: pointer;">
         <span>⚙️ Class Settings</span>
       </button>
+      {% if course.teacher_id == current_user.id or current_user.role == 'admin' %}
+        <a href="{{ url_for('export_course_archive', course_id=course.id) }}" class="btn btn-sm" style="background: rgba(255, 255, 255, 0.2); color: white; border: 1px solid rgba(255, 255, 255, 0.35); backdrop-filter: blur(4px); font-weight: 700; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.8rem; border-radius: 9999px; text-decoration: none;" title="Download complete course export with all submissions, attendance, and materials (.zip)">
+          <span>📦 Export Course</span>
+        </a>
+      {% endif %}
     {% endif %}
   </div>
 </div>
@@ -50,6 +55,30 @@
     {% endif %}
   </a>
 </nav>
+
+{% if course.is_archived %}
+  <div class="alert alert-warning" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; margin-bottom: 1.25rem; border-radius: var(--radius-md); padding: 0.85rem 1.25rem; background: #fefce8; border: 1.5px solid #fef08a; color: #854d0e;">
+    <div style="display: flex; align-items: center; gap: 0.6rem;">
+      <span style="font-size: 1.35rem;">📁</span>
+      <div>
+        <div style="font-weight: 800; font-size: 0.95rem;">This course is ARCHIVED (Read-Only Mode)</div>
+        <div style="font-size: 0.8rem; opacity: 0.9;">Students cannot submit new coursework or mark attendance.</div>
+      </div>
+    </div>
+    {% if course.teacher_id == current_user.id or current_user.role == 'admin' %}
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <a href="{{ url_for('export_course_archive', course_id=course.id) }}" class="btn btn-secondary btn-sm" style="font-weight: 700;">
+          📦 Export Archive (.zip)
+        </a>
+        <form action="{{ url_for('unarchive_course', course_id=course.id) }}" method="POST" style="margin: 0;" onsubmit="return confirm('Restore this course to active status?');">
+          <button type="submit" class="btn btn-primary btn-sm" style="font-weight: 700;">
+            ↩️ Unarchive Course
+          </button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
 
 <div class="stream-layout-grid">
   <!-- Left Column: Course Quick Info Sidebar -->
@@ -335,6 +364,60 @@
         <button type="submit" class="btn btn-primary" style="font-weight: 700;">Save Class Settings</button>
       </div>
     </form>
+
+    {% if course.teacher_id == current_user.id or current_user.role == 'admin' %}
+    <div style="margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1.5px solid var(--border);">
+      <h4 style="font-size: 0.95rem; font-weight: 800; margin-bottom: 0.35rem; color: var(--text-main); display: flex; align-items: center; gap: 0.4rem;">
+        <span>📦</span> Course Export &amp; Lifecycle Management
+      </h4>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 1rem;">
+        Available strictly to the course creator and administrators.
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <!-- Export Course Archive Package -->
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-sm); flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-main);">Export Complete Course (.zip)</div>
+            <div style="font-size: 0.76rem; color: var(--text-muted);">Downloads manifest, roster, attendance matrices, uploaded materials, and all student submissions.</div>
+          </div>
+          <a href="{{ url_for('export_course_archive', course_id=course.id) }}" class="btn btn-secondary btn-sm" style="font-weight: 700;">
+            📦 Download ZIP
+          </a>
+        </div>
+
+        <!-- Archive / Unarchive Toggle -->
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-sm); flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-main);">
+              {% if course.is_archived %}Restore / Unarchive Course{% else %}Archive Course{% endif %}
+            </div>
+            <div style="font-size: 0.76rem; color: var(--text-muted);">
+              {% if course.is_archived %}Restores this course to active status for enrolled students.{% else %}Marks course as archived (read-only) and disables class code enrollment.{% endif %}
+            </div>
+          </div>
+          <form action="{% if course.is_archived %}{{ url_for('unarchive_course', course_id=course.id) }}{% else %}{{ url_for('archive_course', course_id=course.id) }}{% endif %}" method="POST" style="margin: 0;" onsubmit="return confirm('{% if course.is_archived %}Restore this course to active status?{% else %}Archive this course? It will become read-only.{% endif %}');">
+            <button type="submit" class="btn btn-outline btn-sm" style="font-weight: 700;">
+              {% if course.is_archived %}↩️ Unarchive{% else %}📁 Archive{% endif %}
+            </button>
+          </form>
+        </div>
+
+        <!-- Delete Course Permanently -->
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-sm); flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <div style="font-weight: 800; font-size: 0.88rem; color: #b91c1c;">Delete Course Permanently</div>
+            <div style="font-size: 0.76rem; color: #991b1b;">Irrevocably deletes this course, coursework, submissions, attendance logs, and files.</div>
+          </div>
+          <form action="{{ url_for('delete_course', course_id=course.id) }}" method="POST" style="margin: 0;" onsubmit="return confirm('🚨 DANGER: Are you absolutely sure you want to PERMANENTLY DELETE this course? All assignments, attendance, materials, and student submissions will be destroyed forever.');">
+            <button type="submit" class="btn btn-danger btn-sm" style="background: #dc2626; border-color: #dc2626; color: white; font-weight: 800;">
+              🗑️ Delete Course
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endif %}

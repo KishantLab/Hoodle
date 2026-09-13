@@ -11,7 +11,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Flask 3.0](https://img.shields.io/badge/framework-Flask%203.0-green.svg)](https://palletsprojects.com/p/flask/)
-[![Tests](https://img.shields.io/badge/tests-21%20passing-brightgreen.svg)](test_lms.py)
+[![Tests](https://img.shields.io/badge/tests-73%20passing-brightgreen.svg)](test_lms.py)
 [![Brand Kit](https://img.shields.io/badge/brand-Hoodle%20Kit%20(SVG%2FPNG)-blueviolet.svg)](static/images/hoodle_brand_kit.zip)
 [![License](https://img.shields.io/badge/license-ACCL%20IIT%20Bhilai-red.svg)](README.md)
 
@@ -23,13 +23,16 @@
 
 **Hoodle** is an enterprise-grade, locally deployable Learning Management System (LMS) specifically architected for university academic instruction, engineering computing laboratories, practical examinations, and continuous assessment.
 
-Combining the classroom simplicity of **Google Classroom** with the evaluation power of **Canvas LMS**, Hoodle brings modern, secure, and privacy-preserving education technology to local intranet environments:
-- **In-Portal Live Camera QR Code Attendance Scanner** with rotating anti-proxy tokens.
-- **Canvas-Style Weighted Grading Engine** out of 100 with category percentages, Excel/CSV bulk import, and customizable mathematical formulas.
-- **Strict Exam Lockdown Mode** with timed windows, ZIP validation, auto-expiration, and cryptographic submission freeze.
+Combining the simplicity and clarity of **Google Classroom** with the rigorous grading and evaluation capabilities of **Canvas LMS**, Hoodle provides modern, fast, and privacy-preserving education technology tailored for on-premise campus intranets and secure cloud/VPN networks:
+- **Comprehensive Course Lifecycle Management**: Creator & Admin exclusive archiving, restoration, and complete 1-click full `.zip` offline course export with student submissions, attendance records, and materials.
+- **In-Portal Live Camera QR Code Attendance Scanner** with dynamically rotating anti-proxy cryptographic tokens.
+- **Flexible Attendance Controls**: 1-click "Mark All Present" for compensatory classes, "Skip / Exclude Session" for holidays/cancelled classes, session-by-session matrix CSV export, and Google Sheets live backup.
+- **Canvas-Style Weighted Grading Engine** out of 100 with category percentages, Excel/CSV bulk import, and customizable mathematical evaluation formulas.
+- **Strict Exam Lockdown Mode** with timed windows, ZIP validation, auto-expiration, live proctor telemetry, and cryptographic submission freezing.
 - **Cryptographic Digital Submission Receipts** with SHA-256 verification and scannable QR tokens.
-- **Integrated In-App PDF Opener / Reader** for seamless in-browser viewing of reference files, student submissions, and locker documents without downloading.
-- **Isolated Student Private Space ("My Cloud Locker")** with code preview and disk quotas.
+- **Integrated In-App PDF Opener / Reader** for instant zero-download document inspection across course materials, student submissions, and cloud lockers.
+- **Isolated Student Private Space ("My Cloud Locker")** with in-browser syntax highlighting and disk quota management.
+- **Dual Network Access Architecture**: Default campus intranet priority with seamless remote access switching.
 - **Granular Multi-Tier Role Governance** (Admin, Primary Faculty, Co-Teacher/TA, Student).
 
 ---
@@ -39,16 +42,46 @@ Combining the classroom simplicity of **Google Classroom** with the evaluation p
 ### 1. 📚 6-Tab Coursework Environment
 Every course in Hoodle provides a Google Classroom-style tab navigation:
 - **📢 Stream**: Real-time course announcements with rich text, file attachments (with in-app PDF preview), pinned notices, and threaded discussions.
-- **📝 Classwork**: Topic-organized curriculum units, assignment creation with max points, deadlines, allowed file types, and reference material distribution.
+- **📝 Classwork**: Topic-organized curriculum units, assignment authoring with maximum points, deadlines, allowed file extensions, and reference material distribution.
 - **👥 People**: Complete course roster for instructors and co-teachers. Features inline role switching (`Student` $\leftrightarrow$ `Co-Teacher` $\leftrightarrow$ `Faculty`), student invitation via class code, and strict student privacy safeguards (students never see classmates' submission status or counts).
 - **📅 Attendance**: Real-time attendance dashboard featuring projector screen mode, student check-in telemetry, audit filter bar, CSV export, and bulk manual marking.
 - **📊 Grades**: Gradebook matrix with weighted evaluation out of 100, itemized student scorecards, Excel/CSV grade import, pre-filled template generator, and category weighting controls.
+- **💬 Messages**: Course-wide threaded communication and student-teacher discussions.
 
 ---
 
-### 2. 📷 In-Portal Live Camera QR Attendance Scanner & Projector
+### 2. 📦 Course Lifecycle Management & Archival
+Hoodle implements a strict, secure course lifecycle governed exclusively by the course creator (`course.teacher_id == user.id`) or system administrators (`user.role == 'admin'`):
+
+- **📁 Course Archiving & Restoration**:
+  - Instructors can archive completed semesters or past cohorts with 1 click.
+  - Archived courses enter **Read-Only Mode**: students and teachers can review past materials and grades, but new coursework submissions, grade edits, and attendance check-ins are locked.
+  - The dashboard cleanly partitions courses into active and archived sections, keeping the primary workspace organized.
+  - Courses can be instantly unarchived (restored to active status) at any time.
+- **🗑️ Permanent Course Deletion with Cascading Cleanup**:
+  - Course creators or administrators can permanently delete courses when necessary.
+  - Automatically executes cascaded database purges across: `submissions`, `coursework_attachments`, `coursework`, `comments`, `announcements`, `attendance_logs`, `attendance_sessions`, `attendance_excluded_sessions`, `course_enrollments`, `course_invitations`, `topics`, and `courses`.
+  - Safely deletes physical submitted files, coursework attachments, and stream uploads from the server disk.
+- **📦 Full Course ZIP Package Export**:
+  - Course creators or administrators can export a complete, self-contained offline archive package (`.zip`) containing:
+    - `manifest.json`: Machine-readable metadata (course code, title, section, instructor, export timestamps, counts).
+    - `course_summary.txt`: Formatted human-readable syllabus, enrollment, and coursework summary.
+    - `students_roster.csv`: Complete student directory with IDs, roll numbers, names, usernames, emails, enrolled dates, and attended session counts.
+    - `attendance/`:
+      - `attendance_matrix.csv`: Full student-by-session matrix.
+      - `raw_attendance_logs.csv`: Every individual check-in timestamp, IP address, method, and status.
+      - `excluded_sessions.csv`: List of cancelled or skipped classes with dates and reasons.
+    - `coursework/`:
+      - `coursework_overview.csv`: Master catalog of all assignments, quizzes, and exams.
+      - Per-assignment folders containing `details.txt`, teacher reference attachments, `submissions_summary.csv`, and all submitted student solution files neatly organized by roll number.
+    - `stream/`:
+      - `announcements.csv` and `comments.csv` along with all stream uploaded materials.
+
+---
+
+### 3. 📷 In-Portal Live Camera QR Attendance Scanner & Projector
 - **Classroom Projector Screen (`/courses/<id>/attendance/projector`)**:
-  - Fullscreen display for lecture halls and lab projectors.
+  - Fullscreen display tailored for lecture halls and lab projectors.
   - Generates SVG QR codes using rotating cryptographic tokens.
   - **1-Second Live Polling Stream**: Automatically displays attending students as they scan in real time with audio-visual check-in feedback.
 - **In-Portal Camera Scanner (`#qrScannerModal`)**:
@@ -61,7 +94,22 @@ Every course in Hoodle provides a Google Classroom-style tab navigation:
 
 ---
 
-### 3. ⚖️ Weighted Assessment Engine & Gradebook
+### 4. 📅 Flexible Attendance Management Controls
+- **✅ Mark All Students Present**:
+  - Instructors can grant full attendance (marking all enrolled students as PRESENT) for any selected date and session type (`Lecture`, `Lab`, `Tutorial`).
+  - Ideal for holidays, college events, compensatory lectures, or guest seminars.
+- **🚫 Skip / Exclude Session**:
+  - Instructors can exclude specific dates and session types from total session calculations (e.g. cancelled classes, university holidays, technical lab downtime).
+  - Automatically omits the session from total session counts and percentage calculations without destroying attendance audit history.
+  - Excluded sessions can be re-included into attendance counting with 1 click.
+- **📊 Detailed Session-by-Session CSV Export**:
+  - Comprehensive matrix export mapping every student against every individual lecture and lab session date.
+- **🌐 Google Sheets Live Backup Integration**:
+  - Connect Google Sheets via Apps Script webhook (`doPost(e)`) or `=IMPORTDATA(...)` formula for automated off-site attendance mirroring.
+
+---
+
+### 5. ⚖️ Weighted Assessment Engine & Gradebook
 - **Final Marks Out of 100**:
   - Instructors configure category weight percentages (e.g. End-Sem: 20%, Mid-Sem: 20%, Lab Assessments: 45%, Lab Exam: 10%, Live Attendance: 5%).
   - Automatically factors in live attendance percentages calculated from dynamic QR scans.
@@ -77,7 +125,7 @@ Every course in Hoodle provides a Google Classroom-style tab navigation:
 
 ---
 
-### 4. 🔒 Strict Exam Lockdown Mode
+### 6. 🔒 Strict Exam Lockdown Mode
 - **Zero-Resource Lockdown**:
   - When enabled, students entering the course are strictly locked out of lecture materials, stream announcements, and their private cloud locker.
   - Students are automatically redirected to the dedicated Exam Portal.
@@ -94,14 +142,14 @@ Every course in Hoodle provides a Google Classroom-style tab navigation:
 
 ---
 
-### 5. 📜 Cryptographic Digital Submission Receipts
+### 7. 📜 Cryptographic Digital Submission Receipts
 - Every assignment and exam submission generates an immutable digital receipt.
 - Contains student roll number, lab venue, submission timestamp, version count, and a **SHA-256 cryptographic checksum**.
 - Includes a verifiable digital receipt URL and scannable QR verification code.
 
 ---
 
-### 6. 📕 Integrated In-App PDF Opener / Reader
+### 8. 📕 Integrated In-App PDF Opener / Reader
 - **Zero-Download Document Inspection**:
   - High-performance embedded PDF reader modal (`#pdfViewerModal`) accessible across the entire LMS.
   - Features a clean toolbar with **⛶ Fullscreen toggle**, **↗ Open in New Tab**, **⬇ Download File**, and **✕ Close** (also supports `Escape` key).
@@ -114,7 +162,7 @@ Every course in Hoodle provides a Google Classroom-style tab navigation:
 
 ---
 
-### 7. 🗄️ Student Cloud Locker ("My Private Space")
+### 9. 🗄️ Student Cloud Locker ("My Private Space")
 - Every student has an isolated private workspace on the server (`storage/lockers/<user_id>/`).
 - Upload code files (`.c`, `.cpp`, `.cu`, `.py`, `.sh`, `.txt`, `.md`, `.pdf`, `.json`, `.sql`).
 - In-browser code preview with line numbers and syntax styling.
@@ -123,17 +171,29 @@ Every course in Hoodle provides a Google Classroom-style tab navigation:
 
 ---
 
-### 8. 🛡️ Role-Based Access Control (RBAC)
+### 10. 🌐 Dual Network Architecture & Intranet Priority
+Hoodle is engineered with a dual network architecture supporting simultaneous campus intranet and secure internet access:
+- **Campus Intranet (Default & High Priority)**:
+  - Accessible via campus LAN IP (e.g. `http://10.10.14.104:8095` or `https://10.10.14.104/lms/`).
+  - High-bandwidth, zero external data consumption, and minimal latency for high-concurrency exam submissions.
+- **Internet / Remote Access**:
+  - Accessible securely via Tailscale VPN or institutional domain (e.g. `https://accllogin.tail77fd8b.ts.net/lms/`).
+- **Network Access Mode Selector**:
+  - Centered bottom selector on the login screen and within the user menu allowing students and faculty to switch network access domains seamlessly without displaying raw URLs.
+
+---
+
+### 11. 🛡️ Role-Based Access Control (RBAC)
 | Role | Permissions & Capabilities |
 | :--- | :--- |
-| **Administrator (`admin`)** | Full system directory (`/admin/users`), password resets, role assignment, user creation/deletion, system storage auditing. |
-| **Faculty / Instructor (`teacher`)** | Create and manage courses, author coursework, grade submissions, configure weights, export gradebooks, manage class rosters. |
-| **Co-Teacher / TA (`ta`)** | Course-level teaching privileges: grade coursework, inspect submissions, view and manage attendance logs. |
+| **Administrator (`admin`)** | Full system directory (`/admin/users`), password resets, role assignment, user creation/deletion, system storage auditing, course archive/delete/export. |
+| **Faculty / Instructor (`teacher`)** | Create and manage courses, author coursework, grade submissions, configure weights, export gradebooks, manage class rosters, archive/delete own courses, full course export. |
+| **Co-Teacher / TA (`ta`)** | Course-level teaching privileges: grade coursework, inspect submissions, view and manage attendance logs. Cannot delete or archive courses. |
 | **Student (`student`)** | Join courses with 6-character class codes, view personal grades and weighted total out of 100, scan attendance QR codes, turn in work, access personal locker. Classmate submission privacy is strictly preserved. |
 
 ---
 
-### 9. 🎨 Official Brand Identity & Downloadable Logo Kit
+### 12. 🎨 Official Brand Identity & Downloadable Logo Kit
 - **Official Visual Identity Portal (`/brand`)**:
   - Dedicated brand page providing direct 1-click downloads for instructors, students, developers, and event organizers.
   - **Scalable Vector Logo (`hoodle_logo.svg`)**: Infinite-resolution brand lockup with typography and ACCL lab credentials for print, posters, and web.
@@ -147,91 +207,119 @@ Every course in Hoodle provides a Google Classroom-style tab navigation:
 ## 🏗️ Architecture & Technology Stack
 
 ```
-                                 [ Client Browser / Mobile ]
-                                             │
-                                   HTTPS / Port 443 / 8443
-                                             ▼
-                                     [ Nginx Reverse Proxy ]
-                                             │  (Proxy pass to 127.0.0.1:8095)
-                                             ▼
-                               [ Gunicorn WSGI Application Server ]
-                                  (16 Workers • 64 Threads)
-                                             │
-                                       [ Flask App ]
-                   ┌─────────────────────────┼─────────────────────────┐
-                   ▼                         ▼                         ▼
-         [ SQLite3 Database ]      [ Storage Directory ]      [ Static & Templates ]
-          (accl_lms.db)             • lockers/                 • HTML5 / Jinja2
-                                    • submissions/             • Vanilla JS / CSS3
-                                    • attachments/             • HTML5-QRCode Scanner
-                                    • exports/
+                     [ Client Browser / Mobile App ]
+                                    │
+               ┌────────────────────┴────────────────────┐
+               ▼                                         ▼
+      [ Campus Intranet ]                       [ Internet / VPN ]
+       10.10.14.104:8095                      tail77fd8b.ts.net/lms
+               │                                         │
+               └────────────────────┬────────────────────┘
+                                    │
+                         HTTPS / Port 443 / 8443
+                                    ▼
+                         [ Nginx Reverse Proxy ]
+                                    │ (Proxy pass to 127.0.0.1:8095)
+                                    ▼
+                    [ Gunicorn WSGI Application Server ]
+                       (16 Workers • 64 Threads)
+                                    │
+                             [ Flask App ]
+                    ┌───────────────┼───────────────┐
+                    ▼               ▼               ▼
+          [ SQLite3 Database ] [ Storage Dir ] [ Static & Templates ]
+          • WAL Journal Mode    • lockers/      • HTML5 / Jinja2
+          • Busy Timeout 60s    • submissions/  • Vanilla JS / CSS3
+          • Foreign Keys ON     • attachments/  • HTML5-QRCode Scanner
+                                • exports/
 ```
 
-- **Backend**: Python 3.10+, Flask 3.0, Werkzeug 3.0, Gunicorn 21.2.
-- **Database**: SQLite3 with WAL mode, foreign keys, and cascading indexes.
-- **Frontend**: Responsive HTML5, CSS Variables, Flexbox/Grid, Vanilla JavaScript.
-- **Barcode & QR Engine**: `html5-qrcode` (client video stream), `qrcode[pil]` (server SVG/PNG QR generation).
-- **Spreadsheet Processing**: `openpyxl` (Excel `.xlsx`), standard `csv` engine.
+- **Backend**: Python 3.10+, Flask 3.0, Werkzeug 3.0, Gunicorn 21.2 (`gthread` worker class).
+- **Database**: SQLite3 configured with Write-Ahead Logging (`WAL`), 60s busy timeout, foreign key cascades, and optimized indexes.
+- **Frontend**: Responsive HTML5, CSS Variables, Flexbox/Grid, Vanilla JavaScript (zero heavy client-side frameworks).
+- **Barcode & QR Engine**: `html5-qrcode` (client-side video stream), `qrcode[pil]` (server-side SVG/PNG generation).
+- **Spreadsheet Processing**: `openpyxl` (Excel `.xlsx`), standard Python `csv` engine.
 
 ---
 
-## 🚀 Fresh Installation & Setup Guide
+## 🚀 Fresh Installation & System Setup Guide
 
 ### Method 1: Automated 1-Command Setup (Recommended)
 
-Run the included interactive setup script:
+Run the included interactive setup script on Ubuntu 22.04 LTS or Debian:
 
 ```bash
 git clone https://github.com/KishantLab/Hoodle.git
 cd Hoodle
 chmod +x setup.sh
-./setup.sh
+sudo ./setup.sh
 ```
 
-The script will automatically:
-1. Install all necessary OS packages (`python3`, `pip`, `venv`, `sqlite3`, `nginx`, `curl`).
-2. Create isolated storage directories with permissions.
-3. Configure the Python virtual environment and install all dependencies.
-4. Initialize the SQLite database schema and seed default accounts.
-5. Run the full 19-test automated test suite to verify system integrity.
-6. Configure and start the systemd service (`accl-lms.service`).
-7. Configure the Nginx reverse proxy with HTTPS camera streaming headers.
+The automated installer will:
+1. Detect server network IPs and prompt for installation directory and service parameters.
+2. Install all required OS packages (`python3`, `python3-pip`, `python3-venv`, `python3-dev`, `sqlite3`, `nginx`, `curl`, `git`, `rsync`, `ufw`).
+3. Set up the Python virtual environment and install dependencies from `requirements.txt`.
+4. Initialize the SQLite database schema and seed default administrative and faculty accounts.
+5. Create isolated storage directories (`storage/lockers`, `storage/submissions`, `storage/attachments`, `storage/exports`) with proper read/write permissions.
+6. Run the complete automated test suite to verify 100% system health.
+7. Configure and start the systemd service (`accl-lms.service`) with multi-threaded Gunicorn workers.
+8. Configure Nginx reverse proxy with HTTPS camera streaming headers and 500MB upload limits.
 
 ---
 
 ### Method 2: Manual Installation Step-by-Step
 
-#### 1. Clone the Repository & Setup Virtual Environment
+#### 1. Install System Dependencies & Build Tools
 ```bash
-git clone https://github.com/KishantLab/Hoodle.git /data/admin/Hoodle
-cd /data/admin/Hoodle
+sudo apt-get update
+sudo apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    build-essential \
+    sqlite3 \
+    nginx \
+    curl \
+    git \
+    rsync
+```
+
+#### 2. Clone the Repository & Configure Python Environment
+```bash
+# Clone repository
+sudo git clone https://github.com/KishantLab/Hoodle.git /data/admin/ACCLLMS
+cd /data/admin/ACCLLMS
 
 # Create and activate virtual environment
 python3 -m venv venv
 source venv/bin/activate
 
-# Install dependencies
+# Upgrade pip and install application dependencies
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-#### 2. Create Storage Directories
+#### 3. Create Storage Directories & Set Permissions
 ```bash
 mkdir -p storage/lockers storage/submissions storage/attachments storage/exports
-chmod -R 775 storage
+sudo chown -R www-data:www-data /data/admin/ACCLLMS
+sudo chmod -R 775 storage
 ```
 
-#### 3. Initialize Database
+#### 4. Initialize Database Schema & Pre-Seeded Accounts
 ```bash
-python3 -c "import app; app.init_db(); print('Database initialized.')"
+source venv/bin/activate
+python3 -c "import app; app.init_db(); print('Database schema and initial accounts verified.')"
 ```
 
-#### 4. Run Verification Tests
+#### 5. Run Verification Tests
 ```bash
+source venv/bin/activate
 python3 -m unittest -v test_lms.py
 ```
 
-#### 5. Configure Systemd Service
+#### 6. Configure Systemd Service
 Create `/etc/systemd/system/accl-lms.service`:
 ```ini
 [Unit]
@@ -241,9 +329,9 @@ After=network.target
 [Service]
 User=www-data
 Group=www-data
-WorkingDirectory=/data/admin/Hoodle
-Environment="PATH=/data/admin/Hoodle/venv/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=/data/admin/Hoodle/venv/bin/gunicorn --workers 16 --threads 4 --worker-class gthread --bind 0.0.0.0:8095 --timeout 120 --keep-alive 5 --max-requests 2000 --max-requests-jitter 200 app:app
+WorkingDirectory=/data/admin/ACCLLMS
+Environment="PATH=/data/admin/ACCLLMS/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/data/admin/ACCLLMS/venv/bin/gunicorn --workers 16 --threads 4 --worker-class gthread --bind 0.0.0.0:8095 --timeout 120 --keep-alive 5 --max-requests 2000 --max-requests-jitter 200 app:app
 Restart=always
 RestartSec=3
 KillMode=mixed
@@ -259,15 +347,19 @@ Enable and start the service:
 sudo systemctl daemon-reload
 sudo systemctl enable accl-lms.service
 sudo systemctl start accl-lms.service
+sudo systemctl status accl-lms.service
 ```
 
-#### 6. Configure Nginx Reverse Proxy (with HTTPS Camera Support)
-In `/etc/nginx/sites-available/default` (or your SSL server block):
+#### 7. Configure Nginx Reverse Proxy (with HTTPS & Camera Headers)
+Add the following block to your Nginx configuration (e.g. `/etc/nginx/sites-available/default`):
+
 ```nginx
+# Redirect bare prefix to trailing slash
 location = /lms {
     return 301 /lms/;
 }
 
+# Hoodle LMS Application Proxy
 location /lms/ {
     proxy_pass http://127.0.0.1:8095/;
     proxy_http_version 1.1;
@@ -283,9 +375,10 @@ location /lms/ {
 }
 ```
 
-Reload Nginx:
+Test and reload Nginx:
 ```bash
-sudo nginx -t && sudo systemctl reload nginx
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
 ---
@@ -299,44 +392,50 @@ sudo nginx -t && sudo systemctl reload nginx
 | **Student Account** | `student1` | `student123` | Roll No: `B26DS001` (Aarav Sharma) |
 
 > [!IMPORTANT]
-> Change the default administrator and faculty passwords immediately upon initial server deployment.
+> Change the default administrator and faculty passwords immediately upon initial server deployment via `/change-password`.
+
+---
+
+## 🛠️ Operational Commands & Server Maintenance
+
+```bash
+# Check service status
+sudo systemctl status accl-lms.service
+
+# Restart application service after updates
+sudo systemctl restart accl-lms.service
+
+# View live application logs
+sudo journalctl -u accl-lms.service -f
+
+# Test Nginx configuration
+sudo nginx -t
+
+# Run automated test suite
+source venv/bin/activate && python3 -m unittest -v test_lms.py
+
+# Quick SQLite database backup
+sqlite3 accl_lms.db ".backup 'accl_lms_backup_$(date +%Y%m%d_%H%M%S).db'"
+```
 
 ---
 
 ## 🧪 Automated Testing Suite
 
-Hoodle includes 19 end-to-end integration and unit tests covering all core workflows:
+Hoodle includes 73 comprehensive integration and unit tests covering every subsystem:
 ```bash
 python3 -m unittest -v test_lms.py
 ```
 
-### Verified Test Matrix
-```text
-test_admin_user_directory ........................................... ok
-test_announcements_and_comments ..................................... ok
-test_assignment_submission_and_receipt ............................... ok
-test_attendance_projector_and_apis .................................. ok
-test_brand_assets_and_logo_downloads ................................. ok
-test_bulk_manual_attendance_and_csv_export ........................... ok
-test_canvas_weighted_grading_and_bulk_import ........................ ok
-test_coteacher_attendance_log_access ................................. ok
-test_course_join_by_code ............................................ ok
-test_default_accounts_exist ......................................... ok
-test_dynamic_token_rotation ......................................... ok
-test_exam_live_submissions_telemetry_api ............................. ok
-test_exam_lockdown_auto_expire_and_locked_submission ................. ok
-test_gradebook_and_csv_export ....................................... ok
-test_in_app_pdf_opener_and_inline_routes ............................ ok
-test_role_management_and_coteacher_workflow ......................... ok
-test_strict_exam_mode_lockdown_and_zip_only .......................... ok
-test_student_attendance_flow_and_duplicate_prevention ................ ok
-test_student_locker_upload_and_preview ............................... ok
-test_student_login_and_dashboard .................................... ok
-test_student_registration ........................................... ok
-
-----------------------------------------------------------------------
-Ran 21 tests in 62.545s - ALL OK
-```
+### Verified Test Categories
+- **Authentication & Security**: Registration, password hashing, session expiration, roll number capitalization, duplicate roll protection.
+- **Role Governance**: Admin directory, role promotions, faculty assignment, student privacy boundaries.
+- **Course Lifecycle**: Course creation, archiving, restoring, full ZIP package export verification, permanent deletion cascades across 12+ tables.
+- **Attendance Engine**: Rotating dynamic HMAC QR codes, projector 1-second polling, camera permissions, "Mark All Present", "Skip / Exclude Session", session matrix CSV, Google Sheet webhook sync.
+- **Grading & Assessment**: Canvas-style category weight formulas out of 100, live attendance weighting, Excel/CSV bulk import/export.
+- **Exam Lockdown**: Zero-resource redirection, magic-byte `.zip` enforcement, server-synchronized auto-expiration, cryptographic submission freeze, live proctor telemetry.
+- **Student Cloud Locker**: Quota meters, code preview, locker whole-archive download.
+- **PDF Viewer & UI**: Embedded zero-download reader, centered mobile top bar, dual network access switcher.
 
 ---
 

@@ -1544,6 +1544,16 @@ def dashboard():
             ORDER BY c.created_at DESC
         """, (user["id"],)).fetchall()
 
+        archived_courses = conn.execute("""
+            SELECT c.*, u.display_name as teacher_name,
+                   (SELECT COUNT(*) FROM coursework cw WHERE cw.course_id = c.id) as total_work
+            FROM courses c
+            JOIN course_enrollments ce ON c.id = ce.course_id
+            JOIN users u ON c.teacher_id = u.id
+            WHERE ce.user_id = ? AND c.is_archived = 1
+            ORDER BY c.created_at DESC
+        """, (user["id"],)).fetchall()
+
         # Upcoming assignments with due dates
         upcoming_deadlines = conn.execute("""
             SELECT cw.*, c.code as course_code, c.title as course_title,
@@ -1582,7 +1592,18 @@ def dashboard():
                        (SELECT COUNT(*) FROM coursework cw WHERE cw.course_id = c.id) as total_work
                 FROM courses c
                 JOIN users u ON c.teacher_id = u.id
-                ORDER BY c.is_archived ASC, c.created_at DESC
+                WHERE c.is_archived = 0
+                ORDER BY c.created_at DESC
+            """).fetchall()
+
+            archived_courses = conn.execute("""
+                SELECT c.*, u.display_name as teacher_name,
+                       (SELECT COUNT(*) FROM course_enrollments ce WHERE ce.course_id = c.id AND ce.role = 'student') as student_count,
+                       (SELECT COUNT(*) FROM coursework cw WHERE cw.course_id = c.id) as total_work
+                FROM courses c
+                JOIN users u ON c.teacher_id = u.id
+                WHERE c.is_archived = 1
+                ORDER BY c.created_at DESC
             """).fetchall()
         else:
             courses = conn.execute("""
@@ -1596,10 +1617,22 @@ def dashboard():
                 ORDER BY c.created_at DESC
             """, (user["id"], user["id"])).fetchall()
 
+            archived_courses = conn.execute("""
+                SELECT DISTINCT c.*, u.display_name as teacher_name,
+                       (SELECT COUNT(*) FROM course_enrollments ce WHERE ce.course_id = c.id AND ce.role = 'student') as student_count,
+                       (SELECT COUNT(*) FROM coursework cw WHERE cw.course_id = c.id) as total_work
+                FROM courses c
+                JOIN users u ON c.teacher_id = u.id
+                LEFT JOIN course_enrollments ce_user ON ce_user.course_id = c.id AND ce_user.user_id = ?
+                WHERE c.is_archived = 1 AND (c.teacher_id = ? OR ce_user.user_id IS NOT NULL)
+                ORDER BY c.created_at DESC
+            """, (user["id"], user["id"])).fetchall()
+
     conn.close()
     return render_template(
         "dashboard.html",
         courses=courses,
+        archived_courses=archived_courses,
         upcoming_deadlines=upcoming_deadlines,
         locker_stats=locker_stats,
         pending_invitations=pending_invitations
@@ -1856,6 +1889,409 @@ def get_course_or_404(course_id):
 
     conn.close()
     return course
+
+
+@app.route("/courses/<int:course_id>/archive", methods=["POST"])
+@login_required
+def archive_course(course_id):
+    """Archives a course. Only the creator of the course or an admin can archive it."""
+    course = get_course_or_404(course_id)
+    user = get_current_user()
+    if not user:
+        return redirect(url_for("login"))
+
+    if course["teacher_id"] != user["id"] and user["role"] != "admin":
+        flash("Permission denied: Only the course creator or an administrator can archive this course.", "danger")
+        return redirect(url_for("course_stream", course_id=course_id))
+
+    conn = get_db()
+    conn.execute("UPDATE courses SET is_archived = 1 WHERE id = ?", (course_id,))
+    conn.commit()
+    conn.close()
+
+    flash(f"Course '{course['code']}: {course['title']}' has been archived. It is now read-only for students.", "warning")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/courses/<int:course_id>/unarchive", methods=["POST"])
+@login_required
+def unarchive_course(course_id):
+    """Restores/unarchives a course. Only the creator of the course or an admin can unarchive it."""
+    course = get_course_or_404(course_id)
+    user = get_current_user()
+    if not user:
+        return redirect(url_for("login"))
+
+    if course["teacher_id"] != user["id"] and user["role"] != "admin":
+        flash("Permission denied: Only the course creator or an administrator can unarchive this course.", "danger")
+        return redirect(url_for("course_stream", course_id=course_id))
+
+    conn = get_db()
+    conn.execute("UPDATE courses SET is_archived = 0 WHERE id = ?", (course_id,))
+    conn.commit()
+    conn.close()
+
+    flash(f"Course '{course['code']}: {course['title']}' has been unarchived and restored to active status.", "success")
+    return redirect(url_for("course_stream", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/delete", methods=["POST"])
+@login_required
+def delete_course(course_id):
+    """Permanently deletes a course and all associated records and files. Only the creator of the course or an admin can delete it."""
+    course = get_course_or_404(course_id)
+    user = get_current_user()
+    if not user:
+        return redirect(url_for("login"))
+
+    if course["teacher_id"] != user["id"] and user["role"] != "admin":
+        flash("Permission denied: Only the course creator or an administrator can delete this course.", "danger")
+        return redirect(url_for("course_stream", course_id=course_id))
+
+    conn = get_db()
+
+    # Collect submission file paths to remove from disk
+    sub_files = conn.execute("""
+        SELECT s.file_path FROM submissions s
+        JOIN coursework cw ON s.coursework_id = cw.id
+        WHERE cw.course_id = ?
+    """, (course_id,)).fetchall()
+
+    # Collect coursework attachment paths
+    att_files = conn.execute("""
+        SELECT ca.file_path FROM coursework_attachments ca
+        JOIN coursework cw ON ca.coursework_id = cw.id
+        WHERE cw.course_id = ?
+    """, (course_id,)).fetchall()
+
+    # Collect announcement attachment paths
+    ann_files = conn.execute("""
+        SELECT attachment_path FROM announcements
+        WHERE course_id = ? AND attachment_path IS NOT NULL AND attachment_path != ''
+    """, (course_id,)).fetchall()
+
+    # Delete related database records
+    conn.execute("DELETE FROM attendance_logs WHERE course_id = ?", (course_id,))
+    conn.execute("DELETE FROM attendance_sessions WHERE course_id = ?", (course_id,))
+    conn.execute("DELETE FROM attendance_excluded_sessions WHERE course_id = ?", (course_id,))
+    conn.execute("DELETE FROM course_invitations WHERE course_id = ?", (course_id,))
+    conn.execute("DELETE FROM course_enrollments WHERE course_id = ?", (course_id,))
+
+    # Comments for announcements and coursework
+    conn.execute("""
+        DELETE FROM comments WHERE context_type = 'stream' AND context_id IN (
+            SELECT id FROM announcements WHERE course_id = ?
+        )
+    """, (course_id,))
+    conn.execute("""
+        DELETE FROM comments WHERE context_type = 'coursework' AND context_id IN (
+            SELECT id FROM coursework WHERE course_id = ?
+        )
+    """, (course_id,))
+
+    conn.execute("DELETE FROM announcements WHERE course_id = ?", (course_id,))
+    conn.execute("""
+        DELETE FROM submissions WHERE coursework_id IN (
+            SELECT id FROM coursework WHERE course_id = ?
+        )
+    """, (course_id,))
+    conn.execute("""
+        DELETE FROM coursework_attachments WHERE coursework_id IN (
+            SELECT id FROM coursework WHERE course_id = ?
+        )
+    """, (course_id,))
+    conn.execute("DELETE FROM coursework WHERE course_id = ?", (course_id,))
+    conn.execute("DELETE FROM topics WHERE course_id = ?", (course_id,))
+    conn.execute("DELETE FROM courses WHERE id = ?", (course_id,))
+
+    conn.commit()
+    conn.close()
+
+    # Delete collected files from disk
+    all_disk_files = [r[0] for r in sub_files if r[0]] + \
+                     [r[0] for r in att_files if r[0]] + \
+                     [r[0] for r in ann_files if r[0]]
+    for fpath in all_disk_files:
+        try:
+            p = Path(fpath)
+            if p.exists():
+                p.unlink()
+        except Exception:
+            pass
+
+    flash(f"Course '{course['code']}: {course['title']}' and all associated materials and records were permanently deleted.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/courses/<int:course_id>/export-archive")
+@login_required
+def export_course_archive(course_id):
+    """
+    Exports a comprehensive course archive ZIP package.
+    Includes:
+    - manifest.json & course_summary.txt
+    - students_roster.csv
+    - attendance/ (attendance_matrix.csv, raw_attendance_logs.csv, excluded_sessions.csv)
+    - coursework/ (summary, per-assignment instructions, attachments, submission records, and all uploaded submission files)
+    - stream/ (announcements.csv, comments.csv, attachments)
+    Only accessible by the course creator or an admin.
+    """
+    course = get_course_or_404(course_id)
+    user = get_current_user()
+    if not user:
+        return redirect(url_for("login"))
+
+    if course["teacher_id"] != user["id"] and user["role"] != "admin":
+        flash("Permission denied: Only the course creator or an administrator can export the course archive.", "danger")
+        return redirect(url_for("course_stream", course_id=course_id))
+
+    conn = get_db()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 1. Fetch Students Roster
+    students = conn.execute("""
+        SELECT u.id, u.roll_number, u.display_name, u.email, u.username, ce.role as course_role, ce.enrolled_at,
+               (SELECT COUNT(*) FROM attendance_logs al WHERE al.course_id = ? AND al.student_id = u.id) as attended_sessions
+        FROM course_enrollments ce
+        JOIN users u ON ce.user_id = u.id
+        WHERE ce.course_id = ?
+        ORDER BY ce.role DESC, u.roll_number ASC
+    """, (course_id, course_id)).fetchall()
+
+    # 2. Fetch Coursework & Attachments & Submissions
+    coursework_items = conn.execute("""
+        SELECT cw.*, t.name as topic_name, u.display_name as creator_name
+        FROM coursework cw
+        LEFT JOIN topics t ON cw.topic_id = t.id
+        LEFT JOIN users u ON cw.created_by = u.id
+        WHERE cw.course_id = ?
+        ORDER BY cw.created_at ASC
+    """, (course_id,)).fetchall()
+
+    # 3. Fetch Stream Announcements & Comments
+    announcements = conn.execute("""
+        SELECT a.*, u.display_name as author_name, u.roll_number as author_roll
+        FROM announcements a
+        JOIN users u ON a.user_id = u.id
+        WHERE a.course_id = ?
+        ORDER BY a.created_at ASC
+    """, (course_id,)).fetchall()
+
+    comments = conn.execute("""
+        SELECT c.*, u.display_name as author_name, u.roll_number as author_roll
+        FROM comments c
+        JOIN users u ON c.user_id = u.id
+        WHERE (c.context_type = 'stream' AND c.context_id IN (SELECT id FROM announcements WHERE course_id = ?))
+           OR (c.context_type = 'coursework' AND c.context_id IN (SELECT id FROM coursework WHERE course_id = ?))
+        ORDER BY c.created_at ASC
+    """, (course_id, course_id)).fetchall()
+
+    # 4. Fetch Attendance Logs & Excluded Sessions
+    raw_attendance_logs = conn.execute("""
+        SELECT al.id, al.attendance_date, al.session_type, al.roll_number, al.student_name,
+               al.status, al.method, al.ip_address, al.marked_at, al.attendance_key
+        FROM attendance_logs al
+        WHERE al.course_id = ?
+        ORDER BY al.attendance_date ASC, al.marked_at ASC
+    """, (course_id,)).fetchall()
+
+    excluded_sessions = conn.execute("""
+        SELECT es.*, u.display_name as excluded_by_name
+        FROM attendance_excluded_sessions es
+        LEFT JOIN users u ON es.excluded_by = u.id
+        WHERE es.course_id = ?
+        ORDER BY es.excluded_date ASC
+    """, (course_id,)).fetchall()
+
+    # Matrix Attendance
+    att_data = get_course_attendance_matrix(course_id)
+
+    conn.close()
+
+    # Build ZIP in-memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # A. Manifest JSON
+        manifest_data = {
+            "course_id": course["id"],
+            "code": course["code"],
+            "title": course["title"],
+            "section": course["section"],
+            "description": course["description"],
+            "theme_color": course["theme_color"],
+            "join_code": course["join_code"],
+            "teacher_name": course["teacher_name"],
+            "teacher_email": course["teacher_email"],
+            "is_archived": course["is_archived"],
+            "created_at": course["created_at"],
+            "attendance_threshold": course["attendance_threshold"],
+            "exported_at": now_str,
+            "exported_by": user["display_name"],
+            "total_enrolled": len(students),
+            "total_coursework": len(coursework_items),
+            "total_announcements": len(announcements),
+            "total_attendance_logs": len(raw_attendance_logs)
+        }
+        zf.writestr("manifest.json", json.dumps(manifest_data, indent=2))
+
+        # B. Course Summary Text
+        summary_text = (
+            f"===================================================================\n"
+            f"HOODLE LMS COURSE ARCHIVE PACKAGE\n"
+            f"===================================================================\n"
+            f"Course Code : {course['code']}\n"
+            f"Title       : {course['title']}\n"
+            f"Section     : {course['section'] or 'General Section'}\n"
+            f"Instructor  : {course['teacher_name']} ({course['teacher_email']})\n"
+            f"Join Code   : {course['join_code']}\n"
+            f"Status      : {'Archived' if course['is_archived'] else 'Active'}\n"
+            f"Exported On : {now_str} by {user['display_name']} ({user['email']})\n"
+            f"===================================================================\n\n"
+            f"Syllabus / Description:\n{course['description'] or 'No description provided.'}\n\n"
+            f"Summary Metrics:\n"
+            f"- Enrolled Roster Members : {len(students)}\n"
+            f"- Coursework Items        : {len(coursework_items)}\n"
+            f"- Stream Announcements    : {len(announcements)}\n"
+            f"- Total Attendance Logs   : {len(raw_attendance_logs)}\n"
+        )
+        zf.writestr("course_summary.txt", summary_text)
+
+        # C. Students Roster CSV
+        roster_io = io.StringIO()
+        roster_writer = csv.writer(roster_io)
+        roster_writer.writerow(["Student ID", "Roll Number", "Full Name", "Username", "Email", "Course Role", "Enrolled Date", "Attended Sessions"])
+        for s in students:
+            roster_writer.writerow([s["id"], s["roll_number"] or "", s["display_name"], s["username"], s["email"] or "", s["course_role"], s["enrolled_at"], s["attended_sessions"]])
+        zf.writestr("students_roster.csv", roster_io.getvalue().encode("utf-8"))
+
+        # D. Attendance Subfolder
+        if att_data and att_data.get("matrix"):
+            mat_io = io.StringIO()
+            mat_writer = csv.writer(mat_io)
+            for row in att_data["matrix"]:
+                mat_writer.writerow(row)
+            zf.writestr("attendance/attendance_matrix.csv", mat_io.getvalue().encode("utf-8"))
+
+        raw_att_io = io.StringIO()
+        raw_att_writer = csv.writer(raw_att_io)
+        raw_att_writer.writerow(["Log ID", "Date", "Session Type", "Roll Number", "Student Name", "Status", "Method", "Marked At", "IP Address", "Key"])
+        for al in raw_attendance_logs:
+            raw_att_writer.writerow([al["id"], al["attendance_date"], al["session_type"], al["roll_number"], al["student_name"], al["status"], al["method"], al["marked_at"], al["ip_address"] or "", al["attendance_key"]])
+        zf.writestr("attendance/raw_attendance_logs.csv", raw_att_io.getvalue().encode("utf-8"))
+
+        if excluded_sessions:
+            ex_io = io.StringIO()
+            ex_writer = csv.writer(ex_io)
+            ex_writer.writerow(["Excluded Date", "Session Type", "Reason", "Excluded By", "Excluded At"])
+            for es in excluded_sessions:
+                ex_writer.writerow([es["excluded_date"], es["session_type"], es["reason"] or "", es["excluded_by_name"] or "", es["excluded_at"]])
+            zf.writestr("attendance/excluded_sessions.csv", ex_io.getvalue().encode("utf-8"))
+
+        # E. Coursework Subfolder
+        cw_summary_io = io.StringIO()
+        cw_summary_writer = csv.writer(cw_summary_io)
+        cw_summary_writer.writerow(["ID", "Type", "Topic", "Title", "Points", "Due Date", "Start Time", "End Time", "Allowed Types", "Exam Mode", "Created By", "Created At"])
+        
+        conn_cw = get_db()
+        for cw in coursework_items:
+            cw_summary_writer.writerow([
+                cw["id"], cw["type"], cw["topic_name"] or "General", cw["title"],
+                cw["points"], cw["due_date"] or "", cw["start_time"] or "", cw["end_time"] or "",
+                cw["allowed_types"] or "all", "Yes" if cw["is_exam_mode"] else "No",
+                cw["creator_name"] or "", cw["created_at"]
+            ])
+
+            clean_cw_title = re.sub(r'[^a-zA-Z0-9_-]', '_', cw["title"])[:30]
+            cw_folder = f"coursework/{cw['id']}_{clean_cw_title}"
+
+            cw_details = (
+                f"Coursework ID : {cw['id']}\n"
+                f"Title         : {cw['title']}\n"
+                f"Type          : {cw['type']}\n"
+                f"Topic         : {cw['topic_name'] or 'General'}\n"
+                f"Max Points    : {cw['points']}\n"
+                f"Due Date      : {cw['due_date'] or 'None'}\n"
+                f"Start Time    : {cw['start_time'] or 'None'}\n"
+                f"End Time      : {cw['end_time'] or 'None'}\n"
+                f"Exam Mode     : {'Yes' if cw['is_exam_mode'] else 'No'}\n"
+                f"Allowed Types : {cw['allowed_types'] or 'all'}\n"
+                f"Description   :\n{cw['description'] or 'No description'}\n"
+            )
+            zf.writestr(f"{cw_folder}/details.txt", cw_details)
+
+            cw_atts = conn_cw.execute("SELECT * FROM coursework_attachments WHERE coursework_id = ?", (cw["id"],)).fetchall()
+            for att in cw_atts:
+                if att["file_path"]:
+                    att_path = Path(att["file_path"])
+                    if att_path.exists():
+                        try:
+                            with open(att_path, "rb") as af:
+                                zf.writestr(f"{cw_folder}/attachments/{att['original_filename']}", af.read())
+                        except Exception:
+                            pass
+
+            subs = conn_cw.execute("SELECT * FROM submissions WHERE coursework_id = ?", (cw["id"],)).fetchall()
+            if subs:
+                sub_summary_io = io.StringIO()
+                sub_summary_writer = csv.writer(sub_summary_io)
+                sub_summary_writer.writerow(["Student ID", "Roll Number", "Student Name", "Status", "Grade", "Feedback", "Submitted At", "Is Late", "Late Minutes", "Original Filename", "SHA256", "Receipt Token"])
+                for s in subs:
+                    sub_summary_writer.writerow([
+                        s["student_id"], s["roll_number"], s["student_name"], s["status"],
+                        s["grade"] if s["grade"] is not None else "Ungraded", s["feedback"] or "",
+                        s["submitted_at"], "Yes" if s["is_late"] else "No", s["late_minutes"],
+                        s["original_filename"], s["sha256"], s["receipt_token"]
+                    ])
+                    if s["file_path"]:
+                        sf_path = Path(s["file_path"])
+                        if sf_path.exists():
+                            try:
+                                clean_orig = re.sub(r'[^a-zA-Z0-9._-]', '_', s["original_filename"])
+                                with open(sf_path, "rb") as sf:
+                                    zf.writestr(f"{cw_folder}/submissions/{s['roll_number']}_{clean_orig}", sf.read())
+                            except Exception:
+                                pass
+                zf.writestr(f"{cw_folder}/submissions_summary.csv", sub_summary_io.getvalue().encode("utf-8"))
+
+        conn_cw.close()
+        zf.writestr("coursework/coursework_overview.csv", cw_summary_io.getvalue().encode("utf-8"))
+
+        # F. Stream Announcements & Comments
+        if announcements:
+            ann_io = io.StringIO()
+            ann_writer = csv.writer(ann_io)
+            ann_writer.writerow(["ID", "Author", "Roll Number", "Posted At", "Is Pinned", "Content", "Attachment Name"])
+            for a in announcements:
+                ann_writer.writerow([a["id"], a["author_name"], a["author_roll"] or "", a["created_at"], "Yes" if a["is_pinned"] else "No", a["content"], a["attachment_name"] or ""])
+                if a["attachment_path"]:
+                    ap = Path(a["attachment_path"])
+                    if ap.exists():
+                        try:
+                            with open(ap, "rb") as apf:
+                                zf.writestr(f"stream/attachments/{a['attachment_name']}", apf.read())
+                        except Exception:
+                            pass
+            zf.writestr("stream/announcements.csv", ann_io.getvalue().encode("utf-8"))
+
+        if comments:
+            comm_io = io.StringIO()
+            comm_writer = csv.writer(comm_io)
+            comm_writer.writerow(["ID", "Context Type", "Context ID", "Author", "Roll Number", "Created At", "Comment"])
+            for c in comments:
+                comm_writer.writerow([c["id"], c["context_type"], c["context_id"], c["author_name"], c["author_roll"] or "", c["created_at"], c["content"]])
+            zf.writestr("stream/comments.csv", comm_io.getvalue().encode("utf-8"))
+
+    zip_buffer.seek(0)
+    safe_code = re.sub(r'[^a-zA-Z0-9_-]', '_', course['code'])
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    download_filename = f"{safe_code}_Full_Archive_{timestamp}.zip"
+
+    return send_file(
+        zip_buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=download_filename
+    )
 
 
 @app.route("/courses/<int:course_id>")
