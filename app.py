@@ -183,78 +183,74 @@ def filter_nl2br(s):
 
 
 # --- Database Connection & Schema Setup ---
+try:
+    from db_adapter import get_db, execute_db_write_with_retry
+except ImportError:
+    def get_db(read_only=False):
+        """
+        Returns an optimized SQLite connection with 256MB memory-mapped I/O,
+        64MB in-RAM page cache, and high busy timeout to fully exploit 64GB RAM.
+        """
+        conn = sqlite3.connect(DB_PATH, timeout=45.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 45000")
+        conn.execute("PRAGMA synchronous = NORMAL")
+        conn.execute("PRAGMA mmap_size = 268435456")  # 256 MB memory-mapped I/O directly in kernel memory
+        conn.execute("PRAGMA cache_size = -64000")    # 64 MB RAM cache per connection
+        conn.execute("PRAGMA temp_store = MEMORY")    # Sorts and temporary indices stored in RAM
+        if read_only:
+            conn.execute("PRAGMA query_only = ON")
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
 
-def get_db(read_only=False):
-    """
-    Returns an optimized SQLite connection with 256MB memory-mapped I/O,
-    64MB in-RAM page cache, and high busy timeout to fully exploit 64GB RAM.
-    """
-    conn = sqlite3.connect(DB_PATH, timeout=45.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout = 45000")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    conn.execute("PRAGMA mmap_size = 268435456")  # 256 MB memory-mapped I/O directly in kernel memory
-    conn.execute("PRAGMA cache_size = -64000")    # 64 MB RAM cache per connection
-    conn.execute("PRAGMA temp_store = MEMORY")    # Sorts and temporary indices stored in RAM
-    if read_only:
-        conn.execute("PRAGMA query_only = ON")
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
 
-
-def execute_db_write_with_retry(write_func, max_retries=6, base_delay=0.02):
-    """
-    Executes a database write callback function with automatic retry and exponential backoff
-    with random jitter on sqlite3.OperationalError (database is locked / busy).
-    Guarantees that sudden burst traffic (e.g. 100 students marking attendance or registering simultaneously)
-    is serialized smoothly in milliseconds rather than failing with 500 error.
-    Supports both write_func(conn) where connection is automatically provided, and write_func() where
-    the function handles its own connection.
-    """
-    import random
-    import inspect
-    last_err = None
-    takes_conn = False
-    try:
-        sig = inspect.signature(write_func)
-        takes_conn = len(sig.parameters) > 0
-    except Exception:
-        pass
-
-    for attempt in range(max_retries):
-        conn = None
+    def execute_db_write_with_retry(write_func, max_retries=6, base_delay=0.02):
+        import random
+        import inspect
+        last_err = None
+        takes_conn = False
         try:
-            if takes_conn:
-                conn = get_db()
-                result = write_func(conn)
-                conn.close()
-                return result
-            else:
-                return write_func()
-        except sqlite3.OperationalError as e:
-            if conn:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-            last_err = e
-            err_msg = str(e).lower()
-            if "locked" in err_msg or "busy" in err_msg:
-                sleep_time = (base_delay * (2 ** attempt)) + random.uniform(0.005, 0.025)
-                time.sleep(sleep_time)
-                continue
-            raise
+            sig = inspect.signature(write_func)
+            takes_conn = len(sig.parameters) > 0
         except Exception:
-            if conn:
-                try:
+            pass
+
+        for attempt in range(max_retries):
+            conn = None
+            try:
+                if takes_conn:
+                    conn = get_db()
+                    result = write_func(conn)
                     conn.close()
-                except Exception:
-                    pass
-            raise
-    raise last_err
+                    return result
+                else:
+                    return write_func()
+            except sqlite3.OperationalError as e:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                last_err = e
+                err_msg = str(e).lower()
+                if "locked" in err_msg or "busy" in err_msg:
+                    sleep_time = (base_delay * (2 ** attempt)) + random.uniform(0.005, 0.025)
+                    time.sleep(sleep_time)
+                    continue
+                raise
+            except Exception:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                raise
+        raise last_err
 
 
 def init_db():
+    if os.environ.get("DATABASE_BACKEND") == "postgres" or os.environ.get("DATABASE_URL", "").startswith("postgres"):
+        return
     conn = sqlite3.connect(DB_PATH, timeout=60.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
