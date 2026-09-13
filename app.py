@@ -549,14 +549,45 @@ def init_db():
             c.execute("ALTER TABLE courses ADD COLUMN google_sheet_sync_status TEXT DEFAULT NULL")
         if "attendance_feed_token" not in course_cols:
             c.execute("ALTER TABLE courses ADD COLUMN attendance_feed_token TEXT DEFAULT NULL")
+        if "gradebook_sheet_webhook_url" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN gradebook_sheet_webhook_url TEXT DEFAULT ''")
+        if "gradebook_sheet_sync_enabled" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN gradebook_sheet_sync_enabled INTEGER DEFAULT 0")
+        if "gradebook_sheet_last_synced" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN gradebook_sheet_last_synced TEXT DEFAULT NULL")
+        if "gradebook_sheet_sync_status" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN gradebook_sheet_sync_status TEXT DEFAULT NULL")
+        if "gradebook_feed_token" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN gradebook_feed_token TEXT DEFAULT NULL")
 
         # Pre-populate missing attendance_feed_tokens
         c.execute("SELECT id FROM courses WHERE attendance_feed_token IS NULL OR attendance_feed_token = ''")
         for crow in c.fetchall():
             cid = crow["id"] if isinstance(crow, sqlite3.Row) else crow[0]
             c.execute("UPDATE courses SET attendance_feed_token = ? WHERE id = ?", (secrets.token_hex(16), cid))
+
+        # Pre-populate missing gradebook_feed_tokens
+        c.execute("SELECT id FROM courses WHERE gradebook_feed_token IS NULL OR gradebook_feed_token = ''")
+        for crow in c.fetchall():
+            cid = crow["id"] if isinstance(crow, sqlite3.Row) else crow[0]
+            c.execute("UPDATE courses SET gradebook_feed_token = ? WHERE id = ?", (secrets.token_hex(16), cid))
     except Exception:
         pass
+
+    # Explicit column migration for PostgreSQL backend
+    try:
+        if db_adapter and getattr(db_adapter, "DATABASE_BACKEND", "") == "postgres":
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS gradebook_sheet_webhook_url text DEFAULT ''")
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS gradebook_sheet_sync_enabled integer DEFAULT 0")
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS gradebook_sheet_last_synced text DEFAULT NULL")
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS gradebook_sheet_sync_status text DEFAULT NULL")
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS gradebook_feed_token text DEFAULT NULL")
+            c.execute("SELECT id FROM courses WHERE gradebook_feed_token IS NULL OR gradebook_feed_token = ''")
+            for crow in c.fetchall():
+                cid = crow["id"] if isinstance(crow, dict) or hasattr(crow, "__getitem__") else crow[0]
+                c.execute("UPDATE courses SET gradebook_feed_token = %s WHERE id = %s", (secrets.token_hex(16), cid))
+    except Exception as e:
+        logger.warning(f"PostgreSQL courses column migration notice: {e}")
 
     # Migration for coursework table
     try:
@@ -4926,6 +4957,19 @@ def course_grades(course_id):
 
     # Teacher / Admin View: Canvas-style Gradebook Matrix
     grade_data = calculate_course_grades(course_id)
+    gradebook_feed_token = course["gradebook_feed_token"] if "gradebook_feed_token" in course.keys() and course["gradebook_feed_token"] else ""
+    if not gradebook_feed_token:
+        gradebook_feed_token = secrets.token_hex(16)
+        conn = get_db()
+        conn.execute("UPDATE courses SET gradebook_feed_token = ? WHERE id = ?", (gradebook_feed_token, course_id))
+        conn.commit()
+        conn.close()
+        course = dict(course)
+        course["gradebook_feed_token"] = gradebook_feed_token
+
+    gradebook_sheet_feed_url = url_for("api_course_grades_sheet_feed", course_id=course_id, token=gradebook_feed_token, _external=True)
+    gradebook_sheet_formula = f'=IMPORTDATA("{gradebook_sheet_feed_url}")'
+
     return render_template(
         "course_grades.html",
         course=course,
@@ -4936,6 +4980,8 @@ def course_grades(course_id):
         sub_map=grade_data["sub_map"],
         total_attendance_sessions=grade_data["total_attendance_sessions"],
         total_scheme_weight=grade_data["total_scheme_weight"],
+        gradebook_sheet_feed_url=gradebook_sheet_feed_url,
+        gradebook_sheet_formula=gradebook_sheet_formula,
         active_tab="grades",
         is_teacher_or_admin=True
     )
@@ -5307,40 +5353,62 @@ def grade_submission(course_id, coursework_id, submission_id):
     return redirect(request.referrer or url_for("course_grades", course_id=course_id))
 
 
-@app.route("/courses/<int:course_id>/grades/export-csv")
-@teacher_required
-def export_grades_csv(course_id):
-    course = get_course_or_404(course_id)
+def get_course_grades_matrix(course_id):
+    """
+    Builds the full Gradebook matrix across all enrolled students and sections.
+    Returns:
+      coursework_list: list of coursework items
+      categories: list of grading categories
+      students: list of student dictionaries with grades
+      matrix: 2D list suitable for CSV / Google Sheets setValues()
+    """
+    conn = get_db(read_only=True)
+    course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+    
+    # Map student_id to latest section recorded in attendance_logs
+    sec_rows = conn.execute("""
+        SELECT student_id, section FROM attendance_logs
+        WHERE course_id = ? AND section IS NOT NULL AND trim(section) != ''
+        ORDER BY id ASC
+    """, (course_id,)).fetchall()
+    conn.close()
+
+    student_section_map = {}
+    for r in sec_rows:
+        student_section_map[r["student_id"]] = r["section"]
+
+    default_section = (course["section"] if course and "section" in course.keys() and course["section"] else "") or "Section A"
+
     grade_data = calculate_course_grades(course_id)
+    coursework_list = grade_data["coursework_list"]
+    categories = grade_data["categories"]
+    students = grade_data["students"]
 
-    output = io.StringIO()
-    output.write("\ufeff")  # UTF-8 BOM
-    header = ["Roll Number", "Student Name", "Email"]
+    headers = ["Roll Number", "Student Name", "Email", "Section"]
+    for cw in coursework_list:
+        max_pts = cw["points"] if cw["points"] is not None else 100
+        headers.append(f"{cw['title']} (Max {max_pts})")
 
-    for cw in grade_data["coursework_list"]:
-        header.append(f"{cw['title']} (Max {cw['points']})")
+    for cat in categories:
+        headers.append(f"{cat['name']} ({cat['weight']}%)")
 
-    # Category subtotals
-    for cat in grade_data["categories"]:
-        header.append(f"{cat['name']} ({cat['weight']}%)")
+    headers.extend(["Final Weighted Score (100)", "Letter Grade"])
 
-    header.extend(["Final Weighted Score (100)", "Letter Grade"])
-    output.write(",".join([f'"{h}"' for h in header]) + "\n")
+    matrix_rows = [headers]
+    for s in students:
+        sec = student_section_map.get(s["id"], default_section)
+        row = [s["roll_number"] or "", s["display_name"], s["email"] or "", sec]
 
-    for s in grade_data["students"]:
-        row = [s["roll_number"] or "", s["display_name"], s["email"] or ""]
-        # Coursework scores
-        for cw in grade_data["coursework_list"]:
+        for cw in coursework_list:
             sc = s["cw_scores"].get(cw["id"])
             if sc and sc["grade"] is not None:
                 row.append(str(sc["grade"]))
-            elif sc and sc["status"] == "turned_in":
+            elif sc and sc["status"] in ("submitted", "turned_in"):
                 row.append("Turned In")
             else:
                 row.append("Missing")
 
-        # Category scores
-        for cat in grade_data["categories"]:
+        for cat in categories:
             cat_info = s["cat_scores"].get(cat["id"])
             if cat_info and cat_info["percentage"] is not None:
                 row.append(f"{cat_info['percentage']}% ({cat_info['weighted_points']} pts)")
@@ -5349,7 +5417,80 @@ def export_grades_csv(course_id):
 
         row.append(f"{s['final_grade']} / 100")
         row.append(s["letter_grade"])
-        output.write(",".join([f'"{c}"' for c in row]) + "\n")
+        matrix_rows.append(row)
+
+    return {
+        "course": course,
+        "coursework_list": coursework_list,
+        "categories": categories,
+        "students": students,
+        "matrix": matrix_rows
+    }
+
+
+def sync_course_grades_to_google_sheet(course_id):
+    """
+    Pushes the full Gradebook matrix across all sections and students to the configured Google Sheet Webhook URL.
+    """
+    conn = get_db()
+    course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+    if not course or not course["gradebook_sheet_webhook_url"]:
+        conn.close()
+        return False, "No Google Sheet Webhook URL configured."
+
+    webhook_url = course["gradebook_sheet_webhook_url"].strip()
+    data = get_course_grades_matrix(course_id)
+    payload = {
+        "course_id": course["id"],
+        "course_code": course["code"],
+        "course_title": course["title"],
+        "type": "gradebook",
+        "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total_students": len(data["students"]),
+        "matrix": data["matrix"]
+    }
+
+    try:
+        req = urllib.request.Request(
+            webhook_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            msg = f"Success ({len(data['students'])} students synced on {now_str})"
+            conn.execute("""
+                UPDATE courses
+                SET gradebook_sheet_last_synced = ?, gradebook_sheet_sync_status = ?
+                WHERE id = ?
+            """, (now_str, msg, course_id))
+            conn.commit()
+            conn.close()
+            return True, msg
+    except Exception as e:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        err_msg = f"Error: {str(e)[:120]}"
+        conn.execute("""
+            UPDATE courses
+            SET gradebook_sheet_last_synced = ?, gradebook_sheet_sync_status = ?
+            WHERE id = ?
+        """, (now_str, err_msg, course_id))
+        conn.commit()
+        conn.close()
+        return False, err_msg
+
+
+@app.route("/courses/<int:course_id>/grades/export-csv")
+@teacher_required
+def export_grades_csv(course_id):
+    course = get_course_or_404(course_id)
+    matrix_data = get_course_grades_matrix(course_id)
+
+    output = io.StringIO()
+    output.write("\ufeff")  # UTF-8 BOM
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+    for row in matrix_data["matrix"]:
+        writer.writerow(row)
 
     output.seek(0)
     clean_code = re.sub(r'[^a-zA-Z0-9_-]', '_', course["code"])
@@ -5360,6 +5501,75 @@ def export_grades_csv(course_id):
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@app.route("/api/courses/<int:course_id>/grades/sheet-feed")
+def api_course_grades_sheet_feed(course_id):
+    """
+    Publicly accessible authenticated endpoint for Google Sheets =IMPORTDATA formula.
+    Validates token against courses.gradebook_feed_token.
+    """
+    token = request.args.get("token", "").strip()
+    if not token:
+        abort(403, "Missing Google Sheet authentication token.")
+
+    conn = get_db()
+    course = conn.execute("SELECT id, code, gradebook_feed_token FROM courses WHERE id = ?", (course_id,)).fetchone()
+    conn.close()
+
+    if not course or not course["gradebook_feed_token"] or course["gradebook_feed_token"] != token:
+        abort(403, "Invalid Google Sheet authentication token.")
+
+    data = get_course_grades_matrix(course_id)
+    output = io.StringIO()
+    output.write("\ufeff")  # UTF-8 BOM
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+    for row in data["matrix"]:
+        writer.writerow(row)
+
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Type": "text/csv; charset=utf-8",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
+
+
+@app.route("/courses/<int:course_id>/grades/google-sheet-config", methods=["POST"])
+@teacher_required
+def course_grades_google_sheet_config(course_id):
+    course = get_course_or_404(course_id)
+    webhook_url = request.form.get("webhook_url", "").strip()
+    daily_sync = 1 if request.form.get("daily_sync") else 0
+
+    conn = get_db()
+    conn.execute("""
+        UPDATE courses
+        SET gradebook_sheet_webhook_url = ?, gradebook_sheet_sync_enabled = ?
+        WHERE id = ?
+    """, (webhook_url, daily_sync, course_id))
+    conn.commit()
+    conn.close()
+
+    flash("Gradebook Google Sheet backup settings updated successfully.", "success")
+    return redirect(url_for("course_grades", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/grades/sync-google-sheet", methods=["POST"])
+@teacher_required
+def course_grades_sync_google_sheet(course_id):
+    course = get_course_or_404(course_id)
+    success, msg = sync_course_grades_to_google_sheet(course_id)
+    if success:
+        flash(f"✅ Gradebook Google Sheet Sync: {msg}", "success")
+    else:
+        flash(f"❌ Gradebook Google Sheet Sync Failed: {msg}", "danger")
+    return redirect(url_for("course_grades", course_id=course_id))
 
 
 @app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/download-all-zip")
@@ -8173,7 +8383,26 @@ def start_daily_google_sheet_backup_daemon():
                         try:
                             sync_course_attendance_to_google_sheet(c["id"])
                         except Exception as err:
-                            app.logger.warning("Daily Google Sheet backup error for course %s: %s", c["id"], err)
+                            app.logger.warning("Daily Google Sheet attendance backup error for course %s: %s", c["id"], err)
+
+                # Daily Gradebook backup for all sections & students
+                conn = get_db()
+                gb_courses = conn.execute("""
+                    SELECT id, code, gradebook_sheet_webhook_url, gradebook_sheet_last_synced
+                    FROM courses
+                    WHERE gradebook_sheet_sync_enabled = 1
+                      AND gradebook_sheet_webhook_url IS NOT NULL
+                      AND trim(gradebook_sheet_webhook_url) != ''
+                """).fetchall()
+                conn.close()
+
+                for c in gb_courses:
+                    last_synced = c["gradebook_sheet_last_synced"] or ""
+                    if not last_synced.startswith(today_str):
+                        try:
+                            sync_course_grades_to_google_sheet(c["id"])
+                        except Exception as err:
+                            app.logger.warning("Daily Google Sheet gradebook backup error for course %s: %s", c["id"], err)
             except Exception as e:
                 app.logger.warning("Daily Google Sheet backup loop exception: %s", e)
 
@@ -8216,12 +8445,27 @@ def messages_view():
     if curr_role == "student":
         count_row = conn.execute("SELECT COUNT(*) FROM course_enrollments WHERE user_id = ? AND role = 'student'", (curr_id,)).fetchone()
         student_enrolled_courses_count = count_row[0] if count_row else 0
-        if course_context_id:
-            enrolled = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ? AND role = 'student'", (course_context_id, curr_id)).fetchone()
-            if not enrolled:
-                flash("You must be registered in this course to access its messages.", "warning")
-                conn.close()
+        if not course_context_id:
+            student_courses = conn.execute("""
+                SELECT course_id FROM course_enrollments
+                WHERE user_id = ? AND role = 'student'
+                ORDER BY course_id ASC
+            """, (curr_id,)).fetchall()
+            conn.close()
+            if len(student_courses) == 1:
+                return redirect(url_for("course_messages", course_id=student_courses[0]["course_id"]))
+            elif len(student_courses) > 1:
+                flash("Please select a course to view and send messages to your course instructor and TAs.", "info")
                 return redirect(url_for("dashboard"))
+            else:
+                flash("You must be registered in a course to access messages.", "warning")
+                return redirect(url_for("dashboard"))
+
+        enrolled = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ? AND role = 'student'", (course_context_id, curr_id)).fetchone()
+        if not enrolled:
+            flash("You must be registered in this course to access its messages.", "warning")
+            conn.close()
+            return redirect(url_for("dashboard"))
 
     if course_context_id:
         current_course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_context_id,)).fetchone()
@@ -8366,7 +8610,38 @@ def messages_view():
                 conn.close()
                 if course_context_id:
                     return redirect(url_for("course_messages", course_id=course_context_id))
-                return redirect(url_for("messages_view"))
+                return redirect(url_for("dashboard"))
+
+            # If sender is student, ensure target is a registered teacher/TA in their course
+            if not sender_is_staff:
+                is_course_staff = False
+                if course_context_id:
+                    staff_match = conn.execute("""
+                        SELECT 1 FROM courses c
+                        WHERE c.id = ? AND c.teacher_id = ?
+                        UNION
+                        SELECT 1 FROM course_enrollments ce
+                        WHERE ce.course_id = ? AND ce.user_id = ? AND ce.role IN ('teacher', 'ta', 'co-teacher')
+                    """, (course_context_id, target_user_id, course_context_id, target_user_id)).fetchone()
+                    if staff_match:
+                        is_course_staff = True
+                else:
+                    staff_match = conn.execute("""
+                        SELECT 1 FROM courses c
+                        JOIN course_enrollments se ON se.course_id = c.id AND se.user_id = ? AND se.role = 'student'
+                        WHERE c.teacher_id = ?
+                           OR c.id IN (SELECT ce.course_id FROM course_enrollments ce WHERE ce.user_id = ? AND ce.role IN ('teacher', 'ta', 'co-teacher'))
+                    """, (curr_id, target_user_id, target_user_id)).fetchone()
+                    if staff_match:
+                        is_course_staff = True
+
+                if not is_course_staff:
+                    flash("Students can only message teachers and TAs registered in their courses.", "danger")
+                    conn.close()
+                    if course_context_id:
+                        return redirect(url_for("course_messages", course_id=course_context_id))
+                    return redirect(url_for("dashboard"))
+
             active_contact = target_user
     elif conversations:
         active_contact = conversations[0]["partner"]
@@ -8415,9 +8690,17 @@ def api_get_messages(other_user_id):
         conn.close()
         return jsonify({"error": "User not found"}), 404
 
-    if curr_role == "student" and other_user["role"] == "student":
-        conn.close()
-        return jsonify({"error": "Direct messaging between students is strictly prohibited."}), 403
+    if curr_role == "student":
+        # Strict student protection: verify other_user is a registered teacher or TA in student's enrolled course
+        shared_staff = conn.execute("""
+            SELECT 1 FROM courses c
+            JOIN course_enrollments se ON se.course_id = c.id AND se.user_id = ? AND se.role = 'student'
+            WHERE c.teacher_id = ?
+               OR c.id IN (SELECT ce.course_id FROM course_enrollments ce WHERE ce.user_id = ? AND ce.role IN ('teacher', 'ta', 'co-teacher'))
+        """, (curr_id, other_user_id, other_user_id)).fetchone()
+        if not shared_staff:
+            conn.close()
+            return jsonify({"error": "Students can only access messages with instructors and TAs registered in their enrolled courses."}), 403
 
     # Mark as read
     conn.execute("UPDATE direct_messages SET is_read = 1 WHERE recipient_id = ? AND sender_id = ?", (curr_id, other_user_id))
@@ -8634,35 +8917,39 @@ def api_send_message():
         conn.close()
         return jsonify({"error": "Direct messaging between students is strictly prohibited by academic policy."}), 403
 
-    # Registration Policy: Students must be registered/enrolled in a course to send messages
+    # Registration Policy: Students can ONLY message teachers and TAs registered in their courses
     if not is_sender_staff:
         if course_id:
             enrolled = conn.execute(
-                "SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?",
+                "SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ? AND role = 'student'",
                 (course_id, curr_id)
             ).fetchone()
             if not enrolled:
                 conn.close()
                 return jsonify({"error": "You must be registered in this course to send messages."}), 403
+
+            course_staff = conn.execute("""
+                SELECT 1 FROM courses c
+                WHERE c.id = ? AND c.teacher_id = ?
+                UNION
+                SELECT 1 FROM course_enrollments ce
+                WHERE ce.course_id = ? AND ce.user_id = ? AND ce.role IN ('teacher', 'ta', 'co-teacher')
+            """, (course_id, recipient_id, course_id, recipient_id)).fetchone()
+            if not course_staff:
+                conn.close()
+                return jsonify({"error": "Students can only message teachers and TAs registered in this course."}), 403
         else:
-            if recipient["role"] != "admin":
-                shared_course = conn.execute("""
-                    SELECT 1 FROM course_enrollments ce
-                    JOIN courses c ON ce.course_id = c.id
-                    WHERE ce.user_id = ?
-                      AND (c.teacher_id = ? OR c.id IN (SELECT course_id FROM course_enrollments WHERE user_id = ? AND role IN ('teacher', 'ta', 'co-teacher')))
-                """, (curr_id, recipient_id, recipient_id)).fetchone()
-                if not shared_course:
-                    conn.close()
-                    return jsonify({"error": "You must be registered in a course with this instructor or TA to send messages."}), 403
-            else:
-                any_enrollment = conn.execute(
-                    "SELECT 1 FROM course_enrollments WHERE user_id = ?",
-                    (curr_id,)
-                ).fetchone()
-                if not any_enrollment:
-                    conn.close()
-                    return jsonify({"error": "You must be registered in a course to send messages."}), 403
+            shared_course = conn.execute("""
+                SELECT c.id FROM courses c
+                JOIN course_enrollments se ON se.course_id = c.id AND se.user_id = ? AND se.role = 'student'
+                WHERE c.teacher_id = ?
+                   OR c.id IN (SELECT ce.course_id FROM course_enrollments ce WHERE ce.user_id = ? AND ce.role IN ('teacher', 'ta', 'co-teacher'))
+                LIMIT 1
+            """, (curr_id, recipient_id, recipient_id)).fetchone()
+            if not shared_course:
+                conn.close()
+                return jsonify({"error": "Students can only message teachers and TAs registered in their enrolled courses."}), 403
+            course_id = shared_course[0]
 
     # Lookup course details for notification and context
     course_info = None
@@ -8759,6 +9046,41 @@ def api_mark_messages_read(other_user_id):
     conn.commit()
     conn.close()
     return jsonify({"success": True})
+
+
+@app.route("/api/app/version")
+def api_app_version():
+    """
+    Returns latest Hoodle LMS Android App version metadata.
+    Used for in-app update checks and auto-updatable APK workflows.
+    """
+    apk_dir = os.path.join(app.root_path, "static", "downloads")
+    apk_path = os.path.join(apk_dir, "hoodle.apk")
+    if not os.path.exists(apk_path):
+        alt_path = os.path.join(app.root_path, "static", "hoodle.apk")
+        if os.path.exists(alt_path):
+            apk_path = alt_path
+
+    apk_exists = os.path.exists(apk_path)
+    file_size = os.path.getsize(apk_path) if apk_exists else 0
+
+    return jsonify({
+        "app_name": "Hoodle LMS",
+        "package_name": "com.accl.hoodle",
+        "latest_version": "1.2.0",
+        "version_code": 3,
+        "min_version": "1.0.0",
+        "release_date": "2026-09-13",
+        "apk_available": apk_exists,
+        "apk_size_bytes": file_size,
+        "download_url": url_for("download_apk", _external=True),
+        "changelog": [
+            "Course-scoped student messaging with registered teachers & TAs",
+            "Automated daily Google Sheets Grade Book synchronization",
+            "Support for multi-section student grade reporting",
+            "High-concurrency cluster performance optimizations"
+        ]
+    })
 
 
 @app.route("/app.apk")

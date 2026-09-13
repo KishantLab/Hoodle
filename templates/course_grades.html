@@ -275,6 +275,9 @@
         <button onclick="openModal('gradingPolicyModal')" class="btn btn-secondary btn-sm" style="font-weight: 700;">
           ⚖️ Weights & Formula
         </button>
+        <button onclick="openModal('gradebookSheetSyncModal')" class="btn btn-secondary btn-sm" style="font-weight: 700; color: #15803d; border-color: #86efac; background: #f0fdf4;">
+          📊 Google Sheet Sync
+        </button>
         <button onclick="openModal('importGradesModal')" class="btn btn-secondary btn-sm" style="font-weight: 700; color: #1e40af;">
           📥 Bulk Import (Excel/CSV)
         </button>
@@ -727,6 +730,135 @@
     </div>
   </div>
 
+  <!-- Gradebook Google Sheet Sync Modal -->
+  <div id="gradebookSheetSyncModal" class="modal-backdrop" style="display: none;">
+    <div class="modal-content" style="max-width: 680px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" style="color: #166534; display: flex; align-items: center; gap: 0.5rem;">
+            <span>📊</span> Google Sheet Gradebook Synchronization
+          </h3>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0.2rem 0 0 0;">
+            Sync full student grade matrix across all sections with live formulas or automated daily Webhooks.
+          </p>
+        </div>
+        <button class="modal-close" onclick="closeModal('gradebookSheetSyncModal')">&times;</button>
+      </div>
+
+      <!-- Method 1: Instant 1-Click Formula (Zero Setup) -->
+      <div class="card" style="padding: 1.25rem; margin-bottom: 1.25rem; background: #f0fdf4; border: 1px solid #bbf7d0;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem; flex-wrap: wrap; gap: 0.5rem;">
+          <span style="font-size: 0.78rem; font-weight: 800; text-transform: uppercase; color: #166534; letter-spacing: 0.04em;">
+            ⭐ Method 1: 1-Click Formula (Recommended • Zero Setup)
+          </span>
+          <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 0.72rem; font-weight: 700;">Automatic Live Refresh</span>
+        </div>
+        <p style="font-size: 0.85rem; color: #166534; margin: 0 0 0.6rem 0; line-height: 1.45;">
+          Open any Google Sheet and paste this formula into cell <strong>A1</strong>. Google Sheets will automatically import and daily-refresh the full student Grade Book matrix across all sections:
+        </p>
+
+        <div style="position: relative; margin-bottom: 0.6rem;">
+          <input type="text" id="gradebookSheetFormulaInput" readonly value="{{ gradebook_sheet_formula }}" style="width: 100%; font-family: monospace; font-size: 0.82rem; padding: 0.65rem 6.5rem 0.65rem 0.75rem; background: white; border: 1px solid #86efac; border-radius: var(--radius-sm); color: #14532d; font-weight: 600;">
+          <button type="button" class="btn btn-sm" onclick="copyGradebookFormulaToClipboard()" id="copyGradebookFormulaBtn" style="position: absolute; right: 4px; top: 4px; bottom: 4px; background: #16a34a; color: white; border: none; font-weight: 700; padding: 0 0.85rem; border-radius: 4px; cursor: pointer;">
+            📋 Copy Formula
+          </button>
+        </div>
+
+        <div style="font-size: 0.78rem; color: #15803d; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.4rem;">
+          <span>✅ Includes Roll Number, Student Name, Email, Section, all Coursework scores, Category subtotals, Weighted Score, and Letter Grade.</span>
+          <a href="{{ gradebook_sheet_feed_url }}" target="_blank" style="color: #166534; text-decoration: underline; font-weight: 600;">Preview Live CSV Feed ↗</a>
+        </div>
+      </div>
+
+      <!-- Method 2: Automated Daily Webhook Push (Apps Script) -->
+      <div class="card" style="padding: 1.25rem; margin-bottom: 1rem; border: 1px solid var(--border);">
+        <div style="margin-bottom: 0.75rem;">
+          <span style="font-size: 0.78rem; font-weight: 800; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.04em;">
+            ⚙️ Method 2: Automated Daily Push via Webhook
+          </span>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0.3rem 0 0 0;">
+            Directly push the course Grade Book matrix to your Google Sheet on a daily background schedule or on-demand.
+          </p>
+        </div>
+
+        <form action="{{ url_for('course_grades_google_sheet_config', course_id=course.id) }}" method="POST">
+          <div style="margin-bottom: 0.85rem;">
+            <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+              Google Apps Script Webhook URL
+            </label>
+            <input type="url" name="webhook_url" value="{{ course.gradebook_sheet_webhook_url or '' }}" placeholder="https://script.google.com/macros/s/.../exec" style="width: 100%; padding: 0.55rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem;">
+          </div>
+
+          <div style="margin-bottom: 1rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem; font-weight: 600;">
+              <input type="checkbox" name="daily_sync" value="1" {% if course.gradebook_sheet_sync_enabled %}checked{% endif %}>
+              <span>Enable automated daily background backup (runs every night across all sections)</span>
+            </label>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+            <button type="submit" class="btn btn-primary" style="font-weight: 700;">
+              💾 Save Webhook Settings
+            </button>
+          </div>
+        </form>
+
+        {% if course.gradebook_sheet_webhook_url %}
+          <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+              <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-main);">
+                Last Sync: <span style="font-weight: 500; color: var(--text-muted);">{{ course.gradebook_sheet_last_synced or 'Never' }}</span>
+              </div>
+              {% if course.gradebook_sheet_sync_status %}
+                <div style="font-size: 0.78rem; color: {% if 'Success' in course.gradebook_sheet_sync_status %}var(--success){% else %}var(--danger){% endif %}; margin-top: 0.15rem;">
+                  {{ course.gradebook_sheet_sync_status }}
+                </div>
+              {% endif %}
+            </div>
+            <form action="{{ url_for('course_grades_sync_google_sheet', course_id=course.id) }}" method="POST" style="margin: 0;">
+              <button type="submit" class="btn btn-secondary btn-sm" style="font-weight: 700; color: #1e40af; border-color: #93c5fd; background: #eff6ff;">
+                ⚡ Sync Now to Google Sheet
+              </button>
+            </form>
+          </div>
+        {% endif %}
+
+        <!-- Apps Script Code Accordion -->
+        <details style="margin-top: 1rem; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.75rem; background: var(--bg-alt);">
+          <summary style="font-size: 0.82rem; font-weight: 700; cursor: pointer; color: var(--primary);">
+            ℹ️ 1-Minute Apps Script Setup Guide (Click to expand)
+          </summary>
+          <ol style="font-size: 0.82rem; color: var(--text-muted); margin: 0.6rem 0 0.5rem 1.25rem; padding: 0; line-height: 1.5;">
+            <li>In your Google Sheet, click <strong>Extensions &gt; Apps Script</strong>.</li>
+            <li>Paste the code below and save:</li>
+          </ol>
+          <pre id="gradebookAppsScriptCode" style="background: #0f172a; color: #e2e8f0; padding: 0.75rem; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; margin: 0.4rem 0;">function doPost(e) {
+  var data = JSON.parse(e.postData.contents);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  sheet.clearContents();
+  var matrix = data.matrix;
+  if (matrix &amp;&amp; matrix.length &gt; 0) {
+    sheet.getRange(1, 1, matrix.length, matrix[0].length).setValues(matrix);
+  }
+  return ContentService.createTextOutput("OK");
+}</pre>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="copyGradebookAppsScriptCode()" id="copyGradebookScriptBtn" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;">
+            📋 Copy Apps Script Code
+          </button>
+          <ol start="3" style="font-size: 0.82rem; color: var(--text-muted); margin: 0.6rem 0 0 1.25rem; padding: 0; line-height: 1.5;">
+            <li>Click <strong>Deploy &gt; New deployment</strong> &rarr; Select <strong>Web app</strong>.</li>
+            <li>Set <em>Execute as</em>: <strong>Me</strong> and <em>Who has access</em>: <strong>Anyone</strong>.</li>
+            <li>Click <strong>Deploy</strong>, copy the Web App URL, and paste it into the Webhook URL field above.</li>
+          </ol>
+        </details>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('gradebookSheetSyncModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     function openQuickGradeModal(studentId, studentName, courseworkId, courseworkTitle, grade, feedback) {
       document.getElementById('qgStudentId').value = studentId;
@@ -737,6 +869,32 @@
       document.getElementById('qgFeedbackInput').value = feedback;
       openModal('quickGradeModal');
       setTimeout(() => document.getElementById('qgGradeInput').focus(), 150);
+    }
+
+    function copyGradebookFormulaToClipboard() {
+      const input = document.getElementById('gradebookSheetFormulaInput');
+      input.select();
+      input.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(input.value).then(() => {
+        const btn = document.getElementById('copyGradebookFormulaBtn');
+        btn.textContent = '✅ Copied!';
+        btn.style.background = '#15803d';
+        setTimeout(() => {
+          btn.textContent = '📋 Copy Formula';
+          btn.style.background = '#16a34a';
+        }, 2500);
+      });
+    }
+
+    function copyGradebookAppsScriptCode() {
+      const code = document.getElementById('gradebookAppsScriptCode').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        const btn = document.getElementById('copyGradebookScriptBtn');
+        btn.textContent = '✅ Code Copied!';
+        setTimeout(() => {
+          btn.textContent = '📋 Copy Apps Script Code';
+        }, 2500);
+      });
     }
 
     function updateTotalWeightMeter() {
