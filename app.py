@@ -1484,12 +1484,16 @@ def index():
 @login_required
 def dashboard():
     user = get_current_user()
+    if not user:
+        session.clear()
+        flash("Your session has expired. Please sign in again.", "warning")
+        return redirect(url_for("login"))
     conn = get_db()
 
     courses = []
     upcoming_deadlines = []
     pending_invitations = []
-    locker_stats = {"used_bytes": 0, "quota_bytes": user["storage_quota_bytes"], "percent": 0}
+    locker_stats = {"used_bytes": 0, "quota_bytes": user["storage_quota_bytes"] or DEFAULT_LOCKER_QUOTA, "percent": 0}
 
     if user["role"] == "student":
         user_roll = (user["roll_number"] or "").strip().upper()
