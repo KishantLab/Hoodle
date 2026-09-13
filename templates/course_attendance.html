@@ -178,7 +178,14 @@
         <a href="{{ url_for('attendance_projector', course_id=course.id) }}" target="_blank" class="btn btn-primary" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700;">
           <span>📽️</span>
           <span>Launch QR Projector</span>
+          <span style="font-size: 0.72rem; background: rgba(255,255,255,0.25); padding: 0.15rem 0.45rem; border-radius: 9999px; margin-left: 0.25rem;">{{ qr_rotation_seconds or 20 }}s</span>
         </a>
+        {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('admin_attendance_settings') }}" class="btn btn-secondary" style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.82rem;" title="Configure QR Expiration Time (Admin)">
+          <span>⚙️</span>
+          <span>QR Timer: {{ qr_rotation_seconds or 20 }}s</span>
+        </a>
+        {% endif %}
         <a href="{{ url_for('attendance_export_csv', course_id=course.id) }}" class="btn btn-secondary" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 600;" title="Download complete session-by-session student attendance matrix">
           <span>📤</span>
           <span>Export Detailed CSV (Session-by-Session)</span>

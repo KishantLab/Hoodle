@@ -6198,19 +6198,160 @@ def admin_clear_sent_email_queue():
     return redirect(url_for("admin_email_settings"))
 
 
+# --- Admin Attendance & QR Expiration Settings ---
+
+@app.route("/admin/attendance")
+@admin_required
+def admin_attendance_settings():
+    """Renders the Admin Attendance & QR Expiration configuration console."""
+    current_rotation = get_attendance_rotation_seconds()
+    conn = get_db(read_only=True)
+    stats_row = conn.execute("""
+        SELECT 
+            COUNT(*) as total_logs,
+            COUNT(DISTINCT course_id) as active_courses,
+            COUNT(DISTINCT attendance_date) as total_days
+        FROM attendance_logs
+    """).fetchone()
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_row = conn.execute("""
+        SELECT COUNT(*) as today_count
+        FROM attendance_logs
+        WHERE attendance_date = ?
+    """, (today_str,)).fetchone()
+
+    recent_logs = conn.execute("""
+        SELECT al.*, c.code as course_code, c.title as course_title
+        FROM attendance_logs al
+        LEFT JOIN courses c ON al.course_id = c.id
+        ORDER BY al.id DESC
+        LIMIT 20
+    """).fetchall()
+    conn.close()
+
+    total_logs = stats_row["total_logs"] if stats_row else 0
+    active_courses = stats_row["active_courses"] if stats_row else 0
+    today_count = today_row["today_count"] if today_row else 0
+
+    return render_template(
+        "admin_attendance.html",
+        current_rotation=current_rotation,
+        min_rotation=ATTENDANCE_MIN_ROTATION_SECONDS,
+        total_logs=total_logs,
+        active_courses=active_courses,
+        today_count=today_count,
+        recent_logs=recent_logs
+    )
+
+
+@app.route("/admin/attendance/settings", methods=["POST"])
+@admin_required
+def admin_update_attendance_settings():
+    """Updates the global dynamic attendance QR code expiration / rotation period."""
+    raw_val = request.form.get("qr_rotation_seconds", "").strip()
+    try:
+        val = int(raw_val)
+    except (ValueError, TypeError):
+        flash("Please enter a valid integer number of seconds.", "danger")
+        return redirect(url_for("admin_attendance_settings"))
+
+    if val < ATTENDANCE_MIN_ROTATION_SECONDS:
+        flash(f"⚠️ Anti-Proxy Security Policy: QR expiration time cannot be less than {ATTENDANCE_MIN_ROTATION_SECONDS} seconds.", "danger")
+        return redirect(url_for("admin_attendance_settings"))
+
+    saved_val = set_attendance_rotation_seconds(val)
+    flash(f"✅ QR Code Expiration Time successfully updated to {saved_val} seconds (Auto-rotates every {saved_val}s).", "success")
+    return redirect(url_for("admin_attendance_settings"))
+
+
+@app.route("/admin/attendance/reset", methods=["POST"])
+@admin_required
+def admin_reset_attendance_settings():
+    """Resets the dynamic QR rotation interval back to the 20-second default."""
+    saved_val = set_attendance_rotation_seconds(ATTENDANCE_DEFAULT_ROTATION_SECONDS)
+    flash("✅ QR Code Expiration Time reset to default (20 seconds).", "info")
+    return redirect(url_for("admin_attendance_settings"))
+
 
 # --- Dynamic Anti-Proxy QR Attendance System ---
 
-ATTENDANCE_ROTATION_SECONDS = 20  # QR code rotates dynamically every 20 seconds
+ATTENDANCE_MIN_ROTATION_SECONDS = 20
+ATTENDANCE_DEFAULT_ROTATION_SECONDS = 20
+ATTENDANCE_ROTATION_SECONDS = 20
+
+_attendance_rotation_cache = {
+    "value": 20,
+    "last_check": 0.0
+}
+
+
+def get_attendance_rotation_seconds(course_id=None):
+    """
+    Retrieves the active QR code expiration/rotation interval in seconds.
+    Enforces a strict minimum of 20 seconds for anti-proxy security.
+    Cached in-memory to execute in sub-microseconds without database overhead.
+    """
+    global ATTENDANCE_ROTATION_SECONDS
+    now = time.time()
+    if (now - _attendance_rotation_cache["last_check"]) < 5.0:
+        return _attendance_rotation_cache["value"]
+
+    val = ATTENDANCE_DEFAULT_ROTATION_SECONDS
+    try:
+        conn = get_db(read_only=True)
+        row = conn.execute("SELECT value FROM system_settings WHERE key = 'attendance_qr_rotation_seconds'").fetchone()
+        conn.close()
+        if row and row["value"]:
+            try:
+                parsed = int(str(row["value"]).strip())
+                if parsed >= ATTENDANCE_MIN_ROTATION_SECONDS:
+                    val = parsed
+            except (ValueError, TypeError):
+                pass
+    except Exception:
+        pass
+
+    _attendance_rotation_cache["value"] = val
+    _attendance_rotation_cache["last_check"] = now
+    ATTENDANCE_ROTATION_SECONDS = val
+    return val
+
+
+def set_attendance_rotation_seconds(seconds):
+    """
+    Persists and caches the dynamic QR code expiration/rotation interval in seconds.
+    Enforces a minimum of 20 seconds.
+    """
+    global ATTENDANCE_ROTATION_SECONDS
+    sec = max(ATTENDANCE_MIN_ROTATION_SECONDS, int(seconds))
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def _do_save(conn):
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("""
+            INSERT INTO system_settings (key, value, updated_at)
+            VALUES ('attendance_qr_rotation_seconds', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        """, (str(sec), now_str))
+        conn.commit()
+        return sec
+
+    res = execute_db_write_with_retry(_do_save)
+    _attendance_rotation_cache["value"] = res
+    _attendance_rotation_cache["last_check"] = time.time()
+    ATTENDANCE_ROTATION_SECONDS = res
+    return res
 
 
 def get_dynamic_attendance_token(course_id, session_type="Lecture", time_block=None):
     """
-    Generates a cryptographic 8-character rotating token based on 20-second time blocks.
-    Anti-Proxy Protection: Any photo/link shared expires in 20 seconds.
+    Generates a cryptographic 8-character rotating token based on configurable time blocks (>= 20s).
+    Anti-Proxy Protection: Any photo/link shared expires when the configured interval elapses.
     """
+    rot_sec = get_attendance_rotation_seconds(course_id)
     if time_block is None:
-        time_block = int(time.time() // ATTENDANCE_ROTATION_SECONDS)
+        time_block = int(time.time() // rot_sec)
     raw = f"{SECRET_KEY}_ATTEND_{course_id}_{session_type.upper()}_{time_block}"
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     return digest[:8].upper()
@@ -6218,12 +6359,13 @@ def get_dynamic_attendance_token(course_id, session_type="Lecture", time_block=N
 
 def validate_dynamic_attendance_token(course_id, session_type, scanned_token):
     """
-    Validates token against current 45-second block and immediately preceding block
-    (allowing 30s grace boundary for students scanning near transition).
+    Validates token against current block and immediately preceding block
+    (allowing a full rotation window grace boundary for students scanning near transition).
     """
     if not scanned_token:
         return False
-    current_block = int(time.time() // ATTENDANCE_ROTATION_SECONDS)
+    rot_sec = get_attendance_rotation_seconds(course_id)
+    current_block = int(time.time() // rot_sec)
     valid_tokens = [
         get_dynamic_attendance_token(course_id, session_type, current_block),
         get_dynamic_attendance_token(course_id, session_type, current_block - 1)
@@ -6231,8 +6373,9 @@ def validate_dynamic_attendance_token(course_id, session_type, scanned_token):
     return scanned_token.strip().upper() in valid_tokens
 
 
-def get_attendance_seconds_remaining():
-    return int(ATTENDANCE_ROTATION_SECONDS - (time.time() % ATTENDANCE_ROTATION_SECONDS))
+def get_attendance_seconds_remaining(course_id=None):
+    rot_sec = get_attendance_rotation_seconds(course_id)
+    return int(rot_sec - (time.time() % rot_sec))
 
 
 def generate_qr_svg(data_url):
@@ -6275,11 +6418,12 @@ def attendance_qr_svg(course_id):
 def api_attendance_token(course_id):
     """API for projector screen to fetch rotating dynamic token and stats."""
     session_type = request.args.get("type", "Lecture")
+    rotation_sec = get_attendance_rotation_seconds(course_id)
     token = get_dynamic_attendance_token(course_id, session_type)
-    seconds_remaining = get_attendance_seconds_remaining()
+    seconds_remaining = get_attendance_seconds_remaining(course_id)
     
     today_str = datetime.now().strftime("%Y-%m-%d")
-    conn = get_db()
+    conn = get_db(read_only=True)
     count_row = conn.execute("""
         SELECT COUNT(*) as count FROM attendance_logs
         WHERE course_id = ? AND session_type = ? AND attendance_date = ?
@@ -6289,7 +6433,7 @@ def api_attendance_token(course_id):
     return jsonify({
         "token": token,
         "seconds_remaining": seconds_remaining,
-        "rotation_interval": ATTENDANCE_ROTATION_SECONDS,
+        "rotation_interval": rotation_sec,
         "session_type": session_type,
         "attendees_count": count_row["count"] if count_row else 0
     })
@@ -6390,12 +6534,12 @@ def attendance_projector(course_id):
     """
     course = get_course_or_404(course_id)
     session_type = request.args.get("type", "Lecture")
-    
+    rotation_sec = get_attendance_rotation_seconds(course_id)
     token = get_dynamic_attendance_token(course_id, session_type)
-    seconds_remaining = get_attendance_seconds_remaining()
+    seconds_remaining = get_attendance_seconds_remaining(course_id)
     
     today_str = datetime.now().strftime("%Y-%m-%d")
-    conn = get_db()
+    conn = get_db(read_only=True)
     count_row = conn.execute("""
         SELECT COUNT(*) as count FROM attendance_logs
         WHERE course_id = ? AND session_type = ? AND attendance_date = ?
@@ -6410,7 +6554,7 @@ def attendance_projector(course_id):
         session_type=session_type,
         initial_token=token,
         seconds_remaining=seconds_remaining,
-        rotation_interval=ATTENDANCE_ROTATION_SECONDS,
+        rotation_interval=rotation_sec,
         attendees_count=attendees_count,
         today_str=today_str
     )
@@ -6710,7 +6854,8 @@ def course_attendance(course_id):
             attendance_pct=0.0,
             active_tab="attendance",
             google_sheet_feed_url=google_sheet_feed_url,
-            google_sheet_formula=google_sheet_formula
+            google_sheet_formula=google_sheet_formula,
+            qr_rotation_seconds=get_attendance_rotation_seconds(course_id)
         )
 
 

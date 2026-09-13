@@ -2743,6 +2743,61 @@ class ACCLLMSTestCase(unittest.TestCase):
         conn.close()
         self.logout()
 
+    def test_admin_attendance_qr_expiration_settings(self):
+        """Verify Admin can configure QR expiration time >= 20s, rejection for <20s, token rotation, and reset."""
+        # 1. Student cannot access /admin/attendance or post settings
+        self.login("student1", "student123")
+        res_stud = self.client.get("/admin/attendance", follow_redirects=True)
+        self.assertIn(b"Administrator privileges required", res_stud.data)
+
+        res_stud_post = self.client.post("/admin/attendance/settings", data={"qr_rotation_seconds": "30"}, follow_redirects=True)
+        self.assertIn(b"Administrator privileges required", res_stud_post.data)
+        self.logout()
+
+        # 2. Teacher cannot access /admin/attendance
+        self.login("kishan", "password123")
+        res_teach = self.client.get("/admin/attendance", follow_redirects=True)
+        self.assertIn(b"Administrator privileges required", res_teach.data)
+        self.logout()
+
+        # 3. Admin views /admin/attendance: default is 20s
+        self.login("admin", "admin@accl")
+        res_admin = self.client.get("/admin/attendance")
+        self.assertEqual(res_admin.status_code, 200)
+        self.assertIn(b"QR Attendance Expiration Settings", res_admin.data)
+        self.assertIn(b"20", res_admin.data)
+
+        # 4. Attempt to set < 20s (e.g. 15s) is rejected with warning
+        res_low = self.client.post("/admin/attendance/settings", data={"qr_rotation_seconds": "15"}, follow_redirects=True)
+        self.assertEqual(res_low.status_code, 200)
+        self.assertIn(b"cannot be less than 20 seconds", res_low.data)
+        self.assertEqual(app.get_attendance_rotation_seconds(), 20)
+
+        # 5. Admin sets valid expiration time (e.g. 45 seconds)
+        res_valid = self.client.post("/admin/attendance/settings", data={"qr_rotation_seconds": "45"}, follow_redirects=True)
+        self.assertEqual(res_valid.status_code, 200)
+        self.assertIn(b"successfully updated to 45 seconds", res_valid.data)
+
+        # Verify backend helper and in-memory cache reflect 45
+        self.assertEqual(app.get_attendance_rotation_seconds(), 45)
+
+        # Verify token generation & validation works with 45s interval
+        tok45 = app.get_dynamic_attendance_token(1, "Lecture")
+        self.assertTrue(app.validate_dynamic_attendance_token(1, "Lecture", tok45))
+
+        # Verify token API returns rotation_interval = 45
+        tok_res = self.client.get("/api/attendance/token/1?type=Lecture")
+        self.assertEqual(tok_res.status_code, 200)
+        tok_data = tok_res.get_json()
+        self.assertEqual(tok_data["rotation_interval"], 45)
+
+        # 6. Admin resets back to default (20s)
+        res_reset = self.client.post("/admin/attendance/reset", follow_redirects=True)
+        self.assertEqual(res_reset.status_code, 200)
+        self.assertIn(b"reset to default (20 seconds)", res_reset.data)
+        self.assertEqual(app.get_attendance_rotation_seconds(), 20)
+        self.logout()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -165,6 +165,9 @@
           <a href="{{ url_for('admin_users') }}" class="nav-pill {% if request.path == url_for('admin_users') %}active{% endif %}">
             ⚙️ User Directory
           </a>
+          <a href="{{ url_for('admin_attendance_settings') }}" class="nav-pill {% if request.path == url_for('admin_attendance_settings') %}active{% endif %}" title="Attendance QR Expiration Settings">
+            ⏱️ QR Expiration
+          </a>
           <a href="{{ url_for('admin_email_settings') }}" class="nav-pill {% if request.path == url_for('admin_email_settings') %}active{% endif %}" title="Gmail &amp; Notification Settings">
             ✉️ Gmail Settings
           </a>

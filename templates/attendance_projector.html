@@ -319,9 +319,13 @@
       <div style="margin-top: 1rem; font-size: 0.78rem; color: #64748b; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center;">
         <span>🛡️ Anti-Proxy Guard Active</span>
         <span>•</span>
-        <span>Auto-rotates every 20s</span>
+        <span id="rotationInfoText">Auto-rotates every {{ rotation_interval }}s</span>
         <span>•</span>
         <span>One scan per student</span>
+        {% if current_user.role == 'admin' %}
+          <span>•</span>
+          <a href="{{ url_for('admin_attendance_settings') }}" target="_blank" style="color: #38bdf8; text-decoration: underline;">⚙️ Change Expiration (Admin)</a>
+        {% endif %}
       </div>
     </div>
 
@@ -358,7 +362,7 @@
     const courseId = {{ course.id }};
     const currentSessionType = "{{ session_type }}";
     let secondsLeft = {{ seconds_remaining }};
-    const ROTATION_SECONDS = {{ rotation_interval }};
+    let ROTATION_SECONDS = {{ rotation_interval }};
     let seenRolls = new Set();
     let isFetchingToken = false;
 
@@ -423,7 +427,14 @@
         .then(r => r.json())
         .then(data => {
           if (data && data.token) {
-            secondsLeft = data.seconds_remaining || ROTATION_SECONDS;
+            if (data.rotation_interval) {
+              ROTATION_SECONDS = data.rotation_interval;
+              const infoEl = document.getElementById("rotationInfoText");
+              if (infoEl) {
+                infoEl.textContent = "Auto-rotates every " + ROTATION_SECONDS + "s";
+              }
+            }
+            secondsLeft = (data.seconds_remaining !== undefined) ? data.seconds_remaining : ROTATION_SECONDS;
             const img = document.getElementById("qrImage");
             img.src = "{{ url_for('attendance_qr_svg', course_id=course.id) }}?type=" + encodeURIComponent(currentSessionType) + "&token=" + data.token + "&_ts=" + Date.now();
             

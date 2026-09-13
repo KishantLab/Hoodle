@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block title %}QR Code Expiration & Attendance Settings - Hoodle Admin{% endblock %}
+
+{% block content %}
+<div style="max-width: 980px; margin: 0 auto; padding-bottom: 2.5rem;">
+  <!-- Header & Breadcrumbs -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.35rem;">
+        <a href="{{ url_for('admin_users') }}" style="color: var(--primary); text-decoration: none;">Admin</a>
+        <span>&rsaquo;</span>
+        <span>Attendance &amp; Security</span>
+      </div>
+      <h1 style="font-size: 1.75rem; font-weight: 800; color: #1e3a8a; margin: 0; display: flex; align-items: center; gap: 0.6rem;">
+        <span>⏱️</span> QR Attendance Expiration Settings
+      </h1>
+      <p style="color: var(--text-muted); font-size: 0.88rem; margin: 0.25rem 0 0 0;">
+        Configure the real-time anti-proxy rotation period and QR code expiration interval for live classroom attendance.
+      </p>
+    </div>
+
+    <div>
+      <form action="{{ url_for('admin_reset_attendance_settings') }}" method="POST" onsubmit="return confirm('Reset QR code expiration back to the 20-second default?');" style="margin: 0;">
+        <button type="submit" class="btn btn-secondary btn-sm" style="color: #b91c1c; border-color: #fca5a5; display: inline-flex; align-items: center; gap: 0.35rem;">
+          <span>🔄</span>
+          <span>Reset to 20s Default</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Status Overview Cards -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; margin-bottom: 1.75rem;">
+    <!-- Active Expiration Interval Card -->
+    <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; border-left: 4px solid #4f46e5;">
+      <div style="width: 44px; height: 44px; border-radius: 12px; background: #eef2ff; color: #4f46e5; display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
+        ⏳
+      </div>
+      <div style="flex: 1; min-width: 0;">
+        <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+          Active QR Expiration
+        </div>
+        <div style="font-weight: 800; font-size: 1.45rem; color: #1e1b4b; line-height: 1.1;">
+          {{ current_rotation }} <span style="font-size: 0.95rem; font-weight: 600; color: #6366f1;">seconds</span>
+        </div>
+        <div style="font-size: 0.72rem; color: #166534; font-weight: 600; margin-top: 0.2rem;">
+          Auto-rotates every {{ current_rotation }}s
+        </div>
+      </div>
+    </div>
+
+    <!-- Grace Boundary Card -->
+    <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; border-left: 4px solid #06b6d4;">
+      <div style="width: 44px; height: 44px; border-radius: 12px; background: #ecfeff; color: #0891b2; display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
+        🛡️
+      </div>
+      <div>
+        <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+          Anti-Proxy Grace Window
+        </div>
+        <div style="font-weight: 800; font-size: 1.15rem; color: #0f172a;">
+          1 Block ({{ current_rotation }}s)
+        </div>
+        <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;">
+          Total window: up to {{ current_rotation * 2 }}s
+        </div>
+      </div>
+    </div>
+
+    <!-- Minimum Constraint Card -->
+    <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; border-left: 4px solid #10b981;">
+      <div style="width: 44px; height: 44px; border-radius: 12px; background: #ecfdf5; color: #059669; display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
+        🔒
+      </div>
+      <div>
+        <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+          Security Policy
+        </div>
+        <div style="font-weight: 800; font-size: 1.15rem; color: #0f172a;">
+          Min: 20s or more
+        </div>
+        <div style="font-size: 0.72rem; color: #047857; margin-top: 0.2rem;">
+          Strict Anti-Proxy Enforced
+        </div>
+      </div>
+    </div>
+
+    <!-- Attendance Activity Card -->
+    <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; border-left: 4px solid #f59e0b;">
+      <div style="width: 44px; height: 44px; border-radius: 12px; background: #fffbeb; color: #d97706; display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
+        📊
+      </div>
+      <div>
+        <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+          Total Recorded Logs
+        </div>
+        <div style="font-weight: 800; font-size: 1.15rem; color: #0f172a;">
+          {{ total_logs }} Logs
+        </div>
+        <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;">
+          {{ today_count }} logged today
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Settings Form Card -->
+  <div class="card" style="padding: 1.75rem; margin-bottom: 2rem; border-top: 4px solid var(--primary);">
+    <h3 style="font-size: 1.2rem; font-weight: 800; color: #0f172a; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+      <span>⚙️</span> Configure QR Rotation Interval
+    </h3>
+    <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 1.5rem; line-height: 1.5;">
+      The dynamic QR code displayed on the classroom projector screen rotates cryptographically based on this interval. Any photos, WhatsApp screenshots, or shared links expire automatically once the timer expires. You may set any duration <strong>20 seconds or higher</strong>.
+    </p>
+
+    <form action="{{ url_for('admin_update_attendance_settings') }}" method="POST">
+      <div style="max-width: 480px; margin-bottom: 1.5rem;">
+        <label for="qr_rotation_seconds" style="display: block; font-weight: 700; font-size: 0.88rem; color: #1e293b; margin-bottom: 0.5rem;">
+          QR Code Expiration Time (Seconds) <span style="color: #ef4444;">*</span>
+        </label>
+        
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <input
+            type="number"
+            id="qr_rotation_seconds"
+            name="qr_rotation_seconds"
+            class="form-control"
+            value="{{ current_rotation }}"
+            min="{{ min_rotation }}"
+            step="1"
+            required
+            style="font-size: 1.15rem; font-weight: 700; color: #1e3a8a; padding: 0.65rem 1rem; width: 140px; border-radius: 8px;"
+          >
+          <span style="font-size: 1rem; font-weight: 700; color: var(--text-muted);">seconds</span>
+        </div>
+        <small style="display: block; margin-top: 0.45rem; color: var(--text-muted); font-size: 0.8rem;">
+          Minimum requirement: <strong>20 seconds</strong>. Recommended: 20s (standard classroom), 30s–45s (large auditoriums).
+        </small>
+      </div>
+
+      <!-- Quick Preset Selector Chips -->
+      <div style="margin-bottom: 1.75rem;">
+        <label style="display: block; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em; margin-bottom: 0.6rem;">
+          ⚡ Quick Presets (Click to Select)
+        </label>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary btn-sm preset-chip" onclick="setPreset(20)">
+            20s (Default)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm preset-chip" onclick="setPreset(30)">
+            30 seconds
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm preset-chip" onclick="setPreset(45)">
+            45 seconds
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm preset-chip" onclick="setPreset(60)">
+            60s (1 min)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm preset-chip" onclick="setPreset(90)">
+            90s (1.5 min)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm preset-chip" onclick="setPreset(120)">
+            120s (2 min)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm preset-chip" onclick="setPreset(180)">
+            180s (3 min)
+          </button>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 0.75rem; align-items: center; border-top: 1px solid var(--border); padding-top: 1.25rem;">
+        <button type="submit" class="btn btn-primary" style="padding: 0.65rem 1.5rem; font-weight: 700;">
+          💾 Save QR Expiration Settings
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Security & Architecture Information Card -->
+  <div class="card" style="padding: 1.5rem; margin-bottom: 2rem; background: #f8fafc; border: 1px solid #e2e8f0;">
+    <h4 style="font-size: 1rem; font-weight: 800; color: #1e293b; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.45rem;">
+      <span>🛡️</span> How Anti-Proxy QR Rotation Works
+    </h4>
+    <div style="font-size: 0.85rem; color: #475569; line-height: 1.6; display: flex; flex-direction: column; gap: 0.5rem;">
+      <div>
+        <strong>1. Cryptographic HMAC Token:</strong> The server computes an 8-character rotating token based on <code>SHA256(SecretKey + CourseID + SessionType + TimeBlock)</code>. Each token is tied strictly to its specific time window.
+      </div>
+      <div>
+        <strong>2. Photo & Proxy Rejection:</strong> If a student takes a picture of the screen and sends it on WhatsApp or Telegram to an absent friend, the token expires after the configured interval (e.g. 20s or 30s) and cannot be scanned from outside the hall.
+      </div>
+      <div>
+        <strong>3. Smooth Transition Grace Period:</strong> To prevent students who clicked "Scan" right as the code rotated from being rejected, the backend validates against the current block <em>and</em> the immediately preceding block.
+      </div>
+      <div>
+        <strong>4. Real-Time Projector Sync:</strong> Active projector screens automatically pick up the new expiration interval without needing any teacher browser refresh.
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Attendance Logs -->
+  {% if recent_logs %}
+  <div class="card" style="padding: 1.5rem;">
+    <h4 style="font-size: 1rem; font-weight: 800; color: #0f172a; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.45rem;">
+      <span>📋</span> Recent System-Wide Attendance Check-Ins
+    </h4>
+    <div class="table-responsive">
+      <table class="table lms-table" style="width: 100%; font-size: 0.86rem;">
+        <thead>
+          <tr style="border-bottom: 2px solid var(--border); font-size: 0.76rem; color: var(--text-muted); text-transform: uppercase;">
+            <th style="padding: 0.5rem;">Course</th>
+            <th style="padding: 0.5rem;">Roll Number</th>
+            <th style="padding: 0.5rem;">Student Name</th>
+            <th style="padding: 0.5rem;">Session</th>
+            <th style="padding: 0.5rem;">Date</th>
+            <th style="padding: 0.5rem;">Method</th>
+            <th style="padding: 0.5rem;">Marked At</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in recent_logs %}
+          <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: 0.5rem; font-weight: 700;">{{ log.course_code or ('Course #' ~ log.course_id) }}</td>
+            <td style="padding: 0.5rem; font-weight: 600; color: #1e3a8a;">{{ log.roll_number }}</td>
+            <td style="padding: 0.5rem;">{{ log.student_name }}</td>
+            <td style="padding: 0.5rem;">
+              <span class="badge" style="background: #eff6ff; color: #2563eb; font-size: 0.72rem;">{{ log.session_type }}</span>
+            </td>
+            <td style="padding: 0.5rem; color: var(--text-muted);">{{ log.attendance_date }}</td>
+            <td style="padding: 0.5rem;">
+              <span class="badge" style="background: #f1f5f9; color: #475569; font-size: 0.72rem;">{{ log.method }}</span>
+            </td>
+            <td style="padding: 0.5rem; color: var(--text-muted); font-size: 0.8rem;">{{ log.marked_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  function setPreset(seconds) {
+    const input = document.getElementById("qr_rotation_seconds");
+    if (input) {
+      input.value = seconds;
+      input.focus();
+    }
+  }
+</script>
+{% endblock %}
