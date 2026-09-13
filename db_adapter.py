@@ -102,6 +102,10 @@ def translate_sql(sql):
         result = re.sub(r"INSERT\s+OR\s+REPLACE\s+INTO", "INSERT INTO", result, flags=re.IGNORECASE)
         result += " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at"
 
+    # Convert INTEGER PRIMARY KEY AUTOINCREMENT -> SERIAL PRIMARY KEY for PostgreSQL DDL
+    if re.search(r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT", result, re.IGNORECASE):
+        result = re.sub(r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT", "SERIAL PRIMARY KEY", result, flags=re.IGNORECASE)
+
     return result
 
 

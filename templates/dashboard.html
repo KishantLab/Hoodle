@@ -3,6 +3,106 @@
 {% block title %}Course Dashboard - Hoodle{% endblock %}
 
 {% block content %}
+{% if unread_announcements %}
+  <!-- ============================================================ -->
+  <!-- MANDATORY UNREAD SYSTEM ANNOUNCEMENT MODAL OVERLAY           -->
+  <!-- ============================================================ -->
+  <div id="mandatoryAnnouncementModal" class="announcement-overlay" role="dialog" aria-modal="true" aria-labelledby="annModalTitle">
+    {% for ann in unread_announcements %}
+      <div class="announcement-card ann-card-step" id="annCard_{{ ann.id }}" style="display: {% if loop.first %}block{% else %}none{% endif %};">
+        <div class="announcement-header">
+          <div style="font-size: 2.2rem; line-height: 1;">
+            {% if ann.priority == 'urgent' %}🚨{% elif ann.priority == 'important' %}🔔{% else %}📢{% endif %}
+          </div>
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; flex-wrap: wrap;">
+              {% if ann.priority == 'urgent' %}
+                <span class="announcement-badge-urgent">🚨 Urgent Announcement</span>
+              {% elif ann.priority == 'important' %}
+                <span class="announcement-badge-important">🔔 Important Notice</span>
+              {% else %}
+                <span class="announcement-badge-general">ℹ️ Official Announcement</span>
+              {% endif %}
+              <span style="font-size: 0.78rem; color: #94a3b8;">{{ ann.created_at[:16] }}</span>
+              {% if unread_announcements|length > 1 %}
+                <span style="font-size: 0.75rem; background: #f1f5f9; color: #475569; padding: 2px 8px; border-radius: 9999px; font-weight: 700; margin-left: auto;">
+                  Notice {{ loop.index }} of {{ unread_announcements|length }}
+                </span>
+              {% endif %}
+            </div>
+            <h2 id="annModalTitle" style="font-size: 1.35rem; font-weight: 800; color: #0f172a; margin: 0; line-height: 1.3;">
+              {{ ann.title }}
+            </h2>
+            <div style="font-size: 0.82rem; color: #64748b; margin-top: 0.25rem;">
+              Broadcast by <strong>{{ ann.author_name or 'Hoodle Administration' }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="announcement-body">
+          {{ ann.content }}
+        </div>
+
+        <div class="announcement-footer">
+          <div style="font-size: 0.8rem; color: #64748b; display: flex; align-items: center; gap: 0.35rem;">
+            <span>🔒</span>
+            <span>You must acknowledge reading this announcement to proceed.</span>
+          </div>
+          <button type="button" class="btn-acknowledge" id="btnAck_{{ ann.id }}" onclick="acknowledgeAnnouncement({{ ann.id }}, this)">
+            <span>✓</span>
+            <span>I Have Read &amp; Understood</span>
+          </button>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <script>
+  function acknowledgeAnnouncement(annId, btn) {
+    if (!btn) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳</span><span>Recording acknowledgment...</span>';
+
+    fetch(`{{ url_for('api_acknowledge_announcement', ann_id=0) }}`.replace('/0/', `/${annId}/`), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        const curCard = document.getElementById(`annCard_${annId}`);
+        if (curCard) {
+          curCard.style.display = 'none';
+        }
+        // Check if there is another unread announcement card
+        const remainingCards = Array.from(document.querySelectorAll('.ann-card-step'));
+        const nextCard = remainingCards.find(c => c.id !== `annCard_${annId}` && c.style.display === 'none');
+        if (nextCard) {
+          nextCard.style.display = 'block';
+        } else {
+          const overlay = document.getElementById('mandatoryAnnouncementModal');
+          if (overlay) {
+            overlay.style.transition = 'opacity 0.2s ease-out';
+            overlay.style.opacity = '0';
+            setTimeout(() => { overlay.remove(); }, 200);
+          }
+        }
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = '<span>⚠️</span><span>Failed to confirm. Retry</span>';
+      }
+    })
+    .catch(err => {
+      btn.disabled = false;
+      btn.innerHTML = '<span>⚠️</span><span>Network error. Retry</span>';
+    });
+  }
+  </script>
+{% endif %}
+
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
   <div>
     <h1 style="font-size: 1.75rem; font-weight: 800; color: #1e3a8a;">

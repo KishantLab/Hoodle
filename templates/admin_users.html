@@ -160,7 +160,12 @@
       </div>
       <div class="form-group">
         <label class="form-label" for="t_password">Initial Password (min 6 chars) *</label>
-        <input type="password" id="t_password" name="password" minlength="6" class="form-control" placeholder="••••••••" required>
+        <div class="password-input-wrap">
+          <input type="password" id="t_password" name="password" minlength="6" class="form-control" placeholder="••••••••" required>
+          <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('t_password', this)" title="Show password" aria-label="Show password">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          </button>
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label" for="t_role">Role Assignment</label>

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Instructor Dashboard - Hoodle</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/lms.css') }}">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/hoodle_icon.png') }}">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/hoodle_mark.svg') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/hoodle_icon.png') }}">
@@ -763,7 +764,12 @@
                     </div>
                     <div class="form-group" style="margin-bottom: 1rem;">
                         <label><span class="label-title">Password (min 6 chars) *</span></label>
-                        <input type="password" name="password" minlength="6" placeholder="Choose a password" required style="width: 100%; padding: 0.6rem 0.85rem; border: 2px solid var(--border-color); border-radius: var(--radius-md);">
+                        <div class="password-input-wrap">
+                            <input type="password" id="newTeacherPassword" name="password" minlength="6" placeholder="Choose a password" required style="width: 100%; padding: 0.6rem 0.85rem; border: 2px solid var(--border-color); border-radius: var(--radius-md);">
+                            <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('newTeacherPassword', this)" title="Show password" aria-label="Show password">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            </button>
+                        </div>
                     </div>
                     <button type="submit" class="btn-submit" style="width: 100%; padding: 0.7rem; font-size: 0.9rem;">
                         Create Teacher Account
@@ -829,7 +835,12 @@
             <form method="POST" id="adminUserPwdForm" action="">
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <label for="targetNewPassword"><span class="label-title">New Password (min 6 chars) *</span></label>
-                    <input type="password" id="targetNewPassword" name="new_password" minlength="6" required style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--radius-md);">
+                    <div class="password-input-wrap">
+                        <input type="password" id="targetNewPassword" name="new_password" minlength="6" required style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--radius-md);">
+                        <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('targetNewPassword', this)" title="Show password" aria-label="Show password">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="form-group" style="margin-bottom: 1.5rem;">
@@ -859,17 +870,32 @@
             <form method="POST" action="admin/change-password">
                 <div class="form-group">
                     <label for="oldPassword"><span class="label-title">Current Password</span></label>
-                    <input type="password" id="oldPassword" name="old_password" required style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--radius-md);">
+                    <div class="password-input-wrap">
+                        <input type="password" id="oldPassword" name="old_password" required style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--radius-md);">
+                        <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('oldPassword', this)" title="Show password" aria-label="Show password">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="form-group">
                     <label for="newPassword"><span class="label-title">New Password (min 6 chars)</span></label>
-                    <input type="password" id="newPassword" name="new_password" minlength="6" required style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--radius-md);">
+                    <div class="password-input-wrap">
+                        <input type="password" id="newPassword" name="new_password" minlength="6" required style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--radius-md);">
+                        <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('newPassword', this)" title="Show password" aria-label="Show password">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="form-group">
                     <label for="confirmPassword"><span class="label-title">Confirm New Password</span></label>
-                    <input type="password" id="confirmPassword" name="confirm_password" minlength="6" required style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--radius-md);">
+                    <div class="password-input-wrap">
+                        <input type="password" id="confirmPassword" name="confirm_password" minlength="6" required style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--radius-md);">
+                        <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('confirmPassword', this)" title="Show password" aria-label="Show password">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
                 </div>
 
                 <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
@@ -1056,6 +1082,24 @@
         // Start polling on load
         startPolling();
         {% endif %}
+
+        function togglePasswordVisibility(inputId, btn) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            const isPassword = input.type === "password";
+            input.type = isPassword ? "text" : "password";
+            if (btn) {
+                if (isPassword) {
+                    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+                    btn.title = "Hide password";
+                    btn.setAttribute("aria-label", "Hide password");
+                } else {
+                    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+                    btn.title = "Show password";
+                    btn.setAttribute("aria-label", "Show password");
+                }
+            }
+        }
     </script>
 </body>
 </html>

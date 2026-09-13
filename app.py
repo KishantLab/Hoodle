@@ -628,6 +628,36 @@ def init_db():
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_email_queue_status_retry ON email_queue (status, next_retry_at)")
 
+    # 16. Global System Broadcast Announcements Table
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS system_announcements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            priority TEXT NOT NULL DEFAULT 'general',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_by INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_announcements_active ON system_announcements (is_active, priority)")
+
+    # 17. User Acknowledgment / Mandatory Read Tracking Table
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS system_announcement_reads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            announcement_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            read_at TEXT NOT NULL,
+            UNIQUE(announcement_id, user_id),
+            FOREIGN KEY (announcement_id) REFERENCES system_announcements(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_announcement_reads_lookup ON system_announcement_reads (announcement_id, user_id)")
+
     # High-Performance Concurrency & Lookups Indices
     c.execute("CREATE INDEX IF NOT EXISTS idx_att_course_session_date ON attendance_logs (course_id, session_type, attendance_date)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_att_key ON attendance_logs (attendance_key)")
@@ -1930,6 +1960,21 @@ def dashboard():
                 ORDER BY c.created_at DESC
             """, (user["id"], user["id"])).fetchall()
 
+    # Query unread active system broadcast announcements for this user
+    unread_announcements = conn.execute("""
+        SELECT sa.*, u.display_name as author_name
+        FROM system_announcements sa
+        LEFT JOIN users u ON sa.created_by = u.id
+        WHERE sa.is_active = 1
+          AND NOT EXISTS (
+              SELECT 1 FROM system_announcement_reads sar
+              WHERE sar.announcement_id = sa.id AND sar.user_id = ?
+          )
+        ORDER BY 
+          CASE WHEN sa.priority = 'urgent' THEN 1 WHEN sa.priority = 'important' THEN 2 ELSE 3 END,
+          sa.id DESC
+    """, (user["id"],)).fetchall()
+
     conn.close()
     return render_template(
         "dashboard.html",
@@ -1937,7 +1982,8 @@ def dashboard():
         archived_courses=archived_courses,
         upcoming_deadlines=upcoming_deadlines,
         locker_stats=locker_stats,
-        pending_invitations=pending_invitations
+        pending_invitations=pending_invitations,
+        unread_announcements=unread_announcements
     )
 
 
@@ -6268,6 +6314,159 @@ def admin_reset_attendance_settings():
     saved_val = set_attendance_rotation_seconds(ATTENDANCE_DEFAULT_ROTATION_SECONDS)
     flash("✅ QR Code Expiration Time reset to default (20 seconds).", "info")
     return redirect(url_for("admin_attendance_settings"))
+
+
+# --- Global System Broadcast Announcements & User Acknowledgment ---
+
+@app.route("/admin/announcements")
+@admin_required
+def admin_announcements():
+    """Renders the Admin Broadcast Announcements console with read statistics."""
+    conn = get_db(read_only=True)
+    total_users_row = conn.execute("SELECT COUNT(*) as count FROM users").fetchone()
+    total_users = total_users_row["count"] if total_users_row else 1
+
+    announcements = conn.execute("""
+        SELECT sa.*, u.display_name as author_name,
+               (SELECT COUNT(*) FROM system_announcement_reads sar WHERE sar.announcement_id = sa.id) as read_count
+        FROM system_announcements sa
+        LEFT JOIN users u ON sa.created_by = u.id
+        ORDER BY sa.id DESC
+    """).fetchall()
+    conn.close()
+
+    return render_template(
+        "admin_announcements.html",
+        announcements=announcements,
+        total_users=total_users
+    )
+
+
+@app.route("/admin/announcements/create", methods=["POST"])
+@admin_required
+def admin_create_announcement():
+    """Admin broadcasts a new system-wide announcement."""
+    title = request.form.get("title", "").strip()
+    content = request.form.get("content", "").strip()
+    priority = request.form.get("priority", "general").strip().lower()
+    is_active = 1 if request.form.get("is_active") in ("1", "true", "on") else 0
+
+    if not title or not content:
+        flash("Title and Announcement Message cannot be empty.", "danger")
+        return redirect(url_for("admin_announcements"))
+
+    if priority not in ("urgent", "important", "general"):
+        priority = "general"
+
+    user = get_current_user()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO system_announcements (title, content, priority, is_active, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (title, content, priority, is_active, user["id"], now_str, now_str))
+    conn.commit()
+    conn.close()
+
+    flash(f"📢 Broadcast Announcement '{title}' successfully published to all user home screens.", "success")
+    return redirect(url_for("admin_announcements"))
+
+
+@app.route("/admin/announcements/<int:ann_id>/toggle", methods=["POST"])
+@admin_required
+def admin_toggle_announcement(ann_id):
+    """Activates or deactivates an announcement."""
+    conn = get_db()
+    row = conn.execute("SELECT is_active FROM system_announcements WHERE id = ?", (ann_id,)).fetchone()
+    if not row:
+        conn.close()
+        flash("Announcement not found.", "warning")
+        return redirect(url_for("admin_announcements"))
+
+    new_state = 0 if row["is_active"] else 1
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute("UPDATE system_announcements SET is_active = ?, updated_at = ? WHERE id = ?", (new_state, now_str, ann_id))
+    conn.commit()
+    conn.close()
+
+    flash(f"Announcement status updated: {'Active (Broadcasting)' if new_state else 'Inactive (Archived)'}.", "info")
+    return redirect(url_for("admin_announcements"))
+
+
+@app.route("/admin/announcements/<int:ann_id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_announcement(ann_id):
+    """Permanently deletes an announcement and associated read acknowledgments."""
+    conn = get_db()
+    conn.execute("DELETE FROM system_announcement_reads WHERE announcement_id = ?", (ann_id,))
+    conn.execute("DELETE FROM system_announcements WHERE id = ?", (ann_id,))
+    conn.commit()
+    conn.close()
+
+    flash("Announcement and read records deleted successfully.", "success")
+    return redirect(url_for("admin_announcements"))
+
+
+@app.route("/admin/announcements/<int:ann_id>/readers")
+@admin_required
+def admin_announcement_readers(ann_id):
+    """Returns JSON list of users who have acknowledged the announcement."""
+    conn = get_db(read_only=True)
+    readers = conn.execute("""
+        SELECT u.id, u.username, u.display_name, u.roll_number, u.role, sar.read_at
+        FROM system_announcement_reads sar
+        JOIN users u ON sar.user_id = u.id
+        WHERE sar.announcement_id = ?
+        ORDER BY sar.read_at DESC
+    """, (ann_id,)).fetchall()
+    conn.close()
+
+    return jsonify({
+        "announcement_id": ann_id,
+        "readers_count": len(readers),
+        "readers": [
+            {
+                "id": r["id"],
+                "username": r["username"],
+                "display_name": r["display_name"],
+                "roll_number": r["roll_number"] or "—",
+                "role": r["role"],
+                "read_at": r["read_at"]
+            }
+            for r in readers
+        ]
+    })
+
+
+@app.route("/api/announcements/<int:ann_id>/acknowledge", methods=["POST"])
+@login_required
+def api_acknowledge_announcement(ann_id):
+    """Records that the logged-in user has read and acknowledged the announcement."""
+    user = get_current_user()
+    if not user:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    try:
+        conn.execute("""
+            INSERT OR IGNORE INTO system_announcement_reads (announcement_id, user_id, read_at)
+            VALUES (?, ?, ?)
+        """, (ann_id, user["id"], now_str))
+        conn.commit()
+    except Exception:
+        try:
+            exists = conn.execute("SELECT id FROM system_announcement_reads WHERE announcement_id = ? AND user_id = ?", (ann_id, user["id"])).fetchone()
+            if not exists:
+                conn.execute("INSERT INTO system_announcement_reads (announcement_id, user_id, read_at) VALUES (?, ?, ?)", (ann_id, user["id"], now_str))
+                conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
+
+    return jsonify({"success": True, "announcement_id": ann_id})
 
 
 # --- Dynamic Anti-Proxy QR Attendance System ---

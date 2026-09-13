@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{% block title %}Broadcast Announcements - Hoodle Admin{% endblock %}
+
+{% block content %}
+<div style="max-width: 1100px; margin: 0 auto; padding-bottom: 3rem;">
+  <!-- Header -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+        <span style="font-size: 1.6rem;">📢</span>
+        <h1 style="font-size: 1.6rem; font-weight: 800; color: #0f172a; margin: 0;">Global System Announcements</h1>
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0;">
+        Broadcast university-wide notices to all user home screens. Users cannot dismiss until they explicitly read and acknowledge.
+      </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem;">
+      <a href="{{ url_for('dashboard') }}" class="btn btn-outline btn-sm">← Back to Dashboard</a>
+    </div>
+  </div>
+
+  <!-- Stats Grid -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+    <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem;">
+      <div style="width: 46px; height: 46px; border-radius: 12px; background: #eff6ff; display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+        📢
+      </div>
+      <div>
+        <div style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em;">Total Notices</div>
+        <div style="font-size: 1.5rem; font-weight: 800; color: #1e3a8a;">{{ announcements|length }}</div>
+      </div>
+    </div>
+
+    <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem;">
+      <div style="width: 46px; height: 46px; border-radius: 12px; background: #ecfdf5; display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+        🟢
+      </div>
+      <div>
+        <div style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em;">Active Now</div>
+        <div style="font-size: 1.5rem; font-weight: 800; color: #065f46;">
+          {{ announcements | selectattr('is_active') | list | length }}
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem;">
+      <div style="width: 46px; height: 46px; border-radius: 12px; background: #fdf4ff; display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+        👥
+      </div>
+      <div>
+        <div style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em;">Audience Target</div>
+        <div style="font-size: 1.5rem; font-weight: 800; color: #86198f;">{{ total_users }} Users</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create New Announcement Form -->
+  <div class="card" style="padding: 1.75rem; margin-bottom: 2rem; border-top: 4px solid var(--primary);">
+    <h2 style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 0.25rem;">
+      ✍️ Broadcast New Announcement
+    </h2>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+      This message will immediately pop up on every student, faculty, and administrator home screen until they click "I Have Read &amp; Understood".
+    </p>
+
+    <form action="{{ url_for('admin_create_announcement') }}" method="POST">
+      <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+        <div>
+          <label class="form-label" for="ann_title">Announcement Title *</label>
+          <input type="text" id="ann_title" name="title" class="form-control" placeholder="e.g. End-Semester Examination Schedule Announced" required>
+        </div>
+        <div>
+          <label class="form-label" for="ann_priority">Priority Level *</label>
+          <select id="ann_priority" name="priority" class="form-control" style="font-weight: 600;">
+            <option value="general" selected>ℹ️ General Notice</option>
+            <option value="important">🔔 Important (Yellow)</option>
+            <option value="urgent">🚨 Urgent (Red Banner)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="ann_content">Announcement Message / Content *</label>
+        <textarea id="ann_content" name="content" class="form-control" rows="5" placeholder="Enter full announcement details here. You can include date guidelines, room allocations, rules, or instructions..." required style="line-height: 1.6; font-size: 0.95rem;"></textarea>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.25rem; flex-wrap: wrap; gap: 1rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; font-weight: 600; cursor: pointer;">
+          <input type="checkbox" name="is_active" value="1" checked style="width: 18px; height: 18px;">
+          <span>Set Active Immediately (Show on all user home screens)</span>
+        </label>
+        <button type="submit" class="btn btn-primary" style="padding: 0.65rem 1.5rem; font-weight: 700;">
+          📢 Broadcast to All Users
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Existing Announcements List -->
+  <div class="card" style="padding: 1.75rem;">
+    <h2 style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 1.25rem;">
+      📋 Broadcast History &amp; Acknowledgment Logs
+    </h2>
+
+    {% if announcements %}
+      <div class="table-responsive">
+        <table class="table lms-table" style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border); font-size: 0.78rem; text-transform: uppercase; color: var(--text-muted);">
+              <th style="padding: 0.75rem 0.5rem; width: 45px;">#</th>
+              <th style="padding: 0.75rem 0.5rem;">Priority</th>
+              <th style="padding: 0.75rem 0.5rem;">Title &amp; Message</th>
+              <th style="padding: 0.75rem 0.5rem;">Status</th>
+              <th style="padding: 0.75rem 0.5rem;">Read Acknowledgment</th>
+              <th style="padding: 0.75rem 0.5rem;">Created</th>
+              <th style="padding: 0.75rem 0.5rem; text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in announcements %}
+              {% set pct = ((a.read_count / total_users) * 100)|round(1) if total_users > 0 else 0 %}
+              <tr style="border-bottom: 1px solid var(--border);">
+                <td style="padding: 0.75rem 0.5rem; font-weight: 700; color: var(--text-muted);">
+                  {{ a.id }}
+                </td>
+                <td style="padding: 0.75rem 0.5rem;">
+                  {% if a.priority == 'urgent' %}
+                    <span class="announcement-badge-urgent">🚨 Urgent</span>
+                  {% elif a.priority == 'important' %}
+                    <span class="announcement-badge-important">🔔 Important</span>
+                  {% else %}
+                    <span class="announcement-badge-general">ℹ️ General</span>
+                  {% endif %}
+                </td>
+                <td style="padding: 0.75rem 0.5rem; max-width: 320px;">
+                  <div style="font-weight: 700; color: #0f172a; font-size: 0.95rem; margin-bottom: 0.2rem;">{{ a.title }}</div>
+                  <div style="font-size: 0.82rem; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px;">
+                    {{ a.content }}
+                  </div>
+                </td>
+                <td style="padding: 0.75rem 0.5rem;">
+                  {% if a.is_active %}
+                    <span style="background: #dcfce7; color: #166534; font-size: 0.76rem; font-weight: 700; padding: 3px 8px; border-radius: 9999px;">
+                      ● Active
+                    </span>
+                  {% else %}
+                    <span style="background: #f1f5f9; color: #64748b; font-size: 0.76rem; font-weight: 700; padding: 3px 8px; border-radius: 9999px;">
+                      Archived
+                    </span>
+                  {% endif %}
+                </td>
+                <td style="padding: 0.75rem 0.5rem;">
+                  <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="flex: 1; min-width: 80px; height: 7px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+                      <div style="height: 100%; width: {{ pct }}%; background: #4f46e5; border-radius: 4px;"></div>
+                    </div>
+                    <span style="font-size: 0.82rem; font-weight: 700; color: #1e293b;">{{ a.read_count }}/{{ total_users }}</span>
+                  </div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">
+                    <a href="#" onclick="showReadersModal({{ a.id }}, '{{ a.title|escape }}'); return false;" style="color: var(--primary); text-decoration: none; font-weight: 600;">
+                      View {{ a.read_count }} readers →
+                    </a>
+                  </div>
+                </td>
+                <td style="padding: 0.75rem 0.5rem; font-size: 0.82rem; color: var(--text-muted); white-space: nowrap;">
+                  <div>{{ a.created_at[:10] }}</div>
+                  <div style="font-size: 0.72rem; color: #94a3b8;">{{ a.author_name or 'Admin' }}</div>
+                </td>
+                <td style="padding: 0.75rem 0.5rem; text-align: right; white-space: nowrap;">
+                  <div style="display: inline-flex; gap: 0.35rem;">
+                    <form action="{{ url_for('admin_toggle_announcement', ann_id=a.id) }}" method="POST" style="display: inline;">
+                      <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 0.76rem; padding: 0.25rem 0.6rem;" title="Toggle Active / Inactive">
+                        {% if a.is_active %}Pause{% else %}Activate{% endif %}
+                      </button>
+                    </form>
+                    <form action="{{ url_for('admin_delete_announcement', ann_id=a.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('⚠️ Permanently delete this announcement and its read logs?');">
+                      <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger); font-size: 0.76rem; padding: 0.25rem 0.5rem;" title="Delete Announcement">
+                        🗑
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📢</div>
+        <p style="margin: 0; font-weight: 600;">No announcements published yet.</p>
+        <p style="font-size: 0.82rem; margin-top: 0.25rem;">Use the form above to broadcast your first message to all users.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Modal: Readers Breakdown -->
+<div id="readersModal" class="modal-backdrop" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); z-index: 99999; align-items: center; justify-content: center; padding: 1.5rem;">
+  <div class="card" style="max-width: 540px; width: 100%; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; padding: 0;">
+    <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <h3 id="readersModalTitle" style="font-size: 1.1rem; font-weight: 800; color: #0f172a; margin: 0;">Announcement Readers</h3>
+        <span id="readersCountBadge" style="font-size: 0.78rem; color: var(--text-muted);">Loading reader list...</span>
+      </div>
+      <button onclick="closeReadersModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #94a3b8;">&times;</button>
+    </div>
+    <div id="readersListContainer" style="padding: 1rem 1.5rem; overflow-y: auto; flex: 1;">
+      <!-- Populated dynamically via fetch -->
+    </div>
+    <div style="padding: 0.85rem 1.5rem; border-top: 1px solid var(--border); text-align: right; background: #f8fafc;">
+      <button onclick="closeReadersModal()" class="btn btn-secondary btn-sm">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function showReadersModal(annId, annTitle) {
+  const modal = document.getElementById("readersModal");
+  const titleEl = document.getElementById("readersModalTitle");
+  const countEl = document.getElementById("readersCountBadge");
+  const container = document.getElementById("readersListContainer");
+
+  titleEl.textContent = "Readers: " + annTitle;
+  countEl.textContent = "Fetching acknowledgments...";
+  container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-muted);">Loading acknowledged users...</div>';
+  modal.style.display = "flex";
+
+  fetch(`{{ url_for('admin_announcements') }}/${annId}/readers`)
+    .then(res => res.json())
+    .then(data => {
+      countEl.textContent = `${data.readers_count} users acknowledged`;
+      if (!data.readers || data.readers.length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-muted);">No users have acknowledged this announcement yet.</div>';
+        return;
+      }
+      let html = '<div style="display: flex; flex-direction: column; gap: 0.5rem;">';
+      data.readers.forEach(r => {
+        html += `
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.88rem;">
+            <div>
+              <div style="font-weight: 700; color: #0f172a;">${r.display_name}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">@${r.username} ${r.roll_number !== '—' ? '• ' + r.roll_number : ''} • <span class="role-badge role-${r.role}">${r.role}</span></div>
+            </div>
+            <div style="font-size: 0.75rem; color: #64748b; text-align: right;">
+              <div>✓ Read</div>
+              <div style="font-size: 0.7rem;">${r.read_at}</div>
+            </div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      container.innerHTML = html;
+    })
+    .catch(err => {
+      container.innerHTML = '<div style="color: var(--danger); text-align: center; padding: 1rem;">Failed to load reader logs.</div>';
+    });
+}
+
+function closeReadersModal() {
+  document.getElementById("readersModal").style.display = "none";
+}
+</script>
+{% endblock %}

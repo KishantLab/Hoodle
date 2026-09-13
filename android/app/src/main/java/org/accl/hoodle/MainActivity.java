@@ -79,7 +79,6 @@ public class MainActivity extends AppCompatActivity {
     private Button btnSwitchLan;
     private MaterialButton btnSwitchInternet;
     private Button btnCustomServer;
-    private MaterialButton btnQuickSwitch;
 
     private ValueCallback<Uri[]> filePathCallback;
     private ActivityResultLauncher<Intent> fileChooserLauncher;
@@ -116,7 +115,6 @@ public class MainActivity extends AppCompatActivity {
         btnSwitchLan = findViewById(R.id.btnSwitchLan);
         btnSwitchInternet = findViewById(R.id.btnSwitchInternet);
         btnCustomServer = findViewById(R.id.btnCustomServer);
-        btnQuickSwitch = findViewById(R.id.btnQuickSwitch);
 
         setupSwipeRefresh();
         setupWebView();
@@ -158,14 +156,12 @@ public class MainActivity extends AppCompatActivity {
     public void switchToInternet() {
         setSavedServerUrl(URL_INTERNET);
         Toast.makeText(this, "🌐 Switched to Internet (Tailscale Funnel)", Toast.LENGTH_SHORT).show();
-        updateQuickSwitchButton(URL_INTERNET);
         loadPortalUrl();
     }
 
     public void switchToCampus() {
         setSavedServerUrl(URL_LAN);
         Toast.makeText(this, "🏫 Switched to Campus Wi-Fi (Intranet)", Toast.LENGTH_SHORT).show();
-        updateQuickSwitchButton(URL_LAN);
         loadPortalUrl();
     }
 
@@ -178,27 +174,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void updateQuickSwitchButton(String currentUrl) {
-        if (btnQuickSwitch == null) return;
-        if (currentUrl != null && (currentUrl.contains("ts.net") || currentUrl.contains("100.87.0.15"))) {
-            btnQuickSwitch.setText("🏫 Campus");
-            btnQuickSwitch.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#059669"))); // Emerald Green
-        } else {
-            btnQuickSwitch.setText("🌐 Internet");
-            btnQuickSwitch.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#4f46e5"))); // Indigo
-        }
-    }
-
     private void setupServerSwitchers() {
         btnRetry.setOnClickListener(v -> loadPortalUrl());
         btnSwitchInternet.setOnClickListener(v -> switchToInternet());
         btnSwitchLan.setOnClickListener(v -> switchToCampus());
         btnCustomServer.setOnClickListener(v -> showCustomServerDialog());
-
-        if (btnQuickSwitch != null) {
-            btnQuickSwitch.setOnClickListener(v -> toggleNetworkMode());
-            updateQuickSwitchButton(getSavedServerUrl());
-        }
     }
 
     private void showCustomServerDialog() {
@@ -221,7 +201,6 @@ public class MainActivity extends AppCompatActivity {
                     newUrl = newUrl + "/";
                 }
                 setSavedServerUrl(newUrl);
-                updateQuickSwitchButton(newUrl);
                 loadPortalUrl();
             }
         });
@@ -243,7 +222,6 @@ public class MainActivity extends AppCompatActivity {
     private void setSavedServerUrl(String url) {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         prefs.edit().putString(KEY_SERVER_URL, url).apply();
-        updateQuickSwitchButton(url);
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -290,7 +268,6 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 progressBar.setVisibility(View.GONE);
-                updateQuickSwitchButton(url);
             }
 
             @Override

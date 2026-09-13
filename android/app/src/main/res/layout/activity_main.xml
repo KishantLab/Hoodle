@@ -146,25 +146,5 @@
 
     </LinearLayout>
 
-    <!-- Floating Quick Network Mode Switcher (Always accessible at top-right) -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnQuickSwitch"
-        android:layout_width="wrap_content"
-        android:layout_height="36dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginEnd="10dp"
-        android:text="🌐 Internet"
-        android:textSize="11sp"
-        android:textStyle="bold"
-        android:textColor="#ffffff"
-        android:backgroundTint="#4f46e5"
-        android:insetTop="0dp"
-        android:insetBottom="0dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        app:cornerRadius="18dp"
-        app:elevation="4dp"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
