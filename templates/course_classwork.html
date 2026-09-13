@@ -159,7 +159,8 @@
   {% endfor %}
 </div>
 
-<!-- Modal: Create Coursework (Teacher) -->
+{% if is_teacher_or_admin %}
+<!-- Modal: Create Coursework (Teacher / TA) -->
 <div id="createCourseworkModal" class="modal-backdrop">
   <div class="modal-content" style="max-width: 650px;">
     <div class="modal-header">
@@ -265,7 +266,7 @@
   </div>
 </div>
 
-<!-- Modal: Create Topic (Teacher) -->
+<!-- Modal: Create Topic (Teacher / TA) -->
 <div id="createTopicModal" class="modal-backdrop">
   <div class="modal-content">
     <div class="modal-header">
@@ -300,4 +301,5 @@ function adjustCourseworkFields(type) {
   }
 }
 </script>
+{% endif %}
 {% endblock %}
