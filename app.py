@@ -3178,6 +3178,8 @@ def coursework_detail(course_id, coursework_id):
 
     if not cw:
         conn.close()
+        abort(404, "Coursework not found")
+
     curr_user = get_current_user()
     is_teacher_or_admin = False
     if curr_user and curr_user["role"] in ("teacher", "admin"):
