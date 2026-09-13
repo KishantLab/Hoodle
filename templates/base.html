@@ -162,6 +162,9 @@
         {% endif %}
 
         {% if current_user.role == 'admin' %}
+          <a href="{{ url_for('admin_system_monitor') }}" class="nav-pill {% if request.path == url_for('admin_system_monitor') %}active{% endif %}" title="Multi-Node Cluster, PostgreSQL, NFS & Slurm Health">
+            🖥️ System Monitor
+          </a>
           <a href="{{ url_for('admin_users') }}" class="nav-pill {% if request.path == url_for('admin_users') %}active{% endif %}">
             ⚙️ User Directory
           </a>

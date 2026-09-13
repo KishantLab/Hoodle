@@ -238,7 +238,15 @@
             <span>⏳</span>
             <span>Pending Invitations ({{ pending_invitations|length }})</span>
           </h3>
-          <span style="font-size: 0.78rem; color: var(--text-muted);">Awaiting student account creation or Home Screen acceptance</span>
+          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+            <form action="{{ url_for('enroll_all_registered_invitations', course_id=course.id) }}" method="POST" style="margin: 0;">
+              <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 0.78rem; color: #059669; border-color: #a7f3d0; background: #ecfdf5; display: inline-flex; align-items: center; gap: 0.3rem;" title="Move all registered accounts to Enrolled Students">
+                <span>⚡</span>
+                <span>Auto-Enroll All Registered</span>
+              </button>
+            </form>
+            <span style="font-size: 0.78rem; color: var(--text-muted);">Awaiting student account creation</span>
+          </div>
         </div>
 
         <div style="overflow-x: auto;">
@@ -287,7 +295,14 @@
                   <td style="color: var(--text-muted); font-size: 0.8rem;">
                     {{ inv.sent_at | format_dt }}
                   </td>
-                  <td style="text-align: right;">
+                  <td style="text-align: right; white-space: nowrap;">
+                    {% if inv.student_id %}
+                      <form action="{{ url_for('enroll_invitation_now', course_id=course.id, invite_id=inv.id) }}" method="POST" style="display: inline; margin-right: 0.3rem;">
+                        <button type="submit" class="btn btn-primary btn-sm" style="font-size: 0.72rem; padding: 0.2rem 0.45rem; background: #059669; border-color: #059669;" title="Directly Enroll Student">
+                          ⚡ Enroll Now
+                        </button>
+                      </form>
+                    {% endif %}
                     <form action="{{ url_for('revoke_invitation', course_id=course.id, invite_id=inv.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Revoke invitation for {{ inv.student_roll or inv.student_email }}?');">
                       <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger); font-size: 0.72rem; padding: 0.2rem 0.45rem;" title="Revoke Invitation">
                         Revoke

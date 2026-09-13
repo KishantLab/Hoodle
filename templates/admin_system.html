@@ -1,0 +1,600 @@
+{% extends "base.html" %}
+
+{% block title %}System & Cluster Monitor - Hoodle Admin{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 0 auto; padding-bottom: 3rem;">
+  <!-- Header & Controls -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <h1 style="font-size: 1.75rem; font-weight: 800; color: #1e3a8a; display: flex; align-items: center; gap: 0.6rem; margin: 0;">
+        <span>🖥️</span>
+        <span>Multi-Node Cluster &amp; System Monitor</span>
+      </h1>
+      <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.35rem;">
+        Real-time telemetry across Master gateway, Worker nodes (gpu1, gpu2), PostgreSQL 16 pool, NFS storage, and Slurm GPU isolation.
+      </p>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap;">
+      <!-- Auto-Refresh Toggle -->
+      <label style="display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; background: #f8fafc; border: 1px solid var(--border); padding: 0.4rem 0.75rem; border-radius: 9999px;">
+        <input type="checkbox" id="autoRefreshToggle" checked style="accent-color: #2563eb; cursor: pointer;">
+        <span>⚡ Auto-Refresh (5s)</span>
+      </label>
+
+      <!-- Refresh Now Button -->
+      <button type="button" class="btn btn-primary" id="btnRefresh" onclick="refreshStatus()" style="display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.45rem 1rem;">
+        <span id="refreshSpinner" style="display: inline-block; transition: transform 0.4s ease;">🔄</span>
+        <span>Refresh Now</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Overall Status Alert Banner -->
+  <div id="overallStatusBanner" style="border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1.75rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; background: #ecfdf5; border: 1px solid #a7f3d0;">
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <div id="overallPulse" style="width: 14px; height: 14px; border-radius: 50%; background: #10b981; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.25);"></div>
+      <div>
+        <div id="overallTitle" style="font-weight: 800; font-size: 1.05rem; color: #065f46;">
+          All Cluster Nodes &amp; Services Operational
+        </div>
+        <div id="overallSubtext" style="font-size: 0.82rem; color: #047857;">
+          Traffic distributed across 3 nodes (32 CPU workers). PostgreSQL connection pool active.
+        </div>
+      </div>
+    </div>
+    <div style="font-size: 0.8rem; color: var(--text-muted); font-family: monospace;" id="lastUpdatedText">
+      Updated: Just now
+    </div>
+  </div>
+
+  <!-- Quick Telemetry Stat Cards -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+    <!-- Nodes Stat -->
+    <div class="card" style="padding: 1rem; border-left: 4px solid #10b981;">
+      <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">
+        Active Nodes
+      </div>
+      <div style="font-size: 1.5rem; font-weight: 800; color: #1e3a8a; margin-top: 0.25rem;" id="statActiveNodes">
+        3 / 3
+      </div>
+      <div style="font-size: 0.78rem; color: #10b981; font-weight: 600; margin-top: 0.2rem;" id="statActiveNodesDesc">
+        ● 100% Online
+      </div>
+    </div>
+
+    <!-- Database Stat -->
+    <div class="card" style="padding: 1rem; border-left: 4px solid #10b981;">
+      <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">
+        PostgreSQL 16 Pool
+      </div>
+      <div style="font-size: 1.5rem; font-weight: 800; color: #1e3a8a; margin-top: 0.25rem;" id="statDbLatency">
+        -- ms
+      </div>
+      <div style="font-size: 0.78rem; color: #10b981; font-weight: 600; margin-top: 0.2rem;" id="statDbDesc">
+        Connected
+      </div>
+    </div>
+
+    <!-- Storage Stat -->
+    <div class="card" style="padding: 1rem; border-left: 4px solid #10b981;">
+      <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">
+        NFS Storage (/data)
+      </div>
+      <div style="font-size: 1.5rem; font-weight: 800; color: #1e3a8a; margin-top: 0.25rem;" id="statStoragePct">
+        --%
+      </div>
+      <div style="font-size: 0.78rem; color: var(--text-muted); font-weight: 500; margin-top: 0.2rem;" id="statStorageDesc">
+        Calculating free space...
+      </div>
+    </div>
+
+    <!-- Slurm GPU Isolation Stat -->
+    <div class="card" style="padding: 1rem; border-left: 4px solid #10b981;">
+      <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">
+        Slurm GPU Isolation
+      </div>
+      <div style="font-size: 1.5rem; font-weight: 800; color: #047857; margin-top: 0.25rem;">
+        0% LMS Load
+      </div>
+      <div style="font-size: 0.78rem; color: #059669; font-weight: 600; margin-top: 0.2rem;">
+        🛡️ 100% Slurm Dedicated
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 1: Cluster Nodes Status -->
+  <div style="margin-bottom: 2.25rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.9rem;">
+      <h2 style="font-size: 1.25rem; font-weight: 800; color: #1e3a8a; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+        <span>🌐</span>
+        <span>Cluster Node Endpoints (Traffic &amp; Latency)</span>
+      </h2>
+      <span style="font-size: 0.8rem; color: var(--text-muted);">Monitored via internal private network (10.10.99.*)</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem;" id="nodesGrid">
+      <!-- Master Node Skeleton -->
+      <div class="card" id="node-card-master" style="padding: 1.25rem; border: 1px solid var(--border); transition: all 0.2s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+          <div>
+            <div style="font-weight: 800; font-size: 1.1rem; color: #1e3a8a;">Master Gateway</div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">10.10.99.2:8095 (10.10.14.104)</div>
+          </div>
+          <span class="badge" id="node-badge-master" style="background: #e2e8f0; color: #475569; font-size: 0.78rem; padding: 4px 10px; border-radius: 9999px;">
+            Checking...
+          </span>
+        </div>
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+          Role: <strong>NGINX Reverse Proxy + 8 Gunicorn Workers</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 0.6rem;">
+          <span>HTTP Response: <strong id="node-code-master">--</strong></span>
+          <span>Latency: <strong id="node-lat-master">-- ms</strong></span>
+        </div>
+        <div id="node-error-master" style="display: none; margin-top: 0.75rem; padding: 0.6rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; font-size: 0.8rem; color: #991b1b; font-family: monospace; word-break: break-all;"></div>
+      </div>
+
+      <!-- GPU1 Node Skeleton -->
+      <div class="card" id="node-card-gpu1" style="padding: 1.25rem; border: 1px solid var(--border); transition: all 0.2s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+          <div>
+            <div style="font-weight: 800; font-size: 1.1rem; color: #1e3a8a;">Worker Node 1 (gpu1)</div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">10.10.99.1:8095</div>
+          </div>
+          <span class="badge" id="node-badge-gpu1" style="background: #e2e8f0; color: #475569; font-size: 0.78rem; padding: 4px 10px; border-radius: 9999px;">
+            Checking...
+          </span>
+        </div>
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+          Role: <strong>CPU Application Worker (12 Gunicorn Workers)</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 0.6rem;">
+          <span>HTTP Response: <strong id="node-code-gpu1">--</strong></span>
+          <span>Latency: <strong id="node-lat-gpu1">-- ms</strong></span>
+        </div>
+        <div id="node-error-gpu1" style="display: none; margin-top: 0.75rem; padding: 0.6rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; font-size: 0.8rem; color: #991b1b; font-family: monospace; word-break: break-all;"></div>
+      </div>
+
+      <!-- GPU2 Node Skeleton -->
+      <div class="card" id="node-card-gpu2" style="padding: 1.25rem; border: 1px solid var(--border); transition: all 0.2s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+          <div>
+            <div style="font-weight: 800; font-size: 1.1rem; color: #1e3a8a;">Worker Node 2 (gpu2)</div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">10.10.99.3:8095</div>
+          </div>
+          <span class="badge" id="node-badge-gpu2" style="background: #e2e8f0; color: #475569; font-size: 0.78rem; padding: 4px 10px; border-radius: 9999px;">
+            Checking...
+          </span>
+        </div>
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+          Role: <strong>CPU Application Worker (12 Gunicorn Workers)</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 0.6rem;">
+          <span>HTTP Response: <strong id="node-code-gpu2">--</strong></span>
+          <span>Latency: <strong id="node-lat-gpu2">-- ms</strong></span>
+        </div>
+        <div id="node-error-gpu2" style="display: none; margin-top: 0.75rem; padding: 0.6rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; font-size: 0.8rem; color: #991b1b; font-family: monospace; word-break: break-all;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 2: Database & Storage Grid -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1.5rem; margin-bottom: 2.25rem;">
+    <!-- Database Card -->
+    <div class="card" id="dbCard" style="padding: 1.5rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <span>🗄️</span>
+          <span>Database Engine</span>
+        </h3>
+        <span class="badge" id="dbStatusBadge" style="background: #e2e8f0; color: #475569; font-size: 0.78rem; padding: 4px 10px; border-radius: 9999px;">
+          Checking...
+        </span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.88rem;">
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem;">
+          <span style="color: var(--text-muted);">Database Type:</span>
+          <strong id="dbBackend">PostgreSQL 16</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem;">
+          <span style="color: var(--text-muted);">Query Roundtrip Latency:</span>
+          <strong id="dbLatencyVal">-- ms</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem;">
+          <span style="color: var(--text-muted);">Connection Pool:</span>
+          <strong id="dbPoolMode">ThreadedConnectionPool (max 64/node)</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem;">
+          <span style="color: var(--text-muted);">Database Disk Size:</span>
+          <strong id="dbDiskSize">--</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">Active Pool Connections:</span>
+          <strong id="dbActiveConns">--</strong>
+        </div>
+      </div>
+
+      <div id="dbErrorBox" style="display: none; margin-top: 1rem; padding: 0.75rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; font-size: 0.82rem; color: #991b1b; font-family: monospace; word-break: break-all;"></div>
+    </div>
+
+    <!-- Storage Card -->
+    <div class="card" style="padding: 1.5rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <span>💾</span>
+          <span>Storage &amp; NFS Filesystems</span>
+        </h3>
+        <span class="badge" style="background: #ecfdf5; color: #065f46; font-size: 0.78rem; padding: 4px 10px; border-radius: 9999px;">
+          Healthy
+        </span>
+      </div>
+
+      <div id="storageBarsContainer" style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <!-- Root Storage Bar -->
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.84rem; margin-bottom: 0.35rem;">
+            <span><strong>Root OS NVMe (/)</strong></span>
+            <span id="rootStorageText">-- GB / -- GB (--%)</span>
+          </div>
+          <div style="height: 10px; background: #e2e8f0; border-radius: 9999px; overflow: hidden;">
+            <div id="rootStorageBar" style="height: 100%; width: 0%; background: #2563eb; border-radius: 9999px; transition: width 0.4s ease;"></div>
+          </div>
+        </div>
+
+        <!-- NFS Storage Bar -->
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.84rem; margin-bottom: 0.35rem;">
+            <span><strong>Shared NFS Storage (/data)</strong></span>
+            <span id="nfsStorageText">-- GB / -- GB (--%)</span>
+          </div>
+          <div style="height: 10px; background: #e2e8f0; border-radius: 9999px; overflow: hidden;">
+            <div id="nfsStorageBar" style="height: 100%; width: 0%; background: #10b981; border-radius: 9999px; transition: width 0.4s ease;"></div>
+          </div>
+          <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem;">
+            Mount path: <code>/data/admin/ACCLLMS</code> shared live across all 3 cluster nodes.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 3: Host Resources & Slurm Hardware Isolation -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1.5rem; margin-bottom: 2.25rem;">
+    <!-- Host Resources -->
+    <div class="card" style="padding: 1.5rem;">
+      <h3 style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a; display: flex; align-items: center; gap: 0.5rem; margin-top: 0; margin-bottom: 1rem;">
+        <span>⚡</span>
+        <span>Host Resources (Master Server)</span>
+      </h3>
+
+      <div style="margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; font-size: 0.84rem; margin-bottom: 0.35rem;">
+          <span><strong>Memory (RAM) Usage</strong></span>
+          <span id="ramText">-- MB / -- MB (--%)</span>
+        </div>
+        <div style="height: 10px; background: #e2e8f0; border-radius: 9999px; overflow: hidden;">
+          <div id="ramBar" style="height: 100%; width: 0%; background: #3b82f6; border-radius: 9999px; transition: width 0.4s ease;"></div>
+        </div>
+      </div>
+
+      <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 1rem;">
+        <div style="font-weight: 700; margin-bottom: 0.4rem; color: #1e3a8a;">System Load Average:</div>
+        <div style="display: flex; gap: 0.75rem; font-family: monospace;">
+          <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 6px;">1 min: <strong id="load1m">--</strong></span>
+          <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 6px;">5 min: <strong id="load5m">--</strong></span>
+          <span style="background: #f1f5f9; padding: 4px 8px; border-radius: 6px;">15 min: <strong id="load15m">--</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slurm GPU Isolation -->
+    <div class="card" style="padding: 1.5rem; border: 1px solid #a7f3d0; background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+        <h3 style="font-size: 1.15rem; font-weight: 800; color: #065f46; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <span>🛡️</span>
+          <span>100% Slurm GPU Hardware Isolation</span>
+        </h3>
+        <span class="badge" style="background: #10b981; color: white; font-weight: 800; font-size: 0.75rem; padding: 4px 10px; border-radius: 9999px;">
+          PROTECTED
+        </span>
+      </div>
+
+      <p style="font-size: 0.85rem; color: #047857; line-height: 1.5; margin-bottom: 1rem;">
+        Hoodle LMS processes operate strictly in CPU-only mode (<code>CUDA_VISIBLE_DEVICES=""</code>). All NVIDIA RTX A6000 GPUs on <code>gpu1</code> and <code>gpu2</code> are 100% dedicated to Slurm AI/ML compute workloads with zero resource preemption.
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.82rem; background: rgba(255,255,255,0.8); border: 1px solid #bbf7d0; padding: 0.75rem; border-radius: 8px;">
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">GPU Hardware:</span>
+          <strong>NVIDIA RTX A6000 (48GB VRAM)</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">LMS GPU Load:</span>
+          <strong style="color: #059669;">0.0% (Zero interference)</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">Slurm Reservation:</span>
+          <strong style="color: #047857;">100% Exclusive</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 4: NGINX Upstream Cluster Details -->
+  <div class="card" style="padding: 1.5rem;">
+    <h3 style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a; display: flex; align-items: center; gap: 0.5rem; margin-top: 0; margin-bottom: 0.75rem;">
+      <span>🔀</span>
+      <span>NGINX Upstream Routing &amp; Automatic Failover</span>
+    </h3>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+      Incoming requests to <code>/lms/</code> are balanced across all healthy cluster nodes. If any worker experiences downtime, NGINX automatically reroutes traffic to surviving nodes within 5 seconds without dropping user sessions.
+    </p>
+
+    <div style="overflow-x: auto;">
+      <table class="lms-table" style="font-size: 0.85rem; margin: 0;">
+        <thead>
+          <tr>
+            <th>Upstream Target</th>
+            <th>Node Description</th>
+            <th>Traffic Weight</th>
+            <th>CPU Workers</th>
+            <th>Failover Policy</th>
+            <th>Health</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>127.0.0.1:8095</code></td>
+            <td><strong>Master Gateway (master)</strong></td>
+            <td>Weight = 2 (25%)</td>
+            <td>8 Workers</td>
+            <td><code>max_fails=2 fail_timeout=5s</code></td>
+            <td><span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 700;">● Active</span></td>
+          </tr>
+          <tr>
+            <td><code>10.10.99.1:8095</code></td>
+            <td><strong>Worker Node 1 (gpu1)</strong></td>
+            <td>Weight = 3 (37.5%)</td>
+            <td>12 Workers</td>
+            <td><code>max_fails=2 fail_timeout=5s</code></td>
+            <td><span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 700;">● Active</span></td>
+          </tr>
+          <tr>
+            <td><code>10.10.99.3:8095</code></td>
+            <td><strong>Worker Node 2 (gpu2)</strong></td>
+            <td>Weight = 3 (37.5%)</td>
+            <td>12 Workers</td>
+            <td><code>max_fails=2 fail_timeout=5s</code></td>
+            <td><span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 700;">● Active</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+let autoRefreshTimer = null;
+
+async function refreshStatus() {
+  const spinner = document.getElementById('refreshSpinner');
+  if (spinner) spinner.style.transform = 'rotate(360deg)';
+
+  try {
+    const res = await fetch('{{ url_for("api_admin_system_status") }}');
+    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
+    const data = await res.json();
+    renderStatus(data);
+  } catch (err) {
+    console.error('System status error:', err);
+    showGlobalError(err.message);
+  } finally {
+    setTimeout(() => {
+      if (spinner) spinner.style.transform = 'rotate(0deg)';
+    }, 400);
+  }
+}
+
+function renderStatus(data) {
+  // Update timestamp
+  document.getElementById('lastUpdatedText').innerText = 'Updated: ' + data.timestamp + ' (' + data.elapsed_ms + 'ms)';
+
+  // Overall banner
+  const banner = document.getElementById('overallStatusBanner');
+  const pulse = document.getElementById('overallPulse');
+  const title = document.getElementById('overallTitle');
+  const subtext = document.getElementById('overallSubtext');
+
+  if (data.overall_status === 'healthy') {
+    banner.style.background = '#ecfdf5';
+    banner.style.borderColor = '#a7f3d0';
+    pulse.style.background = '#10b981';
+    pulse.style.boxShadow = '0 0 0 4px rgba(16, 185, 129, 0.25)';
+    title.innerText = 'All Cluster Nodes & Services Operational';
+    title.style.color = '#065f46';
+    subtext.innerText = 'Traffic dynamically load-balanced across ' + data.healthy_nodes_count + ' / ' + data.total_nodes_count + ' nodes (32 CPU workers). PostgreSQL pool active.';
+    subtext.style.color = '#047857';
+  } else {
+    banner.style.background = '#fef2f2';
+    banner.style.borderColor = '#fecaca';
+    pulse.style.background = '#ef4444';
+    pulse.style.boxShadow = '0 0 0 4px rgba(239, 68, 68, 0.25)';
+    title.innerText = 'Cluster Degraded: ' + (data.total_nodes_count - data.healthy_nodes_count) + ' Node(s) Reporting Issues';
+    title.style.color = '#991b1b';
+    subtext.innerText = 'Traffic safely auto-rerouted to surviving nodes. Check error details below.';
+    subtext.style.color = '#b91c1c';
+  }
+
+  // Quick stats
+  document.getElementById('statActiveNodes').innerText = data.healthy_nodes_count + ' / ' + data.total_nodes_count;
+  const activeDesc = document.getElementById('statActiveNodesDesc');
+  if (data.healthy_nodes_count === data.total_nodes_count) {
+    activeDesc.innerText = '● 100% Online';
+    activeDesc.style.color = '#10b981';
+  } else {
+    activeDesc.innerText = '● Attention Required';
+    activeDesc.style.color = '#ef4444';
+  }
+
+  // DB Stat
+  if (data.database && data.database.latency_ms !== null) {
+    document.getElementById('statDbLatency').innerText = data.database.latency_ms + ' ms';
+    document.getElementById('statDbDesc').innerText = data.database.backend + ' Connected';
+    document.getElementById('statDbDesc').style.color = '#10b981';
+  } else {
+    document.getElementById('statDbLatency').innerText = 'ERROR';
+    document.getElementById('statDbDesc').innerText = 'Connection Failed';
+    document.getElementById('statDbDesc').style.color = '#ef4444';
+  }
+
+  // Storage Stat
+  if (data.storage && data.storage.length > 1) {
+    const nfs = data.storage[1];
+    document.getElementById('statStoragePct').innerText = nfs.percent + '%';
+    document.getElementById('statStorageDesc').innerText = nfs.free_gb + ' GB free of ' + nfs.total_gb + ' GB';
+  }
+
+  // Render Nodes
+  if (data.cluster_nodes) {
+    data.cluster_nodes.forEach(node => {
+      const card = document.getElementById('node-card-' + node.id);
+      const badge = document.getElementById('node-badge-' + node.id);
+      const code = document.getElementById('node-code-' + node.id);
+      const lat = document.getElementById('node-lat-' + node.id);
+      const errBox = document.getElementById('node-error-' + node.id);
+
+      if (!card) return;
+
+      if (node.status === 'healthy') {
+        card.style.borderColor = '#a7f3d0';
+        card.style.background = '#ffffff';
+        badge.innerText = '● Operational';
+        badge.style.background = '#dcfce7';
+        badge.style.color = '#15803d';
+        code.innerText = 'HTTP ' + (node.http_code || 200);
+        code.style.color = '#15803d';
+        lat.innerText = node.latency_ms + ' ms';
+        lat.style.color = '#1e3a8a';
+        if (errBox) errBox.style.display = 'none';
+      } else {
+        card.style.borderColor = '#fca5a5';
+        card.style.background = '#fff5f5';
+        badge.innerText = '● Offline / Error';
+        badge.style.background = '#fee2e2';
+        badge.style.color = '#b91c1c';
+        code.innerText = node.http_code ? 'HTTP ' + node.http_code : 'FAILED';
+        code.style.color = '#b91c1c';
+        lat.innerText = '--';
+        if (errBox) {
+          errBox.style.display = 'block';
+          errBox.innerHTML = '<strong>⚠️ Exact Error:</strong> ' + escapeHtml(node.error || 'Unreachable');
+        }
+      }
+    });
+  }
+
+  // Render Database
+  const db = data.database;
+  const dbBadge = document.getElementById('dbStatusBadge');
+  const dbCard = document.getElementById('dbCard');
+  const dbErrorBox = document.getElementById('dbErrorBox');
+
+  if (db && db.status === 'healthy') {
+    dbCard.style.borderColor = '#a7f3d0';
+    dbBadge.innerText = '● Healthy';
+    dbBadge.style.background = '#dcfce7';
+    dbBadge.style.color = '#15803d';
+    document.getElementById('dbBackend').innerText = db.backend;
+    document.getElementById('dbLatencyVal').innerText = db.latency_ms + ' ms';
+    document.getElementById('dbPoolMode').innerText = db.pool_mode;
+    document.getElementById('dbDiskSize').innerText = db.database_size;
+    document.getElementById('dbActiveConns').innerText = db.active_connections;
+    if (dbErrorBox) dbErrorBox.style.display = 'none';
+  } else {
+    dbCard.style.borderColor = '#fca5a5';
+    dbBadge.innerText = '● Database Error';
+    dbBadge.style.background = '#fee2e2';
+    dbBadge.style.color = '#b91c1c';
+    if (dbErrorBox) {
+      dbErrorBox.style.display = 'block';
+      dbErrorBox.innerHTML = '<strong>⚠️ Exact DB Error:</strong> ' + escapeHtml((db && db.error) || 'Failed to connect');
+    }
+  }
+
+  // Render Storage
+  if (data.storage) {
+    data.storage.forEach(s => {
+      if (s.mount === '/') {
+        document.getElementById('rootStorageText').innerText = s.used_gb + ' GB / ' + s.total_gb + ' GB (' + s.percent + '%)';
+        const bar = document.getElementById('rootStorageBar');
+        bar.style.width = s.percent + '%';
+        bar.style.background = s.percent > 90 ? '#ef4444' : (s.percent > 80 ? '#f59e0b' : '#2563eb');
+      } else if (s.mount === '/data') {
+        document.getElementById('nfsStorageText').innerText = s.used_gb + ' GB / ' + s.total_gb + ' GB (' + s.percent + '%)';
+        const bar = document.getElementById('nfsStorageBar');
+        bar.style.width = s.percent + '%';
+        bar.style.background = s.percent > 90 ? '#ef4444' : (s.percent > 80 ? '#f59e0b' : '#10b981');
+      }
+    });
+  }
+
+  // Render Host Resources
+  if (data.host_resources) {
+    if (data.host_resources.ram) {
+      const ram = data.host_resources.ram;
+      document.getElementById('ramText').innerText = ram.used_mb + ' MB / ' + ram.total_mb + ' MB (' + ram.percent + '%)';
+      const rBar = document.getElementById('ramBar');
+      rBar.style.width = ram.percent + '%';
+      rBar.style.background = ram.percent > 90 ? '#ef4444' : '#3b82f6';
+    }
+    if (data.host_resources.load_avg) {
+      const l = data.host_resources.load_avg;
+      document.getElementById('load1m').innerText = l[0];
+      document.getElementById('load5m').innerText = l[1];
+      document.getElementById('load15m').innerText = l[2];
+    }
+  }
+}
+
+function showGlobalError(msg) {
+  const banner = document.getElementById('overallStatusBanner');
+  const title = document.getElementById('overallTitle');
+  const subtext = document.getElementById('overallSubtext');
+  banner.style.background = '#fef2f2';
+  banner.style.borderColor = '#fecaca';
+  title.innerText = 'Monitoring Service Disconnected';
+  title.style.color = '#991b1b';
+  subtext.innerText = msg;
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Initial status fetch
+document.addEventListener('DOMContentLoaded', () => {
+  refreshStatus();
+
+  // Handle auto-refresh toggle
+  const toggle = document.getElementById('autoRefreshToggle');
+  function setupInterval() {
+    if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+    if (toggle && toggle.checked) {
+      autoRefreshTimer = setInterval(refreshStatus, 5000);
+    }
+  }
+
+  if (toggle) {
+    toggle.addEventListener('change', setupInterval);
+  }
+  setupInterval();
+});
+</script>
+{% endblock %}

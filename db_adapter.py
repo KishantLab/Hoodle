@@ -125,7 +125,7 @@ class PgCursorWrapper:
 
     def execute(self, sql, params=None):
         sql_clean = sql.strip()
-        if sql_clean.upper().startswith("PRAGMA"):
+        if sql_clean.upper().startswith("PRAGMA") or sql_clean.upper().startswith("BEGIN"):
             return DummyCursor()
 
         translated_sql = translate_sql(sql)
@@ -149,7 +149,7 @@ class PgCursorWrapper:
 
     def executemany(self, sql, params_seq):
         sql_clean = sql.strip()
-        if sql_clean.upper().startswith("PRAGMA"):
+        if sql_clean.upper().startswith("PRAGMA") or sql_clean.upper().startswith("BEGIN"):
             return DummyCursor()
         translated_sql = translate_sql(sql)
         self._cur.executemany(translated_sql, params_seq)
@@ -190,7 +190,7 @@ class PgConnectionWrapper:
 
     def execute(self, sql, params=None):
         sql_clean = sql.strip()
-        if sql_clean.upper().startswith("PRAGMA"):
+        if sql_clean.upper().startswith("PRAGMA") or sql_clean.upper().startswith("BEGIN"):
             return DummyCursor()
         cur = self.cursor()
         cur.execute(sql, params)
