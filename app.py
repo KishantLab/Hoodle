@@ -184,8 +184,10 @@ def filter_nl2br(s):
 
 # --- Database Connection & Schema Setup ---
 try:
+    import db_adapter
     from db_adapter import get_db, execute_db_write_with_retry
 except ImportError:
+    db_adapter = None
     def get_db(read_only=False):
         """
         Returns an optimized SQLite connection with 256MB memory-mapped I/O,
@@ -3176,9 +3178,21 @@ def coursework_detail(course_id, coursework_id):
 
     if not cw:
         conn.close()
-        abort(404, "Coursework not found")
+    curr_user = get_current_user()
+    is_teacher_or_admin = False
+    if curr_user and curr_user["role"] in ("teacher", "admin"):
+        is_teacher_or_admin = True
+    elif course["teacher_id"] == user_id:
+        is_teacher_or_admin = True
+    else:
+        co_t = conn.execute("""
+            SELECT 1 FROM course_enrollments
+            WHERE course_id = ? AND user_id = ? AND role IN ('teacher', 'ta', 'co-teacher')
+        """, (course_id, user_id)).fetchone()
+        if co_t:
+            is_teacher_or_admin = True
 
-    if role == "student" and cw["is_exam_mode"] == 1:
+    if not is_teacher_or_admin and cw["is_exam_mode"] == 1:
         conn.close()
         return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
 
@@ -3190,7 +3204,7 @@ def coursework_detail(course_id, coursework_id):
     all_submissions = []
     stats = {"turned_in": 0, "graded": 0, "assigned": 0}
 
-    if role == "student":
+    if not is_teacher_or_admin:
         my_submission = conn.execute("""
             SELECT * FROM submissions WHERE coursework_id = ? AND student_id = ?
         """, (coursework_id, user_id)).fetchone()
@@ -3275,6 +3289,7 @@ def coursework_detail(course_id, coursework_id):
         is_past_due=is_past_due,
         is_exam_ended=is_exam_ended,
         stats=stats,
+        is_teacher_or_admin=is_teacher_or_admin,
         active_tab="classwork"
     )
 
@@ -3292,7 +3307,7 @@ def api_live_submissions(course_id, coursework_id):
     is_teacher = role in ("teacher", "admin")
     if not is_teacher:
         enr = conn.execute(
-            "SELECT role FROM course_enrollments WHERE course_id = ? AND user_id = ? AND role = 'ta'",
+            "SELECT role FROM course_enrollments WHERE course_id = ? AND user_id = ? AND role IN ('teacher', 'ta', 'co-teacher')",
             (course_id, user_id)
         ).fetchone()
         if enr:
@@ -6526,13 +6541,20 @@ def admin_toggle_announcement(ann_id):
 @admin_required
 def admin_delete_announcement(ann_id):
     """Permanently deletes an announcement and associated read acknowledgments."""
-    conn = get_db()
-    conn.execute("DELETE FROM system_announcement_reads WHERE announcement_id = ?", (ann_id,))
-    conn.execute("DELETE FROM system_announcements WHERE id = ?", (ann_id,))
-    conn.commit()
-    conn.close()
+    try:
+        def _do_delete(conn):
+            try:
+                conn.execute("DELETE FROM system_announcement_reads WHERE announcement_id = ?", (ann_id,))
+            except Exception as e:
+                logger.warning(f"Could not delete from system_announcement_reads for ann {ann_id}: {e}")
+            conn.execute("DELETE FROM system_announcements WHERE id = ?", (ann_id,))
 
-    flash("Announcement and read records deleted successfully.", "success")
+        execute_db_write_with_retry(_do_delete)
+        flash("Announcement and read records deleted successfully.", "success")
+    except Exception as e:
+        logger.exception(f"Failed to delete announcement {ann_id}: {e}")
+        flash(f"Error deleting announcement: {e}", "danger")
+
     return redirect(url_for("admin_announcements"))
 
 
@@ -6693,15 +6715,14 @@ def api_admin_system_status():
     # 2. Probe Database
     db_report = {"status": "healthy", "error": None}
     try:
-        import db_adapter
         t_db = time.time()
         conn = get_db(read_only=True)
         conn.execute("SELECT 1 as alive").fetchone()
         db_report["latency_ms"] = round((time.time() - t_db) * 1000, 2)
-        backend = getattr(db_adapter, "DATABASE_BACKEND", "sqlite")
+        backend = getattr(db_adapter, "DATABASE_BACKEND", "sqlite") if db_adapter else "sqlite"
         db_report["backend"] = backend.upper()
         db_report["database_name"] = "accl_lms"
-        db_report["pool_mode"] = "ThreadedConnectionPool (min 2, max 64 per node)" if backend == "postgres" else "SQLite WAL Mode"
+        db_report["pool_mode"] = "ThreadedConnectionPool (min 1, max 8 per worker)" if backend == "postgres" else "SQLite WAL Mode"
 
         if backend == "postgres":
             try:

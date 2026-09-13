@@ -10,7 +10,7 @@
   </a>
 </div>
 
-<div class="coursework-detail-grid {% if current_user.role != 'student' or cw.type == 'material' %}single-col{% endif %}">
+<div class="coursework-detail-grid {% if is_teacher_or_admin or cw.type == 'material' %}single-col{% endif %}">
   <!-- Left Side: Problem Statement & Details (or Teacher Review Table) -->
   <div>
     <div class="card">
@@ -28,7 +28,7 @@
         </div>
 
         <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-          {% if current_user.role in ('teacher', 'admin') %}
+          {% if is_teacher_or_admin %}
             <button type="button" class="btn btn-secondary btn-sm" onclick="openModal('editCourseworkModal')" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600;">
               <span>✏️ Edit Coursework</span>
             </button>
@@ -87,7 +87,7 @@
     </div>
 
     <!-- For Teachers: Submissions Grading Table -->
-    {% if current_user.role in ('teacher', 'admin') and cw.type != 'material' %}
+    {% if is_teacher_or_admin and cw.type != 'material' %}
       {% if cw.is_exam_mode %}
         <!-- Live Exam Lockdown Telemetry Panel (Auto-Refreshing Every 1s) -->
         <div class="exam-telemetry-banner">
@@ -260,7 +260,7 @@
   </div>
 
   <!-- Right Side (For Students): Submission Box & Private Comments -->
-  {% if current_user.role == 'student' and cw.type != 'material' %}
+  {% if not is_teacher_or_admin and cw.type != 'material' %}
     <div>
       <!-- Turn In Card -->
       <div class="card submission-turnin-card">
@@ -401,7 +401,7 @@
   {% endif %}
 </div>
 
-{% if current_user.role in ('teacher', 'admin') and cw.is_exam_mode %}
+{% if is_teacher_or_admin and cw.is_exam_mode %}
 <script>
 let telemetryTimer = null;
 let telemetryPaused = false;
@@ -541,7 +541,7 @@ document.addEventListener("DOMContentLoaded", () => {
 {% endif %}
 
 <!-- Modal: Edit Coursework (Instructor / Admin) -->
-{% if current_user.role in ('teacher', 'admin') %}
+{% if is_teacher_or_admin %}
 <div id="editCourseworkModal" class="modal-backdrop" style="display: none;">
   <div class="modal-content" style="max-width: 650px;">
     <div class="modal-header">

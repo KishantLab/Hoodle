@@ -41,13 +41,13 @@ if DATABASE_BACKEND == "postgres":
         if normalized_url.startswith("postgres://"):
             normalized_url = "postgresql://" + normalized_url[len("postgres://"):]
 
-        # Initialize thread-safe connection pool (min 4, max 64 connections per node)
+        # Initialize thread-safe connection pool (min 1, max 8 connections per worker process)
         pg_pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=2,
-            maxconn=64,
+            minconn=1,
+            maxconn=8,
             dsn=normalized_url
         )
-        logger.info("PostgreSQL connection pool initialized successfully.")
+        logger.info("PostgreSQL connection pool initialized successfully (minconn=1, maxconn=8).")
     except Exception as e:
         logger.error(f"Failed to initialize PostgreSQL pool: {e}. Falling back to SQLite.")
         DATABASE_BACKEND = "sqlite"
@@ -232,8 +232,11 @@ def get_db(read_only=False):
     global DATABASE_BACKEND, pg_pool
 
     if DATABASE_BACKEND == "postgres" and pg_pool is not None:
-        raw_conn = pg_pool.getconn()
-        return PgConnectionWrapper(raw_conn, pg_pool)
+        try:
+            raw_conn = pg_pool.getconn()
+            return PgConnectionWrapper(raw_conn, pg_pool)
+        except Exception as e:
+            logger.error(f"PostgreSQL connection checkout error: {e}. Falling back to SQLite.")
 
     # Fallback to standard SQLite connection
     conn = sqlite3.connect(DB_PATH, timeout=45.0)

@@ -125,10 +125,17 @@
       </div>
     </div>
 
-    <!-- Row 2: Clean Nav Pills (Highlighted Courses, Course Switcher, Messages, Scanner, Directory, Backup) -->
+    <!-- Row 2: Clean Nav Pills (Courses, Course Switcher, Scanner, Messages) -->
     {% if current_user %}
       <nav class="navbar-nav-strip">
-        <a href="{{ url_for('dashboard') }}" class="nav-pill nav-pill-bordered nav-pill-courses" title="View Enrolled Courses">
+        {% if current_user.role == 'admin' %}
+          <button type="button" class="admin-mobile-toggle" onclick="toggleAdminSidebar()" title="Toggle Admin Navigation Console">
+            <span>☰</span>
+            <span>Admin Console</span>
+          </button>
+        {% endif %}
+
+        <a href="{{ url_for('dashboard') }}" class="nav-pill nav-pill-courses {% if request.endpoint == 'dashboard' %}active{% endif %}" title="View Enrolled Courses">
           <span>📚</span>
           <span>Courses</span>
         </a>
@@ -161,29 +168,13 @@
           </button>
         {% endif %}
 
-        {% if current_user.role == 'admin' %}
-          <a href="{{ url_for('admin_system_monitor') }}" class="nav-pill {% if request.path == url_for('admin_system_monitor') %}active{% endif %}" title="Multi-Node Cluster, PostgreSQL, NFS & Slurm Health">
-            🖥️ System Monitor
-          </a>
-          <a href="{{ url_for('admin_users') }}" class="nav-pill {% if request.path == url_for('admin_users') %}active{% endif %}">
-            ⚙️ User Directory
-          </a>
-          <a href="{{ url_for('admin_announcements') }}" class="nav-pill {% if request.path == url_for('admin_announcements') %}active{% endif %}" title="Global Broadcast Announcements">
-            📢 Announcements
-          </a>
-          <a href="{{ url_for('admin_attendance_settings') }}" class="nav-pill {% if request.path == url_for('admin_attendance_settings') %}active{% endif %}" title="Attendance QR Expiration Settings">
-            ⏱️ QR Expiration
-          </a>
-          <a href="{{ url_for('admin_email_settings') }}" class="nav-pill {% if request.path == url_for('admin_email_settings') %}active{% endif %}" title="Gmail &amp; Notification Settings">
-            ✉️ Gmail Settings
-          </a>
-          <a href="{{ url_for('admin_backup') }}" class="nav-pill {% if request.path == url_for('admin_backup') %}active{% endif %}" title="Disaster Recovery & GPU2 Backup">
-            🛡️ Backup &amp; Recovery
-          </a>
-          <a href="{{ url_for('brand_assets') }}" class="nav-pill {% if '/brand' in request.path %}active{% endif %}" title="Hoodle Logo & Brand Assets">
-            🎨 Brand Assets
-          </a>
-        {% endif %}
+        <a href="{{ url_for('messages_view') }}" class="nav-pill {% if request.endpoint in ('messages_view', 'messages_direct', 'messages_course') %}active{% endif %}" title="Direct &amp; Course Messages">
+          <span>💬</span>
+          <span>Messages</span>
+          {% if unread_messages_count and unread_messages_count > 0 %}
+            <span class="badge" style="background: #ef4444; color: white; border-radius: 9999px; padding: 1px 6px; font-size: 0.7rem; font-weight: 800; margin-left: 0.2rem;">{{ unread_messages_count }}</span>
+          {% endif %}
+        </a>
       </nav>
     {% endif %}
   </header>
@@ -223,10 +214,153 @@
     {% endwith %}
   </div>
 
-  <!-- Main Body Content -->
-  <main class="lms-main">
-    {% block content %}{% endblock %}
-  </main>
+  <!-- Main Shell & Body Content -->
+  <div class="{% if current_user and current_user.role == 'admin' %}admin-app-shell{% endif %}">
+    {% if current_user and current_user.role == 'admin' %}
+      <!-- Mobile Backdrop Overlay -->
+      <div class="admin-backdrop" id="adminBackdrop" onclick="toggleAdminSidebar(false)"></div>
+
+      <!-- Dedicated Admin Sidebar Navigation -->
+      <aside class="admin-sidebar" id="adminSidebar">
+        <div class="admin-sidebar-content">
+          <!-- Admin Brand Header -->
+          <div class="admin-sidebar-brand" style="justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span style="font-size: 1.15rem;">🛡️</span>
+              <span class="admin-sidebar-brand-title">Admin Console</span>
+            </div>
+            <button type="button" class="modal-close admin-sidebar-close-btn" onclick="toggleAdminSidebar(false)" style="display: none; font-size: 1.25rem; line-height: 1; padding: 2px 6px; background: none; border: none; cursor: pointer; color: #64748b;" title="Close Sidebar">&times;</button>
+          </div>
+
+          <!-- Section 1: Cluster Operations -->
+          <div class="admin-sidebar-section">
+            <div class="admin-sidebar-section-title">Cluster Operations</div>
+            <nav class="admin-sidebar-nav">
+              <a href="{{ url_for('admin_system_monitor') }}" class="admin-sidebar-item {% if request.path == url_for('admin_system_monitor') %}active{% endif %}" title="Multi-Node Cluster, PostgreSQL, NFS &amp; Slurm Health">
+                <div class="admin-sidebar-item-left">
+                  <span class="admin-sidebar-item-icon">🖥️</span>
+                  <span class="admin-sidebar-item-label">System Monitor</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.4rem;">
+                  <span class="admin-pulse-green" title="Cluster Nodes Active"></span>
+                  {% if request.path == url_for('admin_system_monitor') %}
+                    <span class="admin-nav-indicator"></span>
+                  {% endif %}
+                </div>
+              </a>
+
+              <a href="{{ url_for('admin_users') }}" class="admin-sidebar-item {% if request.path == url_for('admin_users') %}active{% endif %}" title="User Directory &amp; Permissions">
+                <div class="admin-sidebar-item-left">
+                  <span class="admin-sidebar-item-icon">⚙️</span>
+                  <span class="admin-sidebar-item-label">User Directory</span>
+                </div>
+                {% if request.path == url_for('admin_users') %}
+                  <span class="admin-nav-indicator"></span>
+                {% endif %}
+              </a>
+
+              <a href="{{ url_for('admin_announcements') }}" class="admin-sidebar-item {% if request.path == url_for('admin_announcements') %}active{% endif %}" title="Global Broadcast Announcements">
+                <div class="admin-sidebar-item-left">
+                  <span class="admin-sidebar-item-icon">📢</span>
+                  <span class="admin-sidebar-item-label">Announcements</span>
+                </div>
+                {% if request.path == url_for('admin_announcements') %}
+                  <span class="admin-nav-indicator"></span>
+                {% endif %}
+              </a>
+            </nav>
+          </div>
+
+          <!-- Section 2: Settings & Security -->
+          <div class="admin-sidebar-section">
+            <div class="admin-sidebar-section-title">Settings &amp; Security</div>
+            <nav class="admin-sidebar-nav">
+              <a href="{{ url_for('admin_attendance_settings') }}" class="admin-sidebar-item {% if request.path == url_for('admin_attendance_settings') %}active{% endif %}" title="Attendance QR Expiration Settings">
+                <div class="admin-sidebar-item-left">
+                  <span class="admin-sidebar-item-icon">⏱️</span>
+                  <span class="admin-sidebar-item-label">QR Expiration</span>
+                </div>
+                {% if request.path == url_for('admin_attendance_settings') %}
+                  <span class="admin-nav-indicator"></span>
+                {% endif %}
+              </a>
+
+              <a href="{{ url_for('admin_email_settings') }}" class="admin-sidebar-item {% if request.path == url_for('admin_email_settings') %}active{% endif %}" title="Gmail &amp; Notification Settings">
+                <div class="admin-sidebar-item-left">
+                  <span class="admin-sidebar-item-icon">✉️</span>
+                  <span class="admin-sidebar-item-label">Gmail Settings</span>
+                </div>
+                {% if request.path == url_for('admin_email_settings') %}
+                  <span class="admin-nav-indicator"></span>
+                {% endif %}
+              </a>
+
+              <a href="{{ url_for('admin_backup') }}" class="admin-sidebar-item {% if request.path == url_for('admin_backup') %}active{% endif %}" title="Disaster Recovery &amp; GPU2 Backup">
+                <div class="admin-sidebar-item-left">
+                  <span class="admin-sidebar-item-icon">🛡️</span>
+                  <span class="admin-sidebar-item-label">Backup &amp; Recovery</span>
+                </div>
+                {% if request.path == url_for('admin_backup') %}
+                  <span class="admin-nav-indicator"></span>
+                {% endif %}
+              </a>
+
+              <a href="{{ url_for('brand_assets') }}" class="admin-sidebar-item {% if '/brand' in request.path %}active{% endif %}" title="Hoodle Logo &amp; Brand Assets">
+                <div class="admin-sidebar-item-left">
+                  <span class="admin-sidebar-item-icon">🎨</span>
+                  <span class="admin-sidebar-item-label">Brand Assets</span>
+                </div>
+                {% if '/brand' in request.path %}
+                  <span class="admin-nav-indicator"></span>
+                {% endif %}
+              </a>
+            </nav>
+          </div>
+
+          <!-- Section 3: Academic View -->
+          <div class="admin-sidebar-section">
+            <div class="admin-sidebar-section-title">Academic View</div>
+            <nav class="admin-sidebar-nav">
+              <a href="{{ url_for('dashboard') }}" class="admin-sidebar-item {% if request.endpoint == 'dashboard' %}active{% endif %}" title="Courses &amp; Classrooms Dashboard">
+                <div class="admin-sidebar-item-left">
+                  <span class="admin-sidebar-item-icon">📚</span>
+                  <span class="admin-sidebar-item-label">Courses / Dashboard</span>
+                </div>
+                {% if request.endpoint == 'dashboard' %}
+                  <span class="admin-nav-indicator"></span>
+                {% endif %}
+              </a>
+
+              <a href="{{ url_for('messages_view') }}" class="admin-sidebar-item {% if request.endpoint in ('messages_view', 'messages_direct', 'messages_course') %}active{% endif %}" title="Direct &amp; Course Messages">
+                <div class="admin-sidebar-item-left">
+                  <span class="admin-sidebar-item-icon">💬</span>
+                  <span class="admin-sidebar-item-label">Direct Messages</span>
+                </div>
+                {% if request.endpoint in ('messages_view', 'messages_direct', 'messages_course') %}
+                  <span class="admin-nav-indicator"></span>
+                {% endif %}
+              </a>
+            </nav>
+          </div>
+        </div>
+
+        <!-- Sidebar Footer -->
+        <div class="admin-sidebar-footer">
+          <div class="admin-cluster-status-pill">
+            <span class="admin-pulse-green"></span>
+            <span>Cluster: 3 Nodes (32 Workers)</span>
+          </div>
+        </div>
+      </aside>
+    {% endif %}
+
+    <div class="{% if current_user and current_user.role == 'admin' %}admin-main-viewport{% endif %}">
+      <!-- Main Body Content -->
+      <main class="lms-main {% if current_user and current_user.role == 'admin' %}admin-lms-main{% endif %}" {% if current_user and current_user.role == 'admin' %}style="max-width: 100%; padding: 0;"{% endif %}>
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
 
   <!-- Common File Preview Modal -->
   <div id="filePreviewModal" class="modal-backdrop">
@@ -740,6 +874,20 @@
           btn.title = "Show password";
           btn.setAttribute("aria-label", "Show password");
         }
+      }
+    }
+
+    function toggleAdminSidebar(forceState) {
+      const sidebar = document.getElementById('adminSidebar');
+      const backdrop = document.getElementById('adminBackdrop');
+      if (!sidebar) return;
+      const shouldOpen = typeof forceState === 'boolean' ? forceState : !sidebar.classList.contains('open');
+      if (shouldOpen) {
+        sidebar.classList.add('open');
+        if (backdrop) backdrop.classList.add('active');
+      } else {
+        sidebar.classList.remove('open');
+        if (backdrop) backdrop.classList.remove('active');
       }
     }
   </script>

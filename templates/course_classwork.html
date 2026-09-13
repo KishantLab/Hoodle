@@ -46,7 +46,7 @@
 </nav>
 
 <!-- Teacher Action Bar -->
-{% if current_user.role in ('teacher', 'admin') %}
+{% if is_teacher_or_admin %}
   <div class="classwork-actions-strip">
     <button onclick="openModal('createCourseworkModal')" class="btn btn-primary">
       ➕ Create Coursework
@@ -60,13 +60,13 @@
 <!-- Topics & Coursework Listing -->
 <div style="display: flex; flex-direction: column; gap: 2rem;">
   {% for t_id, data in topic_map.items() %}
-    {% if data.cw_items or current_user.role in ('teacher', 'admin') %}
+    {% if data.cw_items or is_teacher_or_admin %}
       <div>
         <div class="topic-header-row">
           <h2 class="topic-title">
             📁 {{ data.topic.name }}
           </h2>
-          {% if current_user.role in ('teacher', 'admin') and data.topic.id %}
+          {% if is_teacher_or_admin and data.topic.id %}
             <form action="{{ url_for('delete_topic', course_id=course.id, topic_id=data.topic.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove this topic?');">
               <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger);">
                 Delete Topic
@@ -88,7 +88,7 @@
 
                     <div class="classwork-item-content">
                       <div class="classwork-item-title-row">
-                        <a href="{% if cw.is_exam_mode and current_user.role == 'student' %}{{ url_for('exam_view', course_id=course.id, coursework_id=cw.id) }}{% else %}{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}{% endif %}" class="classwork-item-title">
+                        <a href="{% if cw.is_exam_mode and not is_teacher_or_admin %}{{ url_for('exam_view', course_id=course.id, coursework_id=cw.id) }}{% else %}{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}{% endif %}" class="classwork-item-title">
                           {{ cw.title }}
                         </a>
                         {% if cw.is_exam_mode %}
@@ -109,7 +109,7 @@
 
                   <!-- Right Side: Status Badge or Teacher Actions -->
                   <div class="classwork-item-actions">
-                    {% if current_user.role == 'student' and cw.type != 'material' %}
+                    {% if not is_teacher_or_admin and cw.type != 'material' %}
                       {% if cw.my_status == 'graded' %}
                         <span class="badge badge-graded">Graded: {{ cw.my_grade }}/{{ cw.points }}</span>
                       {% elif cw.my_status == 'turned_in' %}
@@ -121,7 +121,7 @@
                       {% endif %}
                     {% endif %}
 
-                    {% if current_user.role in ('teacher', 'admin') %}
+                    {% if is_teacher_or_admin %}
                       {% if cw.type == 'exam' %}
                         <form action="{{ url_for('toggle_exam_mode', course_id=course.id, coursework_id=cw.id) }}" method="POST" style="display: inline;">
                           <button type="submit" class="btn btn-sm {% if cw.is_exam_mode %}btn-danger{% else %}btn-secondary{% endif %}" title="Toggle Strict Exam Mode for students">
@@ -141,7 +141,7 @@
                       </form>
                     {% endif %}
 
-                    <a href="{% if cw.is_exam_mode and current_user.role == 'student' %}{{ url_for('exam_view', course_id=course.id, coursework_id=cw.id) }}{% else %}{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}{% endif %}" class="btn btn-secondary btn-sm">
+                    <a href="{% if cw.is_exam_mode and not is_teacher_or_admin %}{{ url_for('exam_view', course_id=course.id, coursework_id=cw.id) }}{% else %}{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}{% endif %}" class="btn btn-secondary btn-sm">
                       View →
                     </a>
                   </div>
