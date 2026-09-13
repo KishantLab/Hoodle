@@ -531,6 +531,22 @@ def init_db():
         )
     """)
 
+    # Attendance excluded sessions
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS attendance_excluded_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course_id INTEGER NOT NULL,
+            excluded_date TEXT NOT NULL,
+            session_type TEXT NOT NULL DEFAULT 'Lecture',
+            reason TEXT DEFAULT '',
+            excluded_by INTEGER,
+            excluded_at TEXT,
+            UNIQUE(course_id, excluded_date, session_type),
+            FOREIGN KEY (course_id) REFERENCES courses(id),
+            FOREIGN KEY (excluded_by) REFERENCES users(id)
+        )
+    """)
+
     conn.commit()
 
     # Pre-seed initial default accounts if not existing
@@ -5714,6 +5730,12 @@ def course_attendance(course_id):
         my_logs = conn.execute("""
             SELECT * FROM attendance_logs
             WHERE course_id = ? AND student_id = ?
+            AND NOT EXISTS (
+                SELECT 1 FROM attendance_excluded_sessions es
+                WHERE es.course_id = attendance_logs.course_id
+                AND es.excluded_date = attendance_logs.attendance_date
+                AND es.session_type = attendance_logs.session_type
+            )
             ORDER BY marked_at DESC
         """, (course_id, user["id"])).fetchall()
         
@@ -5721,6 +5743,12 @@ def course_attendance(course_id):
         sessions_row = conn.execute("""
             SELECT COUNT(DISTINCT attendance_date || '_' || session_type) as total_sessions
             FROM attendance_logs WHERE course_id = ?
+            AND NOT EXISTS (
+                SELECT 1 FROM attendance_excluded_sessions es
+                WHERE es.course_id = attendance_logs.course_id
+                AND es.excluded_date = attendance_logs.attendance_date
+                AND es.session_type = attendance_logs.session_type
+            )
         """, (course_id,)).fetchone()
         total_sessions = (sessions_row["total_sessions"] if sessions_row else 0) or 0
         attended_count = len(my_logs)
@@ -5743,7 +5771,15 @@ def course_attendance(course_id):
         # Teacher / Co-Teacher / Admin view: full class roster, statistics, logs, and manual marker
         enrolled_students = conn.execute("""
             SELECT u.id, u.roll_number, u.display_name, u.email,
-                   (SELECT COUNT(*) FROM attendance_logs al WHERE al.course_id = ? AND al.student_id = u.id) as attended_count
+                   (SELECT COUNT(*) FROM attendance_logs al 
+                    WHERE al.course_id = ? AND al.student_id = u.id
+                    AND NOT EXISTS (
+                        SELECT 1 FROM attendance_excluded_sessions es
+                        WHERE es.course_id = al.course_id
+                        AND es.excluded_date = al.attendance_date
+                        AND es.session_type = al.session_type
+                    )
+                   ) as attended_count
             FROM course_enrollments ce
             JOIN users u ON ce.user_id = u.id
             WHERE ce.course_id = ? AND ce.role = 'student'
@@ -5753,6 +5789,12 @@ def course_attendance(course_id):
         sessions_row = conn.execute("""
             SELECT COUNT(DISTINCT attendance_date || '_' || session_type) as total_sessions
             FROM attendance_logs WHERE course_id = ?
+            AND NOT EXISTS (
+                SELECT 1 FROM attendance_excluded_sessions es
+                WHERE es.course_id = attendance_logs.course_id
+                AND es.excluded_date = attendance_logs.attendance_date
+                AND es.session_type = attendance_logs.session_type
+            )
         """, (course_id,)).fetchone()
         total_sessions = (sessions_row["total_sessions"] if sessions_row else 0) or 0
         
@@ -5769,6 +5811,14 @@ def course_attendance(course_id):
         """, (course_id, today_str)).fetchone()
         today_count = (today_row["count"] if today_row else 0) or 0
         
+        excluded_sessions = conn.execute("""
+            SELECT es.*, u.display_name as excluded_by_name
+            FROM attendance_excluded_sessions es
+            LEFT JOIN users u ON es.excluded_by = u.id
+            WHERE es.course_id = ?
+            ORDER BY es.excluded_date DESC
+        """, (course_id,)).fetchall()
+        
         conn.close()
 
         token = course["attendance_feed_token"] or ""
@@ -5782,6 +5832,7 @@ def course_attendance(course_id):
             students=enrolled_students,
             total_sessions=total_sessions,
             today_count=today_count,
+            excluded_sessions=excluded_sessions,
             recent_logs=recent_logs,
             today_str=today_str,
             attendance_pct=0.0,
@@ -5867,6 +5918,101 @@ def attendance_manual_bulk(course_id):
         msg += f" {len(not_found)} not found ({', '.join(not_found[:5])})."
     
     flash(msg, "success" if marked_count > 0 else "info")
+    return redirect(url_for("course_attendance", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/attendance/mark-all-present", methods=["POST"])
+@teacher_required
+def attendance_mark_all_present(course_id):
+    """Teacher marks ALL enrolled students as PRESENT for a given date/session."""
+    course = get_course_or_404(course_id)
+    session_type = request.form.get("session_type", "Lecture").strip()
+    custom_date = request.form.get("custom_date", "").strip()
+    target_date = custom_date if custom_date else datetime.now().strftime("%Y-%m-%d")
+    
+    conn = get_db()
+    students = conn.execute("""
+        SELECT u.id, u.roll_number, u.username, u.display_name
+        FROM course_enrollments ce
+        JOIN users u ON ce.user_id = u.id
+        WHERE ce.course_id = ? AND ce.role = 'student'
+    """, (course_id,)).fetchall()
+    
+    marked_count = 0
+    duplicate_count = 0
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    for st in students:
+        target_key = f"{st['id']}_{session_type.upper()}_{target_date}"
+        exists = conn.execute("SELECT id FROM attendance_logs WHERE attendance_key = ?", (target_key,)).fetchone()
+        if exists:
+            duplicate_count += 1
+        else:
+            conn.execute("""
+                INSERT INTO attendance_logs (
+                    course_id, session_id, student_id, roll_number, student_name,
+                    section, session_type, attendance_date, status, method, marked_at, attendance_key
+                ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'PRESENT (FULL)', 'MARK_ALL', ?, ?)
+            """, (
+                course_id, st["id"], st["roll_number"] or st["username"].upper(),
+                st["display_name"], course["section"] or "Section A", session_type,
+                target_date, now_str, target_key
+            ))
+            marked_count += 1
+    
+    conn.commit()
+    conn.close()
+    
+    msg = f"✅ Full attendance for {target_date} ({session_type}): {marked_count} students marked present."
+    if duplicate_count > 0:
+        msg += f" {duplicate_count} already had attendance recorded."
+    flash(msg, "success")
+    return redirect(url_for("course_attendance", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/attendance/skip-day", methods=["POST"])
+@teacher_required
+def attendance_skip_day(course_id):
+    """Teacher excludes a date/session from attendance counting. That session won't count in totals."""
+    course = get_course_or_404(course_id)
+    session_type = request.form.get("session_type", "Lecture").strip()
+    custom_date = request.form.get("custom_date", "").strip()
+    reason = request.form.get("reason", "").strip()
+    target_date = custom_date if custom_date else datetime.now().strftime("%Y-%m-%d")
+    user = get_current_user()
+    
+    conn = get_db()
+    try:
+        conn.execute("""
+            INSERT INTO attendance_excluded_sessions (course_id, excluded_date, session_type, reason, excluded_by, excluded_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (course_id, target_date, session_type, reason, user["id"], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        conn.commit()
+        flash(f"📅 Session excluded: {target_date} ({session_type}) will not count in attendance.{' Reason: ' + reason if reason else ''}", "success")
+    except sqlite3.IntegrityError:
+        flash(f"⚠️ {target_date} ({session_type}) is already excluded.", "info")
+    conn.close()
+    
+    return redirect(url_for("course_attendance", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/attendance/unskip-day", methods=["POST"])
+@teacher_required
+def attendance_unskip_day(course_id):
+    """Teacher re-includes a previously excluded date/session."""
+    course = get_course_or_404(course_id)
+    session_type = request.form.get("session_type", "Lecture").strip()
+    custom_date = request.form.get("custom_date", "").strip()
+    
+    conn = get_db()
+    conn.execute("""
+        DELETE FROM attendance_excluded_sessions
+        WHERE course_id = ? AND excluded_date = ? AND session_type = ?
+    """, (course_id, custom_date, session_type))
+    conn.commit()
+    conn.close()
+    
+    flash(f"✅ Session re-included: {custom_date} ({session_type}) now counts in attendance again.", "success")
     return redirect(url_for("course_attendance", course_id=course_id))
 
 

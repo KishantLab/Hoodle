@@ -368,6 +368,118 @@
       </form>
     </div>
 
+    <!-- Mark All Present Card -->
+    <div class="card" style="padding: 1.5rem; margin-bottom: 2rem;">
+      <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem;">
+        ✅ Mark All Students Present
+      </h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+        Give full attendance to ALL enrolled students for a specific date and session. Useful for holidays, compensatory classes, or special events.
+      </p>
+
+      <form action="{{ url_for('attendance_mark_all_present', course_id=course.id) }}" method="POST" onsubmit="return confirm('⚠️ This will mark ALL enrolled students as PRESENT for the selected date. Continue?')">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+              Date
+            </label>
+            <input type="date" name="custom_date" value="{{ today_str }}" required style="width: 100%; padding: 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+              Session Type
+            </label>
+            <select name="session_type" style="width: 100%; padding: 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+              <option value="Lecture">Lecture</option>
+              <option value="Lab">Lab</option>
+              <option value="Tutorial">Tutorial</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="background: var(--success); border-color: var(--success);">
+          ✅ Mark All Present
+        </button>
+      </form>
+    </div>
+
+    <!-- Skip/Exclude Day Card -->
+    <div class="card" style="padding: 1.5rem; margin-bottom: 2rem;">
+      <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem;">
+        🚫 Skip / Exclude a Session
+      </h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+        Exclude a session from attendance counting. That day won't count in total sessions or percentage calculations (e.g., cancelled class, holiday, technical issues).
+      </p>
+
+      <form action="{{ url_for('attendance_skip_day', course_id=course.id) }}" method="POST" onsubmit="return confirm('This will exclude this session from all attendance calculations. Continue?')">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 1rem; margin-bottom: 1rem;">
+          <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+              Date
+            </label>
+            <input type="date" name="custom_date" value="{{ today_str }}" required style="width: 100%; padding: 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+              Session Type
+            </label>
+            <select name="session_type" style="width: 100%; padding: 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+              <option value="Lecture">Lecture</option>
+              <option value="Lab">Lab</option>
+              <option value="Tutorial">Tutorial</option>
+            </select>
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text-muted); text-transform: uppercase;">
+              Reason (Optional)
+            </label>
+            <input type="text" name="reason" placeholder="e.g., Holiday, Class cancelled, Technical issue" style="width: 100%; padding: 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-secondary" style="color: var(--danger); border-color: var(--danger);">
+          🚫 Exclude This Session
+        </button>
+      </form>
+
+      {% if excluded_sessions %}
+        <div style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+          <h4 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 0.75rem;">Currently Excluded Sessions</h4>
+          <div class="table-responsive">
+            <table class="table lms-table" style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+              <thead>
+                <tr style="border-bottom: 2px solid var(--border); font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase;">
+                  <th style="padding: 0.5rem;">Date</th>
+                  <th style="padding: 0.5rem;">Session</th>
+                  <th style="padding: 0.5rem;">Reason</th>
+                  <th style="padding: 0.5rem;">Excluded By</th>
+                  <th style="padding: 0.5rem;">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for es in excluded_sessions %}
+                  <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 0.5rem; font-weight: 600;">{{ es.excluded_date }}</td>
+                    <td style="padding: 0.5rem;">
+                      <span class="badge" style="background: var(--primary-light); color: var(--primary); font-size: 0.75rem;">{{ es.session_type }}</span>
+                    </td>
+                    <td style="padding: 0.5rem; color: var(--text-muted); font-size: 0.85rem;">{{ es.reason or '—' }}</td>
+                    <td style="padding: 0.5rem; font-size: 0.85rem;">{{ es.excluded_by_name or '—' }}</td>
+                    <td style="padding: 0.5rem;">
+                      <form action="{{ url_for('attendance_unskip_day', course_id=course.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Re-include this session in attendance counting?')">
+                        <input type="hidden" name="custom_date" value="{{ es.excluded_date }}">
+                        <input type="hidden" name="session_type" value="{{ es.session_type }}">
+                        <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 0.75rem; color: var(--success);">↩️ Re-include</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
     <!-- Recent Logs Feed -->
     <div class="card" style="padding: 1.5rem;">
       <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 1rem;">Recent Attendance Logs (Last 50)</h3>
