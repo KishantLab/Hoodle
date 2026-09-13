@@ -16,7 +16,7 @@
 <body>
   <!-- Top Navigation Bar -->
   <header class="lms-navbar">
-    <div class="navbar-primary-row">
+    <div class="navbar-primary-row {% if not current_user %}has-guest-nav{% endif %}">
       <!-- Left: Brand (Hoodle Logo + Dual Lab Logos + Hoodle Wordmark) -->
       <a href="{{ url_for('dashboard') }}" class="brand-section">
         <div class="brand-logos-cluster">
@@ -36,7 +36,7 @@
       </a>
 
       <!-- Right: User Section or Sign In -->
-      <div class="navbar-user-actions">
+      <div class="navbar-user-actions {% if not current_user %}navbar-guest-actions{% endif %}">
         {% if current_user %}
           <!-- User Account Menu Wrapper with Mobile Dropdown -->
           <div class="user-menu-wrapper" id="userMenuWrapper">
@@ -116,9 +116,11 @@
             </div>
           </div>
         {% else %}
-          <a href="{{ url_for('usage_guide') }}" class="btn btn-outline btn-sm" style="margin-right: 0.4rem; text-decoration: none; font-size: 0.8rem;">📖 Guide</a>
-          <a href="{{ url_for('download_apk') }}" class="btn btn-outline btn-sm" style="margin-right: 0.4rem; text-decoration: none; font-size: 0.8rem;">📱 App (.apk)</a>
-          <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Sign In</a>
+          <div class="guest-nav-buttons">
+            <a href="{{ url_for('usage_guide') }}" class="btn btn-outline btn-sm">📖 Guide</a>
+            <a href="{{ url_for('download_apk') }}" class="btn btn-outline btn-sm">📱 App (.apk)</a>
+            <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Sign In</a>
+          </div>
         {% endif %}
       </div>
     </div>
@@ -647,7 +649,7 @@
       });
 
       if (mode === "internet") {
-        document.querySelectorAll("#btnNetInternet, #modalBtnNetInternet").forEach(btn => {
+        document.querySelectorAll("#btnNetInternet, #modalBtnNetInternet, #loginBtnNetInternet").forEach(btn => {
           btn.classList.add("active");
         });
         document.querySelectorAll("#dropdownNetStatus, #modalNetStatus").forEach(el => {
@@ -661,8 +663,12 @@
           topBadge.style.background = "#e0e7ff";
           topBadge.style.color = "#3730a3";
         }
+        const loginHint = document.getElementById("loginNetHint");
+        if (loginHint) {
+          loginHint.textContent = "Active Mode: Internet Access";
+        }
       } else {
-        document.querySelectorAll("#btnNetIntranet, #modalBtnNetIntranet").forEach(btn => {
+        document.querySelectorAll("#btnNetIntranet, #modalBtnNetIntranet, #loginBtnNetIntranet").forEach(btn => {
           btn.classList.add("active");
         });
         document.querySelectorAll("#dropdownNetStatus, #modalNetStatus").forEach(el => {
@@ -675,6 +681,10 @@
           topBadge.textContent = "Intranet";
           topBadge.style.background = "#dcfce7";
           topBadge.style.color = "#166534";
+        }
+        const loginHint = document.getElementById("loginNetHint");
+        if (loginHint) {
+          loginHint.textContent = "Default & Priority: Campus (Intranet)";
         }
       }
     }

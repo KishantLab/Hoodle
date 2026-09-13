@@ -92,6 +92,26 @@
       </button>
     </form>
   </div>
+
+  <!-- Network Access Switcher (Campus Intranet vs Internet) -->
+  <div class="login-network-box" style="margin-top: 1.5rem; text-align: center;">
+    <div style="font-size: 0.76rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.6rem;">
+      Network Access Mode
+    </div>
+    <div class="network-toggle-buttons" style="max-width: 320px; margin: 0 auto; background: #ffffff; padding: 4px; border-radius: 8px; border: 1.5px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+      <button type="button" class="btn-network-toggle active" id="loginBtnNetIntranet" onclick="selectNetworkMode('intranet', event)" title="Campus Intranet (Default &amp; Priority)">
+        <span class="net-dot"></span>
+        <span>Campus (Intranet)</span>
+      </button>
+      <button type="button" class="btn-network-toggle" id="loginBtnNetInternet" onclick="selectNetworkMode('internet', event)" title="Internet Access (Remote Access)">
+        <span class="net-dot"></span>
+        <span>Internet</span>
+      </button>
+    </div>
+    <div style="font-size: 0.72rem; color: #64748b; margin-top: 0.5rem; font-weight: 600;">
+      <span id="loginNetHint">Default &amp; Priority: Campus (Intranet)</span>
+    </div>
+  </div>
 </div>
 
 <script>

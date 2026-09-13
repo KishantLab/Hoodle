@@ -1165,7 +1165,7 @@ def inject_global_variables():
                 SELECT DISTINCT c.id, c.code, c.title, c.section, c.theme_color
                 FROM courses c
                 LEFT JOIN course_enrollments ce ON c.id = ce.course_id AND ce.user_id = ?
-                WHERE c.is_archived = 0 AND (c.teacher_id = ? OR ce.role IN ('teacher', 'ta'))
+                WHERE c.is_archived = 0 AND (c.teacher_id = ? OR ce.user_id IS NOT NULL)
                 ORDER BY c.title ASC
             """, (user["id"], user["id"])).fetchall()
         elif user["role"] == "admin":
@@ -1586,14 +1586,15 @@ def dashboard():
             """).fetchall()
         else:
             courses = conn.execute("""
-                SELECT c.*, u.display_name as teacher_name,
+                SELECT DISTINCT c.*, u.display_name as teacher_name,
                        (SELECT COUNT(*) FROM course_enrollments ce WHERE ce.course_id = c.id AND ce.role = 'student') as student_count,
                        (SELECT COUNT(*) FROM coursework cw WHERE cw.course_id = c.id) as total_work
                 FROM courses c
                 JOIN users u ON c.teacher_id = u.id
-                WHERE c.teacher_id = ?
-                ORDER BY c.is_archived ASC, c.created_at DESC
-            """, (user["id"],)).fetchall()
+                LEFT JOIN course_enrollments ce_user ON ce_user.course_id = c.id AND ce_user.user_id = ?
+                WHERE c.is_archived = 0 AND (c.teacher_id = ? OR ce_user.user_id IS NOT NULL)
+                ORDER BY c.created_at DESC
+            """, (user["id"], user["id"])).fetchall()
 
     conn.close()
     return render_template(

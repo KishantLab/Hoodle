@@ -2483,6 +2483,62 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertIn(b'function doPost(e)', res_view.data)
         self.logout()
 
+    def test_teacher_enrolled_course_visible_on_dashboard(self):
+        """Verify that a user with role 'teacher' who is enrolled as co-teacher/TA in another teacher's course sees that course on their dashboard."""
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        # Create a secondary teacher who does not own course 1 (which belongs to teacher_id=2)
+        pwd = app.hash_password("kishan123")
+        conn.execute("""
+            INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at)
+            VALUES ('kishan_test', '12310120', 'kishan_test@iitbhilai.ac.in', ?, 'Kishan Test', 'teacher', '2026-09-13 00:00:00')
+        """, (pwd,))
+        user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # Enroll this teacher as a TA/co-teacher in course 1
+        conn.execute("""
+            INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at)
+            VALUES (1, ?, 'ta', '2026-09-13 00:01:00')
+        """, (user_id,))
+        conn.commit()
+        conn.close()
+
+        # Login as kishan_test
+        self.login("kishan_test", "kishan123")
+        res = self.client.get("/dashboard")
+        self.assertEqual(res.status_code, 200)
+
+        # Must see course 1 (CSL100) on the dashboard! Must NOT see 'No Courses Found'
+        self.assertIn(b"CSL100", res.data)
+        self.assertNotIn(b"No Courses Found", res.data)
+        self.logout()
+
+    def test_login_screen_centered_topbar_and_bottom_network_switcher(self):
+        """Verify login screen has centered top bar buttons and bottom network access mode switcher strictly defaulting to intranet."""
+        res = self.client.get("/login")
+        self.assertEqual(res.status_code, 200)
+
+        # 1. Top bar has has-guest-nav and guest-nav-buttons
+        self.assertIn(b"has-guest-nav", res.data)
+        self.assertIn(b"guest-nav-buttons", res.data)
+        self.assertIn(b"navbar-guest-actions", res.data)
+        self.assertIn(b"Guide", res.data)
+        self.assertIn(b"App (.apk)", res.data)
+        self.assertIn(b"Sign In", res.data)
+
+        # 2. Bottom network switcher is present
+        self.assertIn(b"login-network-box", res.data)
+        self.assertIn(b"Network Access Mode", res.data)
+        self.assertIn(b'id="loginBtnNetIntranet"', res.data)
+        self.assertIn(b'id="loginBtnNetInternet"', res.data)
+        self.assertIn(b"Campus (Intranet)", res.data)
+        self.assertIn(b"Internet", res.data)
+        self.assertIn(b"Default &amp; Priority: Campus (Intranet)", res.data)
+
+        # 3. Strictly does NOT show raw clickable anchor links for network switching in the box
+        self.assertNotIn(b'<a href="https://accllogin.tail77fd8b.ts.net', res.data)
+        self.assertNotIn(b'<a href="https://10.10.14.104', res.data)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -178,6 +178,13 @@ img[src*="accl_logo.png"] {
   gap: 0.75rem;
 }
 
+.guest-nav-buttons {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
 .user-chip {
   display: flex;
   align-items: center;
@@ -1299,6 +1306,55 @@ body.is-android-app .lms-footer {
 
   .navbar-user-actions {
     gap: 0.4rem;
+  }
+
+  /* Mobile Guest/Login Top Bar - Centered Brand & Buttons */
+  .navbar-primary-row.has-guest-nav {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    gap: 0.55rem;
+    padding: 0.25rem 0 0.15rem 0;
+  }
+
+  .navbar-primary-row.has-guest-nav .brand-section {
+    margin: 0 auto;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .navbar-primary-row.has-guest-nav .brand-logos-cluster {
+    justify-content: center;
+  }
+
+  .navbar-guest-actions {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .guest-nav-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .guest-nav-buttons .btn {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin: 0 !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    text-align: center;
   }
 
   .user-desktop-actions {
