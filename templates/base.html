@@ -605,6 +605,12 @@
       }
       localStorage.setItem("hoodle_network_preference", targetMode);
 
+      // If running inside Android App, invoke native bridge for instant switch and persistent preference
+      if (window.Android && typeof window.Android.switchNetworkMode === "function") {
+        window.Android.switchNetworkMode(targetMode);
+        return;
+      }
+
       const currentHost = window.location.hostname;
       let path = window.location.pathname || "/lms/dashboard";
       const search = window.location.search || "";
@@ -637,6 +643,11 @@
     }
 
     function detectCurrentNetwork() {
+      if (window.Android && typeof window.Android.getActiveNetworkMode === "function") {
+        try {
+          return window.Android.getActiveNetworkMode();
+        } catch(e) {}
+      }
       const host = window.location.hostname;
       if (host.includes("ts.net") || host === "100.87.0.15") {
         return "internet";

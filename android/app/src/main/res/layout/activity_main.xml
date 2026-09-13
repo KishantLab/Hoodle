@@ -90,16 +90,18 @@
             android:textSize="12sp"
             android:gravity="center" />
 
-        <Button
-            android:id="@+id/btnRetry"
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSwitchInternet"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="52dp"
             android:layout_marginTop="20dp"
-            android:backgroundTint="@color/primary"
-            android:text="@string/retry_btn"
+            android:backgroundTint="#4f46e5"
+            android:text="@string/switch_internet_btn"
             android:textColor="#ffffff"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp" />
+            android:textSize="14sp"
+            android:textStyle="bold"
+            app:cornerRadius="12dp"
+            app:elevation="4dp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -115,18 +117,18 @@
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="6dp"
                 android:backgroundTint="#e2e8f0"
-                android:text="🏫 Proxy (/lms)"
+                android:text="@string/switch_campus_btn"
                 android:textSize="11sp"
                 android:textColor="@color/text_dark" />
 
             <Button
-                android:id="@+id/btnSwitchDirect"
+                android:id="@+id/btnRetry"
                 android:layout_width="0dp"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
                 android:backgroundTint="#e2e8f0"
-                android:text="⚡ Direct (:8095)"
+                android:text="@string/retry_btn"
                 android:textSize="11sp"
                 android:textColor="@color/text_dark" />
 
@@ -138,10 +140,31 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:backgroundTint="#f1f5f9"
-            android:text="🌐 Custom URL / Server Address"
+            android:text="⚙️ Custom URL / Server Address"
             android:textSize="12sp"
             android:textColor="@color/text_dim" />
 
     </LinearLayout>
+
+    <!-- Floating Quick Network Mode Switcher (Always accessible at top-right) -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnQuickSwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="36dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="10dp"
+        android:text="🌐 Internet"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:textColor="#ffffff"
+        android:backgroundTint="#4f46e5"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        app:cornerRadius="18dp"
+        app:elevation="4dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

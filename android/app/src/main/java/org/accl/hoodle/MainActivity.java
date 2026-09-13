@@ -10,8 +10,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
 import android.graphics.Bitmap;
 import android.net.ConnectivityManager;
+import com.google.android.material.button.MaterialButton;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
@@ -62,8 +65,9 @@ public class MainActivity extends AppCompatActivity {
     public static final String KEY_USER_ID = "user_id";
 
     public static final String URL_LAN = "https://10.10.14.104/lms/";
+    public static final String URL_INTERNET = "https://accllogin.tail77fd8b.ts.net/lms/";
     public static final String URL_HTTP = "http://10.10.14.104/lms/";
-    public static final String URL_DIRECT = "http://10.10.14.104:8095/";
+    public static final String URL_DIRECT = "http://10.10.14.104:8095/lms/";
     private static final String CHANNEL_ID = "hoodle_notifications_channel";
 
     private WebView webView;
@@ -73,8 +77,9 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvCurrentServer;
     private Button btnRetry;
     private Button btnSwitchLan;
-    private Button btnSwitchDirect;
+    private MaterialButton btnSwitchInternet;
     private Button btnCustomServer;
+    private MaterialButton btnQuickSwitch;
 
     private ValueCallback<Uri[]> filePathCallback;
     private ActivityResultLauncher<Intent> fileChooserLauncher;
@@ -109,8 +114,9 @@ public class MainActivity extends AppCompatActivity {
         tvCurrentServer = findViewById(R.id.tvCurrentServer);
         btnRetry = findViewById(R.id.btnRetry);
         btnSwitchLan = findViewById(R.id.btnSwitchLan);
-        btnSwitchDirect = findViewById(R.id.btnSwitchDirect);
+        btnSwitchInternet = findViewById(R.id.btnSwitchInternet);
         btnCustomServer = findViewById(R.id.btnCustomServer);
+        btnQuickSwitch = findViewById(R.id.btnQuickSwitch);
 
         setupSwipeRefresh();
         setupWebView();
@@ -149,22 +155,50 @@ public class MainActivity extends AppCompatActivity {
         swipeRefreshLayout.setEnabled(false);
     }
 
+    public void switchToInternet() {
+        setSavedServerUrl(URL_INTERNET);
+        Toast.makeText(this, "🌐 Switched to Internet (Tailscale Funnel)", Toast.LENGTH_SHORT).show();
+        updateQuickSwitchButton(URL_INTERNET);
+        loadPortalUrl();
+    }
+
+    public void switchToCampus() {
+        setSavedServerUrl(URL_LAN);
+        Toast.makeText(this, "🏫 Switched to Campus Wi-Fi (Intranet)", Toast.LENGTH_SHORT).show();
+        updateQuickSwitchButton(URL_LAN);
+        loadPortalUrl();
+    }
+
+    public void toggleNetworkMode() {
+        String current = getSavedServerUrl();
+        if (current != null && (current.contains("ts.net") || current.contains("100.87.0.15"))) {
+            switchToCampus();
+        } else {
+            switchToInternet();
+        }
+    }
+
+    private void updateQuickSwitchButton(String currentUrl) {
+        if (btnQuickSwitch == null) return;
+        if (currentUrl != null && (currentUrl.contains("ts.net") || currentUrl.contains("100.87.0.15"))) {
+            btnQuickSwitch.setText("🏫 Campus");
+            btnQuickSwitch.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#059669"))); // Emerald Green
+        } else {
+            btnQuickSwitch.setText("🌐 Internet");
+            btnQuickSwitch.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#4f46e5"))); // Indigo
+        }
+    }
+
     private void setupServerSwitchers() {
         btnRetry.setOnClickListener(v -> loadPortalUrl());
-
-        btnSwitchLan.setOnClickListener(v -> {
-            setSavedServerUrl(URL_LAN);
-            Toast.makeText(this, "Switched to Secure Campus HTTPS (/lms)", Toast.LENGTH_SHORT).show();
-            loadPortalUrl();
-        });
-
-        btnSwitchDirect.setOnClickListener(v -> {
-            setSavedServerUrl(URL_DIRECT);
-            Toast.makeText(this, "Switched to Direct Port (:8095)", Toast.LENGTH_SHORT).show();
-            loadPortalUrl();
-        });
-
+        btnSwitchInternet.setOnClickListener(v -> switchToInternet());
+        btnSwitchLan.setOnClickListener(v -> switchToCampus());
         btnCustomServer.setOnClickListener(v -> showCustomServerDialog());
+
+        if (btnQuickSwitch != null) {
+            btnQuickSwitch.setOnClickListener(v -> toggleNetworkMode());
+            updateQuickSwitchButton(getSavedServerUrl());
+        }
     }
 
     private void showCustomServerDialog() {
@@ -187,6 +221,7 @@ public class MainActivity extends AppCompatActivity {
                     newUrl = newUrl + "/";
                 }
                 setSavedServerUrl(newUrl);
+                updateQuickSwitchButton(newUrl);
                 loadPortalUrl();
             }
         });
@@ -197,8 +232,9 @@ public class MainActivity extends AppCompatActivity {
     private String getSavedServerUrl() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String url = prefs.getString(KEY_SERVER_URL, URL_LAN);
-        if (url != null && url.startsWith("http://10.10.14.104/lms/")) {
-            url = url.replaceFirst("http://", "https://");
+        // Normalize obsolete/broken :8095 direct links back to standard LAN
+        if (url != null && (url.contains(":8095") || url.startsWith("http://10.10.14.104/lms/"))) {
+            url = URL_LAN;
             prefs.edit().putString(KEY_SERVER_URL, url).apply();
         }
         return url;
@@ -207,6 +243,7 @@ public class MainActivity extends AppCompatActivity {
     private void setSavedServerUrl(String url) {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         prefs.edit().putString(KEY_SERVER_URL, url).apply();
+        updateQuickSwitchButton(url);
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -253,6 +290,7 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 progressBar.setVisibility(View.GONE);
+                updateQuickSwitchButton(url);
             }
 
             @Override
@@ -274,7 +312,7 @@ public class MainActivity extends AppCompatActivity {
                 String url = request.getUrl().toString();
 
                 // Keep internal LMS routes inside the WebView
-                if (url.contains("10.10.14.104") || url.contains("/lms") || url.contains(":8095") || url.contains("hoodle")) {
+                if (url.contains("10.10.14.104") || url.contains("ts.net") || url.contains("/lms") || url.contains(":8095") || url.contains("hoodle")) {
                     return false; // Load inside app
                 }
 
@@ -470,18 +508,28 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
-        public void showToast(String message) {
-            if (message != null) {
-                activity.runOnUiThread(() -> Toast.makeText(activity, message, Toast.LENGTH_SHORT).show());
+        public void switchNetworkMode(String mode) {
+            activity.runOnUiThread(() -> {
+                if ("internet".equalsIgnoreCase(mode)) {
+                    activity.switchToInternet();
+                } else {
+                    activity.switchToCampus();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public String getActiveNetworkMode() {
+            String current = activity.getSavedServerUrl();
+            if (current != null && (current.contains("ts.net") || current.contains("100.87.0.15"))) {
+                return "internet";
             }
+            return "intranet";
         }
 
         @JavascriptInterface
         public void switchToHttps() {
-            activity.runOnUiThread(() -> {
-                activity.setSavedServerUrl(URL_LAN);
-                activity.loadPortalUrl();
-            });
+            activity.runOnUiThread(activity::switchToCampus);
         }
     }
 }
