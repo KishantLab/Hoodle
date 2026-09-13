@@ -7853,20 +7853,15 @@ def messages_view():
 
     # 1. Fetch distinct conversation partners
     raw_convos = conn.execute("""
-        SELECT 
-            CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END as other_user_id,
-            MAX(created_at) as last_activity,
-            (SELECT message FROM direct_messages m2 
-             WHERE (m2.sender_id = ? AND m2.recipient_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END)
-                OR (m2.recipient_id = ? AND m2.sender_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END)
-             ORDER BY m2.id DESC LIMIT 1) as last_message,
-            (SELECT COUNT(*) FROM direct_messages m3
-             WHERE m3.recipient_id = ? AND m3.sender_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END AND m3.is_read = 0) as unread_count
-        FROM direct_messages m
-        WHERE sender_id = ? OR recipient_id = ?
-        GROUP BY other_user_id
+        SELECT partner_id as other_user_id, MAX(created_at) as last_activity
+        FROM (
+            SELECT CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END as partner_id, created_at
+            FROM direct_messages
+            WHERE sender_id = ? OR recipient_id = ?
+        ) sub
+        GROUP BY partner_id
         ORDER BY last_activity DESC
-    """, (curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id)).fetchall()
+    """, (curr_id, curr_id, curr_id)).fetchall()
 
     conversations = []
     for c in raw_convos:
@@ -7878,11 +7873,23 @@ def messages_view():
             # If course_context_id is set, filter to contacts relevant to this course
             if course_context_id and course_member_ids and (partner["id"] not in course_member_ids):
                 continue
+
+            last_msg_row = conn.execute("""
+                SELECT message FROM direct_messages
+                WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
+                ORDER BY id DESC LIMIT 1
+            """, (curr_id, partner["id"], partner["id"], curr_id)).fetchone()
+
+            unread_row = conn.execute("""
+                SELECT COUNT(*) as unread FROM direct_messages
+                WHERE recipient_id = ? AND sender_id = ? AND is_read = 0
+            """, (curr_id, partner["id"])).fetchone()
+
             conversations.append({
                 "partner": partner,
                 "last_activity": c["last_activity"],
-                "last_message": c["last_message"],
-                "unread_count": c["unread_count"]
+                "last_message": last_msg_row["message"] if last_msg_row else "",
+                "unread_count": unread_row["unread"] if unread_row else 0
             })
 
     # 2. Eligible contacts to start new chat
@@ -8133,20 +8140,15 @@ def api_messages_poll():
 
     # Fetch updated conversations summary
     raw_convos = conn.execute("""
-        SELECT 
-            CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END as other_user_id,
-            MAX(created_at) as last_activity,
-            (SELECT message FROM direct_messages m2 
-             WHERE (m2.sender_id = ? AND m2.recipient_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END)
-                OR (m2.recipient_id = ? AND m2.sender_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END)
-             ORDER BY m2.id DESC LIMIT 1) as last_message,
-            (SELECT COUNT(*) FROM direct_messages m3
-             WHERE m3.recipient_id = ? AND m3.sender_id = CASE WHEN m.sender_id = ? THEN m.recipient_id ELSE m.sender_id END AND m3.is_read = 0) as unread_count
-        FROM direct_messages m
-        WHERE sender_id = ? OR recipient_id = ?
-        GROUP BY other_user_id
+        SELECT partner_id as other_user_id, MAX(created_at) as last_activity
+        FROM (
+            SELECT CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END as partner_id, created_at
+            FROM direct_messages
+            WHERE sender_id = ? OR recipient_id = ?
+        ) sub
+        GROUP BY partner_id
         ORDER BY last_activity DESC
-    """, (curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id, curr_id)).fetchall()
+    """, (curr_id, curr_id, curr_id)).fetchall()
 
     conversations = []
     total_unread = 0
@@ -8157,7 +8159,19 @@ def api_messages_poll():
                 continue
             if course_id and course_member_ids and (partner["id"] not in course_member_ids):
                 continue
-            unr = c["unread_count"] or 0
+
+            last_msg_row = conn.execute("""
+                SELECT message FROM direct_messages
+                WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
+                ORDER BY id DESC LIMIT 1
+            """, (curr_id, partner["id"], partner["id"], curr_id)).fetchone()
+
+            unread_row = conn.execute("""
+                SELECT COUNT(*) as unread FROM direct_messages
+                WHERE recipient_id = ? AND sender_id = ? AND is_read = 0
+            """, (curr_id, partner["id"])).fetchone()
+
+            unr = unread_row["unread"] if unread_row else 0
             total_unread += unr
             conversations.append({
                 "partner_id": partner["id"],
@@ -8165,7 +8179,7 @@ def api_messages_poll():
                 "roll_number": partner["roll_number"] or "",
                 "role": partner["role"],
                 "last_activity": c["last_activity"],
-                "last_message": c["last_message"] or "",
+                "last_message": last_msg_row["message"] if last_msg_row else "",
                 "unread_count": unr
             })
 
