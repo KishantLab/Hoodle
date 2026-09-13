@@ -30,6 +30,19 @@
     </div>
   </div>
 
+  <!-- Action Required Warning if Password Not Configured -->
+  {% if not has_password %}
+  <div style="background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 1.1rem 1.25rem; margin-bottom: 1.5rem; font-size: 0.9rem; color: #92400e; line-height: 1.5;">
+    <div style="font-weight: 800; font-size: 1rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.45rem;">
+      <span>⚠️</span>
+      <span>Action Required: Google App Password is Not Configured</span>
+    </div>
+    <div style="color: #78350f;">
+      Outgoing course invitations, student notifications, and announcements will be queued safely in the persistent outbox. Enter your 16-character Google App Password in the form below and click <strong>"Save Email Configuration"</strong> to activate delivery and flush queued messages.
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Troubleshooting Guide for Google 534 Error -->
   <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #2563eb; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; font-size: 0.85rem; color: #1e3a8a; line-height: 1.5;">
     <div style="font-weight: 800; font-size: 0.95rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.45rem;">
@@ -47,39 +60,57 @@
   </div>
 
   <!-- Status Overview Cards -->
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.75rem;">
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.75rem;">
     <!-- Active Sender Card -->
     <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; border-left: 4px solid #2563eb;">
-      <div style="width: 48px; height: 48px; border-radius: 12px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
+      <div style="width: 44px; height: 44px; border-radius: 12px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
         📧
       </div>
       <div style="flex: 1; min-width: 0;">
-        <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+        <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
           Active Sender Account
         </div>
-        <div style="font-weight: 800; font-size: 1.05rem; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+        <div style="font-weight: 800; font-size: 0.98rem; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
           {{ gmail_user }}
         </div>
-        <div style="font-size: 0.74rem; color: #166534; font-weight: 600; margin-top: 0.15rem; display: flex; align-items: center; gap: 0.3rem;">
-          <span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block;"></span>
-          <span>Authenticated via Google App Password / SMTP</span>
+        <div style="font-size: 0.72rem; color: {% if has_password %}#166534{% else %}#b91c1c{% endif %}; font-weight: 600; margin-top: 0.15rem; display: flex; align-items: center; gap: 0.3rem;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: {% if has_password %}#22c55e{% else %}#ef4444{% endif %}; display: inline-block;"></span>
+          <span>{% if has_password %}App Password Configured{% else %}Password Missing{% endif %}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Outbox Queue Status Card -->
+    <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; border-left: 4px solid #f59e0b;">
+      <div style="width: 44px; height: 44px; border-radius: 12px; background: #fffbeb; color: #d97706; display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
+        📬
+      </div>
+      <div>
+        <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+          Email Outbox Status
+        </div>
+        <div style="font-weight: 800; font-size: 0.98rem; color: #0f172a;">
+          {{ sent_count }} Sent &bull; {{ pending_count }} Queued
+        </div>
+        <div style="font-size: 0.72rem; color: {% if failed_count > 0 %}#dc2626{% else %}#166534{% endif %}; margin-top: 0.15rem; font-weight: 600;">
+          {% if failed_count > 0 %}{{ failed_count }} Failed (Action Needed){% else %}Zero Lost Messages{% endif %}
         </div>
       </div>
     </div>
 
     <!-- Security & Encryption Card -->
     <div class="card" style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem; border-left: 4px solid #16a34a;">
-      <div style="width: 48px; height: 48px; border-radius: 12px; background: #f0fdf4; color: #16a34a; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
+      <div style="width: 44px; height: 44px; border-radius: 12px; background: #f0fdf4; color: #16a34a; display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
         🔒
       </div>
       <div>
-        <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+        <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
           Encryption Protocol
         </div>
-        <div style="font-weight: 800; font-size: 1.05rem; color: #0f172a;">
+        <div style="font-weight: 800; font-size: 0.98rem; color: #0f172a;">
           {{ smtp_security | upper }} (Port {{ smtp_port }})
         </div>
-        <div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.15rem;">
+        <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.15rem;">
           Host: <code>{{ smtp_host }}</code>
         </div>
       </div>
@@ -94,7 +125,7 @@
           <span>⚙️</span> Edit Outgoing Email Credentials
         </h2>
         <span style="font-size: 0.75rem; background: #eff6ff; color: #1e40af; font-weight: 700; padding: 2px 8px; border-radius: 9999px;">
-          Instant Hot Reload
+          Dual Persistence (DB + File)
         </span>
       </div>
 
@@ -114,13 +145,13 @@
             <label class="form-label" for="gmail_password" style="margin-bottom: 0;">
               Password / Google App Password (16 Characters)
             </label>
-            <span style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">
-              Current: {{ masked_pass }}
+            <span style="font-size: 0.72rem; {% if has_password %}color: #166534; font-weight: 700;{% else %}color: #dc2626; font-weight: 800;{% endif %} font-family: monospace;">
+              {% if has_password %}Current: {{ masked_pass }} &check;{% else %}⚠️ {{ masked_pass }}{% endif %}
             </span>
           </div>
-          <input type="password" id="gmail_password" name="gmail_password" class="form-control" placeholder="Leave blank to keep current password" autocomplete="new-password">
+          <input type="password" id="gmail_password" name="gmail_password" class="form-control" placeholder="{% if has_password %}Leave blank to keep current password{% else %}Enter 16-character Google App Password (e.g. abcd efgh ijkl mnop){% endif %}" autocomplete="new-password">
           <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.45;">
-            💡 <strong>For Gmail:</strong> Must be a 16-letter App Password generated at <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color: #2563eb; font-weight: 700;">myaccount.google.com/apppasswords</a>.
+            💡 <strong>For Gmail:</strong> Must be a 16-letter App Password generated at <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color: #2563eb; font-weight: 700;">myaccount.google.com/apppasswords</a>. Credentials are saved permanently to both SQLite database and secure config file.
           </div>
         </div>
 
@@ -214,6 +245,116 @@
         </ul>
       </div>
     </div>
+  </div>
+
+  <!-- Reliable Email Outbox & Delivery Queue Monitor -->
+  <div class="card" style="margin-top: 2rem; padding: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.85rem;">
+      <div>
+        <h2 style="font-size: 1.2rem; font-weight: 800; color: #1e3a8a; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+          <span>📬</span> Reliable Email Outbox &amp; Delivery Queue
+        </h2>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0.25rem 0 0 0;">
+          All invitations, announcements, coursework alerts, and grades are guaranteed persistent. If SMTP encounters transient network or authentication issues, messages are queued and retried automatically.
+        </p>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+        <form action="{{ url_for('admin_retry_email_queue') }}" method="POST" style="margin: 0;">
+          <button type="submit" class="btn btn-primary btn-sm" style="font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; background: #2563eb; color: white;">
+            <span>🔄</span>
+            <span>Retry Failed &amp; Pending Emails</span>
+          </button>
+        </form>
+        {% if sent_count > 0 %}
+        <form action="{{ url_for('admin_clear_sent_email_queue') }}" method="POST" style="margin: 0;">
+          <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--text-muted); display: inline-flex; align-items: center; gap: 0.35rem;">
+            <span>🗑️</span>
+            <span>Clear Delivered Logs</span>
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Queue Summary Counters -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 1rem; text-align: center;">
+        <div style="font-size: 0.75rem; font-weight: 700; color: #166534; text-transform: uppercase;">Delivered</div>
+        <div style="font-size: 1.75rem; font-weight: 900; color: #15803d; margin-top: 0.25rem;">{{ sent_count }}</div>
+      </div>
+      <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 1rem; text-align: center;">
+        <div style="font-size: 0.75rem; font-weight: 700; color: #92400e; text-transform: uppercase;">Queued / Pending</div>
+        <div style="font-size: 1.75rem; font-weight: 900; color: #b45309; margin-top: 0.25rem;">{{ pending_count }}</div>
+      </div>
+      <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1rem; text-align: center;">
+        <div style="font-size: 0.75rem; font-weight: 700; color: #991b1b; text-transform: uppercase;">Failed (Exhausted)</div>
+        <div style="font-size: 1.75rem; font-weight: 900; color: #b91c1c; margin-top: 0.25rem;">{{ failed_count }}</div>
+      </div>
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; text-align: center;">
+        <div style="font-size: 0.75rem; font-weight: 700; color: #475569; text-transform: uppercase;">Total Tracked</div>
+        <div style="font-size: 1.75rem; font-weight: 900; color: #1e293b; margin-top: 0.25rem;">{{ total_queue }}</div>
+      </div>
+    </div>
+
+    <!-- Recent Outbox Entries Table -->
+    {% if recent_queue_emails %}
+    <div class="table-responsive" style="overflow-x: auto;">
+      <table class="table lms-table" style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+        <thead>
+          <tr style="border-bottom: 2px solid var(--border); font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; text-align: left;">
+            <th style="padding: 0.6rem 0.75rem;">Status</th>
+            <th style="padding: 0.6rem 0.75rem;">Recipient</th>
+            <th style="padding: 0.6rem 0.75rem;">Subject</th>
+            <th style="padding: 0.6rem 0.75rem;">Attempts</th>
+            <th style="padding: 0.6rem 0.75rem;">Created</th>
+            <th style="padding: 0.6rem 0.75rem;">Status Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in recent_queue_emails %}
+          <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: 0.6rem 0.75rem; white-space: nowrap;">
+              {% if item.status == 'sent' %}
+                <span class="badge" style="background: #dcfce7; color: #166534; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 9999px;">&check; Delivered</span>
+              {% elif item.status == 'pending' %}
+                <span class="badge" style="background: #fef3c7; color: #92400e; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 9999px;">⏳ Pending Retry</span>
+              {% else %}
+                <span class="badge" style="background: #fee2e2; color: #991b1b; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 9999px;">&times; Delivery Failed</span>
+              {% endif %}
+            </td>
+            <td style="padding: 0.6rem 0.75rem; font-weight: 600; color: #0f172a;">
+              {{ item.recipient_email }}
+            </td>
+            <td style="padding: 0.6rem 0.75rem; color: #334155; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              {{ item.subject }}
+            </td>
+            <td style="padding: 0.6rem 0.75rem; text-align: center; color: var(--text-muted); font-size: 0.8rem;">
+              {{ item.attempts }} / {{ item.max_attempts }}
+            </td>
+            <td style="padding: 0.6rem 0.75rem; color: var(--text-muted); font-size: 0.78rem; white-space: nowrap;">
+              {{ item.created_at }}
+            </td>
+            <td style="padding: 0.6rem 0.75rem; font-size: 0.78rem; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              {% if item.status == 'sent' %}
+                <span style="color: #16a34a;">Sent at {{ item.sent_at }}</span>
+              {% elif item.last_error %}
+                <span style="color: #dc2626;" title="{{ item.last_error }}">Error: {{ item.last_error }}</span>
+              {% else %}
+                <span style="color: var(--text-muted);">Scheduled next: {{ item.next_retry_at }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted); font-size: 0.88rem;">
+      <span style="font-size: 2rem; display: block; margin-bottom: 0.5rem;">📭</span>
+      Outbox queue is currently empty. All outgoing emails have been delivered successfully.
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

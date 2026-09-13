@@ -24,7 +24,7 @@ import threading
 import urllib.request
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
 
@@ -546,6 +546,26 @@ def init_db():
             FOREIGN KEY (excluded_by) REFERENCES users(id)
         )
     """)
+    # 15. Persistent Email Outbox Queue for Reliable Notification Delivery
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS email_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recipient_email TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            heading TEXT DEFAULT '',
+            body_text TEXT DEFAULT '',
+            html_content TEXT NOT NULL,
+            plain_content TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            max_attempts INTEGER NOT NULL DEFAULT 5,
+            last_error TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            next_retry_at TEXT NOT NULL,
+            sent_at TEXT
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_email_queue_status_retry ON email_queue (status, next_retry_at)")
 
     conn.commit()
 
@@ -637,48 +657,119 @@ def init_db():
 
 # --- Gmail Notification & Email Services ---
 
+EMAIL_CONFIG_FILE = STORAGE_DIR / "email_config.json"
+
+
+def load_email_config_file():
+    """Reads email configuration from JSON file in STORAGE_DIR if it exists."""
+    try:
+        if EMAIL_CONFIG_FILE.exists():
+            with open(EMAIL_CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        app.logger.warning("Error reading email config file %s: %s", EMAIL_CONFIG_FILE, e)
+    return {}
+
+
+def save_email_config_file(config_dict):
+    """Saves email configuration to JSON file in STORAGE_DIR with secure 0600 permissions."""
+    try:
+        STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp_path = STORAGE_DIR / "email_config.json.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(config_dict, f, indent=2)
+        os.chmod(tmp_path, 0o600)
+        tmp_path.replace(EMAIL_CONFIG_FILE)
+    except Exception as e:
+        app.logger.warning("Error saving email config file %s: %s", EMAIL_CONFIG_FILE, e)
+
+
 def get_smtp_full_config():
     """
     Returns dict of all SMTP settings: user, password, from_name, host, port, security.
+    Uses multi-layer persistence:
+    1. SQLite system_settings table
+    2. Secure JSON configuration file (storage/email_config.json)
+    3. Environment variables
+    Never defaults to hardcoded expired credentials.
     """
-    default_user = os.environ.get("GMAIL_SMTP_USER", "hoodle.lms@gmail.com").strip()
-    default_pass = os.environ.get("GMAIL_APP_PASSWORD", "hvrnbggfrzmnvrsh").strip()
-    default_from = os.environ.get("GMAIL_FROM_NAME", "Hoodle LMS").strip()
-    default_host = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
-    default_port = int(os.environ.get("SMTP_PORT", 587))
-    default_security = os.environ.get("SMTP_SECURITY", "starttls").strip().lower()
+    env_user = os.environ.get("GMAIL_SMTP_USER", "").strip()
+    env_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
+    env_from = os.environ.get("GMAIL_FROM_NAME", "").strip()
+    env_host = os.environ.get("SMTP_HOST", "").strip()
+    env_port = os.environ.get("SMTP_PORT", "").strip()
+    env_security = os.environ.get("SMTP_SECURITY", "").strip().lower()
 
+    file_cfg = load_email_config_file()
+
+    user = ""
+    password = ""
+    from_name = ""
+    host = ""
+    port = None
+    security = ""
+
+    # Layer 1: SQLite system_settings
     try:
         conn = get_db()
         rows = conn.execute("SELECT key, value FROM system_settings WHERE key IN ('gmail_smtp_user', 'gmail_app_password', 'gmail_from_name', 'smtp_host', 'smtp_port', 'smtp_security')").fetchall()
         conn.close()
         settings = {r["key"]: r["value"] for r in rows if r["value"]}
-        user = settings.get("gmail_smtp_user") or default_user
-        password = settings.get("gmail_app_password") or default_pass
-        from_name = settings.get("gmail_from_name") or default_from
-        host = settings.get("smtp_host") or default_host
+        user = settings.get("gmail_smtp_user") or ""
+        password = settings.get("gmail_app_password") or ""
+        from_name = settings.get("gmail_from_name") or ""
+        host = settings.get("smtp_host") or ""
+        if settings.get("smtp_port"):
+            try:
+                port = int(settings.get("smtp_port"))
+            except (ValueError, TypeError):
+                pass
+        security = (settings.get("smtp_security") or "").lower()
+    except Exception as e:
+        app.logger.warning("Could not read SMTP config from database: %s", e)
+
+    # Layer 2: Secure JSON file fallback in storage/
+    if not user:
+        user = file_cfg.get("gmail_smtp_user", "")
+    if not password:
+        password = file_cfg.get("gmail_app_password", "")
+    if not from_name:
+        from_name = file_cfg.get("gmail_from_name", "")
+    if not host:
+        host = file_cfg.get("smtp_host", "")
+    if port is None and file_cfg.get("smtp_port"):
         try:
-            port = int(settings.get("smtp_port") or default_port)
+            port = int(file_cfg.get("smtp_port"))
+        except (ValueError, TypeError):
+            pass
+    if not security:
+        security = (file_cfg.get("smtp_security") or "").lower()
+
+    # Layer 3: Environment variable fallback
+    if not user:
+        user = env_user or "hoodle.lms@gmail.com"
+    if not password:
+        password = env_pass
+    if not from_name:
+        from_name = env_from or "Hoodle LMS"
+    if not host:
+        host = env_host or "smtp.gmail.com"
+    if port is None:
+        try:
+            port = int(env_port) if env_port else 587
         except (ValueError, TypeError):
             port = 587
-        security = (settings.get("smtp_security") or default_security).lower()
-        return {
-            "user": user.strip(),
-            "password": password.strip().replace(" ", ""),
-            "from_name": from_name.strip(),
-            "host": host.strip(),
-            "port": port,
-            "security": security
-        }
-    except Exception:
-        return {
-            "user": default_user,
-            "password": default_pass.replace(" ", ""),
-            "from_name": default_from,
-            "host": default_host,
-            "port": default_port,
-            "security": default_security
-        }
+    if not security:
+        security = env_security or "starttls"
+
+    return {
+        "user": user.strip(),
+        "password": password.strip().replace(" ", ""),
+        "from_name": from_name.strip(),
+        "host": host.strip(),
+        "port": port,
+        "security": security
+    }
 
 
 def get_smtp_config():
@@ -781,15 +872,177 @@ def resolve_portal_url(path_or_url):
     return f"{base_url}{path_or_url}"
 
 
+# --- Outbox Email Queue Dispatcher & Background Processor ---
+
+_email_queue_lock = threading.Lock()
+
+
+def enqueue_email(recipient_email, subject, heading, body_text, html_content, plain_content):
+    """
+    Inserts an outgoing email into the persistent outbox queue and triggers immediate dispatch.
+    Zero dropped messages: Guaranteed persistence before network transmission.
+    """
+    if not recipient_email or "@" not in recipient_email:
+        return None
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        conn = get_db()
+        cursor = conn.execute("""
+            INSERT INTO email_queue (
+                recipient_email, subject, heading, body_text,
+                html_content, plain_content, status, attempts, max_attempts,
+                last_error, created_at, next_retry_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, 5, '', ?, ?)
+        """, (recipient_email.strip(), subject, heading or "", body_text or "", html_content, plain_content, now_str, now_str))
+        queue_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        trigger_email_queue_processing()
+        return queue_id
+    except Exception as e:
+        app.logger.warning("Failed to enqueue email to %s: %s", recipient_email, e)
+        return None
+
+
+def process_email_queue(limit=50):
+    """
+    Processes pending emails in email_queue whose next_retry_at <= now.
+    Reuses a single authenticated SMTP connection across the batch for maximum efficiency.
+    Updates status to 'sent' or applies exponential backoff on error.
+    """
+    if not _email_queue_lock.acquire(blocking=False):
+        return
+
+    try:
+        cfg = get_smtp_full_config()
+        if not cfg["user"] or not cfg["password"]:
+            return
+
+        now_dt = datetime.now()
+        now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        conn = get_db()
+        items = conn.execute("""
+            SELECT id, recipient_email, subject, heading, body_text, html_content, plain_content, attempts, max_attempts
+            FROM email_queue
+            WHERE status = 'pending' AND next_retry_at <= ?
+            ORDER BY id ASC
+            LIMIT ?
+        """, (now_str, limit)).fetchall()
+        conn.close()
+
+        if not items:
+            return
+
+        server = None
+        smtp_user = None
+        from_name = None
+
+        try:
+            server, smtp_user, from_name = create_smtp_connection()
+        except Exception as conn_err:
+            err_msg = str(conn_err)
+            app.logger.warning("Email queue batch halted - SMTP connection failed: %s", err_msg)
+            conn = get_db()
+            for it in items:
+                new_attempts = it["attempts"] + 1
+                backoff_minutes = min(60, 2 ** new_attempts)
+                next_retry = (now_dt + timedelta(minutes=backoff_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+                new_status = "failed" if new_attempts >= it["max_attempts"] else "pending"
+                conn.execute("""
+                    UPDATE email_queue
+                    SET attempts = ?, last_error = ?, status = ?, next_retry_at = ?
+                    WHERE id = ?
+                """, (new_attempts, f"SMTP Connection Failed: {err_msg[:300]}", new_status, next_retry, it["id"]))
+            conn.commit()
+            conn.close()
+            return
+
+        for it in items:
+            q_id = it["id"]
+            rec_email = it["recipient_email"]
+            subj = it["subject"]
+            html_body = it["html_content"]
+            plain_body = it["plain_content"]
+
+            try:
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = subj
+                msg["From"] = f"{from_name} <{smtp_user}>"
+                msg["To"] = rec_email
+                msg.attach(MIMEText(plain_body, "plain"))
+                msg.attach(MIMEText(html_body, "html"))
+
+                server.sendmail(smtp_user, [rec_email], msg.as_string())
+
+                conn = get_db()
+                sent_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                conn.execute("""
+                    UPDATE email_queue
+                    SET status = 'sent', sent_at = ?, last_error = ''
+                    WHERE id = ?
+                """, (sent_str, q_id))
+                conn.commit()
+                conn.close()
+                app.logger.info("Email queue item [%d] delivered to %s (%s)", q_id, rec_email, subj)
+
+            except Exception as send_err:
+                err_str = str(send_err)
+                app.logger.warning("Failed delivering queued email [%d] to %s: %s", q_id, rec_email, err_str)
+                new_attempts = it["attempts"] + 1
+                backoff_minutes = min(60, 2 ** new_attempts)
+                next_retry = (datetime.now() + timedelta(minutes=backoff_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+                new_status = "failed" if new_attempts >= it["max_attempts"] else "pending"
+
+                conn = get_db()
+                conn.execute("""
+                    UPDATE email_queue
+                    SET attempts = ?, last_error = ?, status = ?, next_retry_at = ?
+                    WHERE id = ?
+                """, (new_attempts, err_str[:300], new_status, next_retry, q_id))
+                conn.commit()
+                conn.close()
+
+        try:
+            server.quit()
+        except Exception:
+            pass
+
+    except Exception as outer_err:
+        app.logger.warning("Unexpected error processing email queue: %s", outer_err)
+    finally:
+        _email_queue_lock.release()
+
+
+def trigger_email_queue_processing():
+    """Spawns an async worker to process any pending emails in the queue."""
+    t = threading.Thread(target=process_email_queue, daemon=True)
+    t.start()
+
+
+def _email_queue_background_daemon():
+    """Periodic daemon that checks for retryable pending emails every 60 seconds."""
+    while True:
+        try:
+            time.sleep(60)
+            process_email_queue()
+        except Exception:
+            pass
+
+
+_email_daemon_thread = threading.Thread(target=_email_queue_background_daemon, daemon=True)
+_email_daemon_thread.start()
+
+
 def send_course_invitation_email(course, recipient_email, student_roll, teacher_name, token, role="student"):
     """
-    Sends a course invitation email via Gmail SMTP in a background daemon thread.
-    Gracefully logs and exits if Gmail credentials are not configured.
+    Sends a course invitation email via the persistent outbox email queue.
     Supports both Student and Teaching Assistant (TA) / Co-Teacher invitations.
+    Zero lost messages: Persisted to database outbox before async delivery.
     """
-    gmail_user, gmail_pass, from_name = get_smtp_config()
-
-    if not gmail_user or not gmail_pass or not recipient_email:
+    if not recipient_email or "@" not in recipient_email:
         return
 
     join_url = resolve_portal_url(f"/invitations/accept/{token}")
@@ -800,23 +1053,13 @@ def send_course_invitation_email(course, recipient_email, student_roll, teacher_
 
     is_ta = role in ("ta", "teacher")
     role_label = "Teaching Assistant / Co-Teacher" if role == "ta" else ("Teacher / Faculty" if role == "teacher" else "Student")
+    subject = f"Course Invitation: Join {course_code} as {role_label} - {course_title}" if is_ta else f"Course Invitation: {course_code} - {course_title}"
 
-    def _worker():
-        try:
-            server, smtp_user, smtp_from = create_smtp_connection()
-            msg = MIMEMultipart("alternative")
-            if is_ta:
-                msg["Subject"] = f"Course Invitation: Join {course_code} as {role_label} - {course_title}"
-            else:
-                msg["Subject"] = f"Course Invitation: {course_code} - {course_title}"
-            msg["From"] = f"{smtp_from} <{smtp_user}>"
-            msg["To"] = recipient_email
+    role_desc = f"as a {role_label}" if is_ta else "to join"
+    role_badge = f"""<div style="font-size: 11px; font-weight: 700; color: #3730a3; background: #e0e7ff; display: inline-block; padding: 2px 8px; border-radius: 9999px; margin-top: 6px; text-transform: uppercase;">Role: {role_label}</div>""" if is_ta else ""
+    btn_text = f"Accept Invitation & Join as {role_label}" if is_ta else "Accept Invitation & Join Class"
 
-            role_desc = f"as a {role_label}" if is_ta else "to join"
-            role_badge = f"""<div style="font-size: 11px; font-weight: 700; color: #3730a3; background: #e0e7ff; display: inline-block; padding: 2px 8px; border-radius: 9999px; margin-top: 6px; text-transform: uppercase;">Role: {role_label}</div>""" if is_ta else ""
-            btn_text = f"Accept Invitation & Join as {role_label}" if is_ta else "Accept Invitation & Join Class"
-
-            plain_text = f"""Hello,
+    plain_text = f"""Hello,
 
 You have been invited by Prof. {teacher_name} {role_desc} {course_code}: {course_title} ({course_section}) on Hoodle LMS.
 
@@ -829,7 +1072,7 @@ Best regards,
 Hoodle LMS • Accelerated Classroom & Lab Learning
 ACCL Research Lab, IIT Bhilai
 """
-            html_text = f"""<!DOCTYPE html>
+    html_text = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><title>Course Invitation</title></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px;">
@@ -865,30 +1108,20 @@ ACCL Research Lab, IIT Bhilai
 </body>
 </html>
 """
-            msg.attach(MIMEText(plain_text, "plain"))
-            msg.attach(MIMEText(html_text, "html"))
-            server.sendmail(smtp_user, [recipient_email], msg.as_string())
-            server.quit()
-            app.logger.info("Course invitation email sent to %s for %s (role: %s)", recipient_email, course_code, role)
-        except Exception as e:
-            app.logger.warning("Failed to send course invitation email to %s: %s", recipient_email, e)
-
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
+    enqueue_email(recipient_email, subject, "Course Invitation", plain_text, html_text, plain_text)
 
 
 def send_event_notification_email(recipient_emails, subject, heading, body_text, action_url=None, action_text="View in Hoodle", actor_name=None, actor_role=None):
     """
-    Sends notification email via Gmail SMTP in background thread for specific course events:
+    Sends notification email via the persistent outbox email queue for key course events:
     1. Assignment / Exam creation
     2. Grade & feedback published
     3. Direct messages between student and teacher/TA
     4. Course announcements
     5. Course enrollment / role assignment
+    Zero lost messages: Persisted to database outbox before async delivery.
     """
-    gmail_user, gmail_pass, from_name = get_smtp_config()
-
-    if not gmail_user or not gmail_pass or not recipient_emails:
+    if not recipient_emails:
         return
 
     if isinstance(recipient_emails, str):
@@ -901,41 +1134,28 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
 
     full_action_url = resolve_portal_url(action_url) if action_url else None
 
-    def _worker():
-        try:
-            server, gmail_user, from_name = create_smtp_connection()
+    attribution_html = ""
+    attribution_plain = ""
+    if actor_name:
+        role_badge = f"""<span style="display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-left: 6px;">{actor_role or 'Instructor'}</span>""" if actor_role else ""
+        attribution_html = f"""
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #2563eb; padding: 10px 14px; margin-bottom: 18px; border-radius: 6px; font-size: 13px; color: #334155;">
+          <strong style="color: #0f172a;">Instructor / Staff:</strong> {actor_name} {role_badge}
+        </div>
+        """
+        attribution_plain = f"Action by: {actor_name} ({actor_role or 'Staff'})\n\n"
 
-            from_display = f"{actor_name} via Hoodle LMS" if actor_name else from_name
+    button_html = ""
+    if full_action_url:
+        button_html = f"""
+        <div style="text-align: center; margin: 26px 0;">
+          <a href="{full_action_url}" style="background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 15px; font-weight: 700; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);">
+            {action_text} &rarr;
+          </a>
+        </div>
+        """
 
-            for rec_email in clean_emails:
-                try:
-                    msg = MIMEMultipart("alternative")
-                    msg["Subject"] = subject
-                    msg["From"] = f"{from_display} <{gmail_user}>"
-                    msg["To"] = rec_email
-
-                    attribution_html = ""
-                    attribution_plain = ""
-                    if actor_name:
-                        role_badge = f"""<span style="display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-left: 6px;">{actor_role or 'Instructor'}</span>""" if actor_role else ""
-                        attribution_html = f"""
-                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #2563eb; padding: 10px 14px; margin-bottom: 18px; border-radius: 6px; font-size: 13px; color: #334155;">
-                          <strong style="color: #0f172a;">Instructor / Staff:</strong> {actor_name} {role_badge}
-                        </div>
-                        """
-                        attribution_plain = f"Action by: {actor_name} ({actor_role or 'Staff'})\n\n"
-
-                    button_html = ""
-                    if full_action_url:
-                        button_html = f"""
-                        <div style="text-align: center; margin: 26px 0;">
-                          <a href="{full_action_url}" style="background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 15px; font-weight: 700; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);">
-                            {action_text} &rarr;
-                          </a>
-                        </div>
-                        """
-
-                    html_text = f"""<!DOCTYPE html>
+    html_text = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><title>{subject}</title></head>
 <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
@@ -958,20 +1178,10 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
   </div>
 </body>
 </html>"""
-                    plain_text = f"{heading}\n\n{attribution_plain}{body_text}\n\n{full_action_url if full_action_url else ''}"
-                    msg.attach(MIMEText(plain_text, "plain"))
-                    msg.attach(MIMEText(html_text, "html"))
-                    server.sendmail(gmail_user, [rec_email], msg.as_string())
-                except Exception as ex_single:
-                    app.logger.warning("Failed to send notification email to %s: %s", rec_email, ex_single)
+    plain_text = f"{heading}\n\n{attribution_plain}{body_text}\n\n{full_action_url if full_action_url else ''}"
 
-            server.quit()
-            app.logger.info("Event notification '%s' sent to %d recipients", subject, len(clean_emails))
-        except Exception as e:
-            app.logger.warning("Failed to send event notification emails: %s", e)
-
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
+    for rec_email in clean_emails:
+        enqueue_email(rec_email, subject, heading, body_text, html_text, plain_text)
 
 
 # --- Authentication & Authorization Helpers ---
@@ -5646,21 +5856,52 @@ def admin_email_settings():
 
     conn = get_db()
     portal_url_row = conn.execute("SELECT value FROM system_settings WHERE key = 'portal_base_url'").fetchone()
+
+    # Query outbox email queue statistics
+    q_stats = conn.execute("""
+        SELECT 
+            SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent_count,
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count,
+            COUNT(*) as total_count
+        FROM email_queue
+    """).fetchone()
+
+    sent_count = q_stats["sent_count"] or 0
+    pending_count = q_stats["pending_count"] or 0
+    failed_count = q_stats["failed_count"] or 0
+    total_queue = q_stats["total_count"] or 0
+
+    recent_queue_emails = conn.execute("""
+        SELECT id, recipient_email, subject, heading, status, attempts, max_attempts, last_error, created_at, sent_at, next_retry_at
+        FROM email_queue
+        ORDER BY id DESC
+        LIMIT 25
+    """).fetchall()
+
     conn.close()
+
     portal_base_url = portal_url_row["value"] if portal_url_row else os.environ.get("PORTAL_BASE_URL", "https://10.10.14.104/lms")
 
-    masked_pass = ("•" * 12 + gmail_pass[-4:]) if len(gmail_pass) >= 4 else ("•" * 8 if gmail_pass else "Not configured")
+    has_password = bool(gmail_pass)
+    masked_pass = ("•" * 12 + gmail_pass[-4:]) if len(gmail_pass) >= 4 else ("••••••••" if gmail_pass else "⚠️ Not Configured")
 
     return render_template(
         "admin_email.html",
         gmail_user=gmail_user,
         masked_pass=masked_pass,
         raw_pass_len=len(gmail_pass),
+        has_password=has_password,
         from_name=from_name,
         smtp_host=smtp_host,
         smtp_port=smtp_port,
         smtp_security=smtp_security,
-        portal_base_url=portal_base_url
+        portal_base_url=portal_base_url,
+        sent_count=sent_count,
+        pending_count=pending_count,
+        failed_count=failed_count,
+        total_queue=total_queue,
+        recent_queue_emails=recent_queue_emails
     )
 
 
@@ -5679,11 +5920,16 @@ def admin_update_email_settings():
         flash("Email address cannot be empty.", "danger")
         return redirect(url_for("admin_email_settings"))
 
+    cur_cfg = get_smtp_full_config()
+    effective_pass = new_pass if new_pass else cur_cfg["password"]
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 1. Save to SQLite system_settings table
     conn = get_db()
     conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('gmail_smtp_user', ?, ?)", (new_user, now_str))
-    if new_pass:
-        conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('gmail_app_password', ?, ?)", (new_pass, now_str))
+    if effective_pass:
+        conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('gmail_app_password', ?, ?)", (effective_pass, now_str))
     if new_from:
         conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('gmail_from_name', ?, ?)", (new_from, now_str))
     if new_host:
@@ -5697,7 +5943,23 @@ def admin_update_email_settings():
     conn.commit()
     conn.close()
 
-    flash("SMTP settings saved successfully. New settings take effect immediately.", "success")
+    # 2. Save to secure JSON file in storage/ for dual persistence across DB locks
+    file_cfg = {
+        "gmail_smtp_user": new_user,
+        "gmail_app_password": effective_pass,
+        "gmail_from_name": new_from or cur_cfg["from_name"],
+        "smtp_host": new_host or cur_cfg["host"],
+        "smtp_port": new_port or cur_cfg["port"],
+        "smtp_security": new_security or cur_cfg["security"],
+        "portal_base_url": new_base_url or cur_cfg.get("portal_base_url", "")
+    }
+    save_email_config_file(file_cfg)
+
+    # 3. If credentials are now configured, immediately process any pending emails in the outbox
+    if new_user and effective_pass:
+        trigger_email_queue_processing()
+
+    flash("SMTP credentials saved successfully across database and secure storage. New settings take effect immediately.", "success")
     return redirect(url_for("admin_email_settings"))
 
 
@@ -5714,7 +5976,7 @@ def admin_test_email_settings():
     gmail_pass = cfg["password"]
     from_name = cfg["from_name"]
     if not gmail_user or not gmail_pass:
-        flash("Email address or App Password is not configured.", "danger")
+        flash("Email address or App Password is not configured. Please enter your credentials and save them first.", "danger")
         return redirect(url_for("admin_email_settings"))
 
     try:
@@ -5741,6 +6003,10 @@ def admin_test_email_settings():
 
         server.sendmail(gmail_user, [test_recipient], msg.as_string())
         server.quit()
+
+        # Trigger delivery of any queued emails since SMTP is confirmed functional
+        trigger_email_queue_processing()
+
         flash(f"✅ Success! Test email was verified and sent to {test_recipient} via {gmail_user}.", "success")
     except smtplib.SMTPAuthenticationError as e:
         err_str = str(e)
@@ -5771,7 +6037,47 @@ def admin_reset_email_settings():
     conn.execute("DELETE FROM system_settings WHERE key IN ('gmail_smtp_user', 'gmail_app_password', 'gmail_from_name', 'smtp_host', 'smtp_port', 'smtp_security', 'portal_base_url')")
     conn.commit()
     conn.close()
+
+    if EMAIL_CONFIG_FILE.exists():
+        try:
+            EMAIL_CONFIG_FILE.unlink()
+        except Exception:
+            pass
+
     flash("Gmail SMTP settings reset to system defaults (hoodle.lms@gmail.com on smtp.gmail.com:587).", "info")
+    return redirect(url_for("admin_email_settings"))
+
+
+@app.route("/admin/email/queue/retry", methods=["POST"])
+@admin_required
+def admin_retry_email_queue():
+    """Resets all pending and failed emails in the outbox to retry immediately."""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    cursor = conn.execute("""
+        UPDATE email_queue
+        SET status = 'pending', attempts = 0, next_retry_at = ?, last_error = ''
+        WHERE status IN ('pending', 'failed')
+    """, (now_str,))
+    retried_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    trigger_email_queue_processing()
+    flash(f"🔄 Triggered immediate retry for {retried_count} queued email(s).", "success")
+    return redirect(url_for("admin_email_settings"))
+
+
+@app.route("/admin/email/queue/clear", methods=["POST"])
+@admin_required
+def admin_clear_sent_email_queue():
+    """Purges delivered ('sent') emails from the queue history."""
+    conn = get_db()
+    cursor = conn.execute("DELETE FROM email_queue WHERE status = 'sent'")
+    deleted_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    flash(f"🗑️ Cleared {deleted_count} delivered email log(s).", "info")
     return redirect(url_for("admin_email_settings"))
 
 

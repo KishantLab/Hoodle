@@ -1839,11 +1839,12 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.logout()
 
     def test_admin_email_settings_view_update_reset(self):
-        """Verify Admin can view, update, and reset Gmail SMTP settings."""
-        # 1. Check default configuration
+        """Verify Admin can view, update, and reset Gmail SMTP settings with dual persistence."""
+        # 1. Check default configuration (clean env without hardcoded dummy password)
         user, pwd, name = app.get_smtp_config()
         self.assertEqual(user, "hoodle.lms@gmail.com")
-        self.assertEqual(pwd, "hvrnbggfrzmnvrsh")
+        expected_pwd = os.environ.get("GMAIL_APP_PASSWORD", "")
+        self.assertEqual(pwd, expected_pwd)
 
         # 2. Login as Admin and view settings
         self.login("admin", "admin@accl")
@@ -1851,6 +1852,7 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn(b"Gmail &amp; Notification Configuration", res.data)
         self.assertIn(b"hoodle.lms@gmail.com", res.data)
+        self.assertIn(b"Reliable Email Outbox &amp; Delivery Queue", res.data)
 
         # 3. Update Gmail credentials
         res = self.client.post("/admin/email/update", data={
@@ -1860,23 +1862,71 @@ class ACCLLMSTestCase(unittest.TestCase):
             "portal_base_url": "http://10.10.14.104/lms"
         }, follow_redirects=True)
         self.assertEqual(res.status_code, 200)
-        self.assertIn(b"SMTP settings saved successfully", res.data)
+        self.assertIn(b"SMTP credentials saved successfully", res.data)
 
-        # Verify get_smtp_config reflects the DB update
+        # Verify get_smtp_config reflects the DB & file update
         up_user, up_pwd, up_name = app.get_smtp_config()
         self.assertEqual(up_user, "custom_accl_admin@gmail.com")
         self.assertEqual(up_pwd, "customapppass123")
         self.assertEqual(up_name, "ACCL IIT Bhilai LMS")
+
+        # Verify file persistence exists in storage
+        self.assertTrue(app.EMAIL_CONFIG_FILE.exists())
 
         # 4. Reset to system defaults
         res = self.client.post("/admin/email/reset", follow_redirects=True)
         self.assertEqual(res.status_code, 200)
         self.assertIn(b"reset to system defaults", res.data)
 
-        # Verify fallback to default hoodle.lms@gmail.com
+        # Verify fallback to default hoodle.lms@gmail.com without hardcoded expired passwords
         rst_user, rst_pwd, rst_name = app.get_smtp_config()
         self.assertEqual(rst_user, "hoodle.lms@gmail.com")
-        self.assertEqual(rst_pwd, "hvrnbggfrzmnvrsh")
+        self.assertEqual(rst_pwd, os.environ.get("GMAIL_APP_PASSWORD", ""))
+        self.logout()
+
+    def test_email_outbox_queue_persistence_and_retry(self):
+        """Verify outgoing notifications are safely queued in email_queue outbox and retryable."""
+        self.login("admin", "admin@accl")
+
+        # 1. Enqueue an email directly
+        qid = app.enqueue_email(
+            "student_test@iitbhilai.ac.in",
+            "Urgent: Exam Schedule Update",
+            "Exam Notice",
+            "The exam starts at 3 PM sharp.",
+            "<p>The exam starts at 3 PM sharp.</p>",
+            "The exam starts at 3 PM sharp."
+        )
+        self.assertIsNotNone(qid)
+
+        conn = app.get_db()
+        row = conn.execute("SELECT * FROM email_queue WHERE id = ?", (qid,)).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["recipient_email"], "student_test@iitbhilai.ac.in")
+        self.assertEqual(row["subject"], "Urgent: Exam Schedule Update")
+        self.assertIn(row["status"], ("pending", "failed", "sent"))
+        conn.close()
+
+        # 2. View queue on admin email page
+        res = self.client.get("/admin/email")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Urgent: Exam Schedule Update", res.data)
+        self.assertIn(b"student_test@iitbhilai.ac.in", res.data)
+
+        # 3. Test retry trigger
+        res_retry = self.client.post("/admin/email/queue/retry", follow_redirects=True)
+        self.assertEqual(res_retry.status_code, 200)
+        self.assertIn(b"Triggered immediate retry", res_retry.data)
+
+        # 4. Mark item as sent and test clear logs
+        conn = app.get_db()
+        conn.execute("UPDATE email_queue SET status = 'sent' WHERE id = ?", (qid,))
+        conn.commit()
+        conn.close()
+
+        res_clear = self.client.post("/admin/email/queue/clear", follow_redirects=True)
+        self.assertEqual(res_clear.status_code, 200)
+        self.assertIn(b"Cleared", res_clear.data)
         self.logout()
 
     def test_resolve_portal_url_and_reply_link(self):
@@ -2310,6 +2360,12 @@ class ACCLLMSTestCase(unittest.TestCase):
         import smtplib
 
         self.login("admin", "admin@accl")
+        # Ensure test password exists so SMTP test initiates connection attempt
+        conn = app.get_db()
+        conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('gmail_app_password', 'testmockpass1234', '2026-09-13 12:00:00')")
+        conn.commit()
+        conn.close()
+
         # Mock create_smtp_connection to simulate Google 534 WebLoginRequired
         with patch("app.create_smtp_connection") as mock_conn:
             mock_conn.side_effect = smtplib.SMTPAuthenticationError(534, b"5.7.9 Please log in with your web browser and then try again. https://support.google.com/mail/?p=WebLoginRequired")
@@ -2538,6 +2594,12 @@ class ACCLLMSTestCase(unittest.TestCase):
         # 3. Strictly does NOT show raw clickable anchor links for network switching in the box
         self.assertNotIn(b'<a href="https://accllogin.tail77fd8b.ts.net', res.data)
         self.assertNotIn(b'<a href="https://10.10.14.104', res.data)
+
+        # 4. Strictly shows Roll Number and B26DS001 without 'eg:' or 'admin' text
+        self.assertIn(b'<label class="form-label" for="identifier">Roll Number</label>', res.data)
+        self.assertIn(b'placeholder="B26DS001"', res.data)
+        self.assertNotIn(b'e.g. B26DS001 or admin', res.data)
+        self.assertNotIn(b'Roll Number / Username / Email', res.data)
 
     def test_course_archive_and_unarchive_lifecycle(self):
         """Test archiving and unarchiving courses by creator/admin and rejection for unauthorized users."""
