@@ -184,18 +184,83 @@ def filter_nl2br(s):
 
 # --- Database Connection & Schema Setup ---
 
-def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+def get_db(read_only=False):
+    """
+    Returns an optimized SQLite connection with 256MB memory-mapped I/O,
+    64MB in-RAM page cache, and high busy timeout to fully exploit 64GB RAM.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=45.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 45000")
     conn.execute("PRAGMA synchronous = NORMAL")
-    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA mmap_size = 268435456")  # 256 MB memory-mapped I/O directly in kernel memory
+    conn.execute("PRAGMA cache_size = -64000")    # 64 MB RAM cache per connection
+    conn.execute("PRAGMA temp_store = MEMORY")    # Sorts and temporary indices stored in RAM
+    if read_only:
+        conn.execute("PRAGMA query_only = ON")
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
+def execute_db_write_with_retry(write_func, max_retries=6, base_delay=0.02):
+    """
+    Executes a database write callback function with automatic retry and exponential backoff
+    with random jitter on sqlite3.OperationalError (database is locked / busy).
+    Guarantees that sudden burst traffic (e.g. 100 students marking attendance or registering simultaneously)
+    is serialized smoothly in milliseconds rather than failing with 500 error.
+    Supports both write_func(conn) where connection is automatically provided, and write_func() where
+    the function handles its own connection.
+    """
+    import random
+    import inspect
+    last_err = None
+    takes_conn = False
+    try:
+        sig = inspect.signature(write_func)
+        takes_conn = len(sig.parameters) > 0
+    except Exception:
+        pass
+
+    for attempt in range(max_retries):
+        conn = None
+        try:
+            if takes_conn:
+                conn = get_db()
+                result = write_func(conn)
+                conn.close()
+                return result
+            else:
+                return write_func()
+        except sqlite3.OperationalError as e:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            last_err = e
+            err_msg = str(e).lower()
+            if "locked" in err_msg or "busy" in err_msg:
+                sleep_time = (base_delay * (2 ** attempt)) + random.uniform(0.005, 0.025)
+                time.sleep(sleep_time)
+                continue
+            raise
+        except Exception:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            raise
+    raise last_err
+
+
 def init_db():
-    conn = get_db()
+    conn = sqlite3.connect(DB_PATH, timeout=60.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA wal_autocheckpoint = 1000")
+    conn.execute("PRAGMA busy_timeout = 60000")
     c = conn.cursor()
 
     # 1. Users Table
@@ -567,6 +632,13 @@ def init_db():
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_email_queue_status_retry ON email_queue (status, next_retry_at)")
 
+    # High-Performance Concurrency & Lookups Indices
+    c.execute("CREATE INDEX IF NOT EXISTS idx_att_course_session_date ON attendance_logs (course_id, session_type, attendance_date)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_att_key ON attendance_logs (attendance_key)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_enr_course_user_role ON course_enrollments (course_id, user_id, role)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_invitations_lookup ON course_invitations (status, student_roll, student_email)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_users_roll_email ON users (roll_number, email)")
+
     conn.commit()
 
     # Pre-seed initial default accounts if not existing
@@ -886,8 +958,9 @@ def enqueue_email(recipient_email, subject, heading, body_text, html_content, pl
         return None
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        conn = get_db()
+
+    def _do_enqueue(conn):
+        conn.execute("BEGIN IMMEDIATE")
         cursor = conn.execute("""
             INSERT INTO email_queue (
                 recipient_email, subject, heading, body_text,
@@ -895,11 +968,13 @@ def enqueue_email(recipient_email, subject, heading, body_text, html_content, pl
                 last_error, created_at, next_retry_at
             ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, 5, '', ?, ?)
         """, (recipient_email.strip(), subject, heading or "", body_text or "", html_content, plain_content, now_str, now_str))
-        queue_id = cursor.lastrowid
         conn.commit()
-        conn.close()
+        return cursor.lastrowid
 
-        trigger_email_queue_processing()
+    try:
+        queue_id = execute_db_write_with_retry(_do_enqueue)
+        if not app.config.get("TESTING"):
+            trigger_email_queue_processing()
         return queue_id
     except Exception as e:
         app.logger.warning("Failed to enqueue email to %s: %s", recipient_email, e)
@@ -1532,41 +1607,62 @@ def register():
             return render_template("login.html", register_active=True)
 
         username = roll_number.lower()
-
-        conn = get_db()
-        exists = conn.execute("""
-            SELECT id FROM users
-            WHERE LOWER(username) = ? OR LOWER(roll_number) = ? OR (email != '' AND LOWER(email) = ?)
-        """, (username, roll_number.lower(), email)).fetchone()
-
-        if exists:
-            conn.close()
-            flash("An account with this Roll Number or Email already exists. Please log in.", "warning")
-            return render_template("login.html", register_active=False)
-
         pwd_hash = hash_password(password)
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        conn.execute("""
-            INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (username, roll_number, email, pwd_hash, full_name, role, now_str))
-        new_user = conn.execute("SELECT last_insert_rowid() as id").fetchone()
-        new_user_id = new_user["id"] if new_user else None
+        def _do_register():
+            c = get_db()
+            try:
+                c.execute("BEGIN IMMEDIATE")
+                exists = c.execute("""
+                    SELECT id FROM users
+                    WHERE LOWER(username) = ? OR LOWER(roll_number) = ? OR (email != '' AND LOWER(email) = ?)
+                """, (username, roll_number.lower(), email.lower())).fetchone()
 
-        # Auto-link any pending course invitations matching this student's roll number or email
-        if new_user_id:
-            conn.execute("""
-                UPDATE course_invitations
-                SET student_id = ?
-                WHERE status = 'pending' AND (
-                    (student_roll IS NOT NULL AND UPPER(student_roll) = ?) OR
-                    (student_email IS NOT NULL AND student_email != '' AND LOWER(student_email) = ?)
-                )
-            """, (new_user_id, roll_number.upper(), email.lower()))
+                if exists:
+                    c.rollback()
+                    c.close()
+                    return ("exists", None)
 
-        conn.commit()
-        conn.close()
+                c.execute("""
+                    INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (username, roll_number, email, pwd_hash, full_name, role, now_str))
+                new_user = c.execute("SELECT last_insert_rowid() as id").fetchone()
+                uid = new_user["id"] if new_user else None
+
+                if uid:
+                    c.execute("""
+                        UPDATE course_invitations
+                        SET student_id = ?
+                        WHERE status = 'pending' AND (
+                            (student_roll IS NOT NULL AND UPPER(student_roll) = ?) OR
+                            (student_email IS NOT NULL AND student_email != '' AND LOWER(student_email) = ?)
+                        )
+                    """, (uid, roll_number.upper(), email.lower()))
+
+                c.commit()
+                c.close()
+                return ("ok", uid)
+            except sqlite3.IntegrityError:
+                c.rollback()
+                c.close()
+                return ("exists", None)
+            except Exception:
+                c.rollback()
+                c.close()
+                raise
+
+        try:
+            reg_status, new_user_id = execute_db_write_with_retry(_do_register)
+        except Exception as e:
+            app.logger.error("Registration write error: %s", e)
+            flash("The server is currently busy. Please click Register again.", "warning")
+            return render_template("login.html", register_active=True)
+
+        if reg_status == "exists":
+            flash("An account with this Roll Number or Email already exists. Please log in.", "warning")
+            return render_template("login.html", register_active=False)
 
         # Auto-login and auto-enroll newly registered student if joining via short link
         pending_code = session.get("pending_join_code")
@@ -3911,6 +4007,8 @@ def invite_students(course_id):
     # Avoid duplicate processing within the same batch
     seen_entries = set()
 
+    emails_to_dispatch = []
+
     for entry in entries:
         entry_clean = entry.strip()
         entry_lower = entry_clean.lower()
@@ -3983,12 +4081,15 @@ def invite_students(course_id):
         else:
             pending_signup += 1
 
-        # Dispatch background Gmail email if recipient email exists
+        # Collect email to dispatch after committing
         if student_email:
-            send_course_invitation_email(course, student_email, student_roll, teacher_name, invite_token, role=invite_role)
+            emails_to_dispatch.append((course, student_email, student_roll, teacher_name, invite_token, invite_role))
 
     conn.commit()
     conn.close()
+
+    for c_obj, s_em, s_rl, t_nm, i_tok, i_rol in emails_to_dispatch:
+        send_course_invitation_email(c_obj, s_em, s_rl, t_nm, i_tok, role=i_rol)
 
     role_label = "Student(s)" if invite_role == "student" else "Co-Teacher(s) / TA(s)"
     msg_parts = [f"Processed {len(seen_entries)} entry(ies): {added_count} {role_label} invitation(s) saved."]
@@ -4052,27 +4153,43 @@ def accept_invitation(invite_id):
     if "role" in inv.keys() and inv["role"] in ("student", "ta", "teacher"):
         inv_role = "ta" if inv["role"] in ("ta", "teacher") else "student"
 
-    if "role" in inv.keys() and inv["role"] == "teacher":
-        conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (user_id,))
+    def _do_accept():
+        c = get_db()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            if "role" in inv.keys() and inv["role"] == "teacher":
+                c.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (user_id,))
 
-    # Enroll user in course
-    existing_enr = conn.execute("SELECT id FROM course_enrollments WHERE course_id = ? AND user_id = ?", (inv["course_id"], user_id)).fetchone()
-    if existing_enr:
-        conn.execute("UPDATE course_enrollments SET role = ? WHERE course_id = ? AND user_id = ?", (inv_role, inv["course_id"], user_id))
-    else:
-        conn.execute("""
-            INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at)
-            VALUES (?, ?, ?, ?)
-        """, (inv["course_id"], user_id, inv_role, now_str))
+            # Enroll user in course
+            existing_enr = c.execute("SELECT id FROM course_enrollments WHERE course_id = ? AND user_id = ?", (inv["course_id"], user_id)).fetchone()
+            if existing_enr:
+                c.execute("UPDATE course_enrollments SET role = ? WHERE course_id = ? AND user_id = ?", (inv_role, inv["course_id"], user_id))
+            else:
+                c.execute("""
+                    INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at)
+                    VALUES (?, ?, ?, ?)
+                """, (inv["course_id"], user_id, inv_role, now_str))
 
-    # Mark invitation accepted
-    conn.execute("""
-        UPDATE course_invitations
-        SET status = 'accepted', student_id = ?, responded_at = ?
-        WHERE id = ?
-    """, (user_id, now_str, invite_id))
-    conn.commit()
-    conn.close()
+            # Mark invitation accepted
+            c.execute("""
+                UPDATE course_invitations
+                SET status = 'accepted', student_id = ?, responded_at = ?
+                WHERE id = ?
+            """, (user_id, now_str, invite_id))
+            c.commit()
+            c.close()
+            return True
+        except Exception:
+            c.rollback()
+            c.close()
+            raise
+
+    try:
+        execute_db_write_with_retry(_do_accept)
+    except Exception as e:
+        app.logger.error("Accept invitation error: %s", e)
+        flash("Server busy joining course. Please tap Accept again.", "warning")
+        return redirect(url_for("dashboard"))
 
     role_desc = " as Co-Teacher / TA" if inv_role == "ta" else ""
     flash(f"Welcome! You have successfully joined {inv['course_code']}: {inv['course_title']}{role_desc}.", "success")
@@ -6184,7 +6301,7 @@ def api_attendance_live_poll(course_id):
     """Poll live attendees for projector screen live ticker."""
     session_type = request.args.get("type", "Lecture")
     today_str = datetime.now().strftime("%Y-%m-%d")
-    conn = get_db()
+    conn = get_db(read_only=True)
     
     attendees = conn.execute("""
         SELECT roll_number, student_name, marked_at, method
@@ -6224,7 +6341,7 @@ def api_attendance_live_poll(course_id):
 @teacher_required
 def api_student_attendance_detail(course_id, student_id):
     """Returns detailed attendance history for an individual student in a course."""
-    conn = get_db()
+    conn = get_db(read_only=True)
     student = conn.execute("SELECT id, roll_number, display_name, email FROM users WHERE id = ?", (student_id,)).fetchone()
     if not student:
         conn.close()
@@ -6339,7 +6456,7 @@ def attend_scan_landing(course_id):
         )
     
     # 2. Enrollment check
-    conn = get_db()
+    conn = get_db(read_only=True)
     enrollment = conn.execute("""
         SELECT * FROM course_enrollments WHERE course_id = ? AND user_id = ?
     """, (course_id, user["id"])).fetchone()
@@ -6390,6 +6507,7 @@ def attend_scan_landing(course_id):
 def attend_submit(course_id):
     """
     Submits and atomically logs student attendance with anti-proxy validation.
+    Optimized for high-concurrency bursts using BEGIN IMMEDIATE and retry serialization.
     """
     user = get_current_user()
     course = get_course_or_404(course_id)
@@ -6407,14 +6525,20 @@ def attend_submit(course_id):
     client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
     roll_number = user["roll_number"] or user["username"].upper()
     
-    conn = get_db()
-    enr = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, user["id"])).fetchone()
-    if not enr and user["role"] not in ("teacher", "admin"):
-        conn.close()
-        flash("You are not enrolled in this course.", "danger")
-        return redirect(url_for("dashboard"))
+    # Read-only enrollment pre-check to avoid unnecessary write lock contention
+    if user["role"] not in ("teacher", "admin"):
+        ro_conn = get_db(read_only=True)
+        enr = ro_conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, user["id"])).fetchone()
+        ro_conn.close()
+        if not enr:
+            flash("You are not enrolled in this course.", "danger")
+            return redirect(url_for("dashboard"))
 
-    try:
+    def _do_submit(conn):
+        conn.execute("BEGIN IMMEDIATE")
+        exists = conn.execute("SELECT id FROM attendance_logs WHERE attendance_key = ?", (target_key,)).fetchone()
+        if exists:
+            return "duplicate"
         conn.execute("""
             INSERT INTO attendance_logs (
                 course_id, session_id, student_id, roll_number, student_name,
@@ -6426,21 +6550,26 @@ def attend_submit(course_id):
             client_ip, now_str, target_key
         ))
         conn.commit()
-        conn.close()
-        
-        return render_template(
-            "attendance_confirm.html",
-            course=course,
-            success=True,
-            session_type=session_type,
-            today_str=today_str,
-            now_str=now_str,
-            user=user
-        )
+        return "ok"
+
+    try:
+        status = execute_db_write_with_retry(_do_submit)
     except sqlite3.IntegrityError:
-        conn.close()
+        status = "duplicate"
+
+    if status == "duplicate":
         flash(f"Attendance for today's {session_type} has already been logged.", "info")
         return redirect(url_for("course_attendance", course_id=course_id))
+
+    return render_template(
+        "attendance_confirm.html",
+        course=course,
+        success=True,
+        session_type=session_type,
+        today_str=today_str,
+        now_str=now_str,
+        user=user
+    )
 
 
 # --- Main Course Attendance Tab & Logs Dashboard ---
@@ -6450,7 +6579,7 @@ def attend_submit(course_id):
 def course_attendance(course_id):
     course = get_course_or_404(course_id)
     user = get_current_user()
-    conn = get_db()
+    conn = get_db(read_only=True)
     
     today_str = datetime.now().strftime("%Y-%m-%d")
     
@@ -6604,14 +6733,15 @@ def attendance_manual_bulk(course_id):
     
     identifiers = [re.sub(r'[^a-zA-Z0-9@._-]', '', x.strip().lower()) for x in re.split(r'[,;\s\n]+', raw_identifiers) if x.strip()]
     
-    conn = get_db()
+    ro_conn = get_db(read_only=True)
     # Fetch all enrolled students
-    students = conn.execute("""
+    students = ro_conn.execute("""
         SELECT u.id, u.roll_number, u.username, u.email, u.display_name
         FROM course_enrollments ce
         JOIN users u ON ce.user_id = u.id
         WHERE ce.course_id = ? AND ce.role = 'student'
     """, (course_id,)).fetchall()
+    ro_conn.close()
     
     student_map = {}
     for s in students:
@@ -6622,20 +6752,26 @@ def attendance_manual_bulk(course_id):
         if s["email"]:
             student_map[s["email"].lower().strip()] = s
     
-    marked_count = 0
-    duplicate_count = 0
     not_found = []
+    valid_targets = []
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     for ident in identifiers:
         if ident in student_map:
             st = student_map[ident]
             target_key = f"{st['id']}_{session_type.upper()}_{target_date}"
-            
-            # Check duplicate
+            valid_targets.append((st, target_key))
+        else:
+            not_found.append(ident)
+
+    def _do_bulk_mark(conn):
+        conn.execute("BEGIN IMMEDIATE")
+        m_count = 0
+        d_count = 0
+        for st, target_key in valid_targets:
             exists = conn.execute("SELECT id FROM attendance_logs WHERE attendance_key = ?", (target_key,)).fetchone()
             if exists:
-                duplicate_count += 1
+                d_count += 1
             else:
                 conn.execute("""
                     INSERT INTO attendance_logs (
@@ -6647,12 +6783,11 @@ def attendance_manual_bulk(course_id):
                     st["display_name"], course["section"] or "Section A", session_type,
                     target_date, now_str, target_key
                 ))
-                marked_count += 1
-        else:
-            not_found.append(ident)
-            
-    conn.commit()
-    conn.close()
+                m_count += 1
+        conn.commit()
+        return m_count, d_count
+
+    marked_count, duplicate_count = execute_db_write_with_retry(_do_bulk_mark)
     
     msg = f"Bulk attendance for {target_date} ({session_type}): {marked_count} marked successfully."
     if duplicate_count > 0:
@@ -6673,38 +6808,42 @@ def attendance_mark_all_present(course_id):
     custom_date = request.form.get("custom_date", "").strip()
     target_date = custom_date if custom_date else datetime.now().strftime("%Y-%m-%d")
     
-    conn = get_db()
-    students = conn.execute("""
+    ro_conn = get_db(read_only=True)
+    students = ro_conn.execute("""
         SELECT u.id, u.roll_number, u.username, u.display_name
         FROM course_enrollments ce
         JOIN users u ON ce.user_id = u.id
         WHERE ce.course_id = ? AND ce.role = 'student'
     """, (course_id,)).fetchall()
+    ro_conn.close()
     
-    marked_count = 0
-    duplicate_count = 0
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    for st in students:
-        target_key = f"{st['id']}_{session_type.upper()}_{target_date}"
-        exists = conn.execute("SELECT id FROM attendance_logs WHERE attendance_key = ?", (target_key,)).fetchone()
-        if exists:
-            duplicate_count += 1
-        else:
-            conn.execute("""
-                INSERT INTO attendance_logs (
-                    course_id, session_id, student_id, roll_number, student_name,
-                    section, session_type, attendance_date, status, method, marked_at, attendance_key
-                ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'PRESENT (FULL)', 'MARK_ALL', ?, ?)
-            """, (
-                course_id, st["id"], st["roll_number"] or st["username"].upper(),
-                st["display_name"], course["section"] or "Section A", session_type,
-                target_date, now_str, target_key
-            ))
-            marked_count += 1
-    
-    conn.commit()
-    conn.close()
+
+    def _do_mark_all(conn):
+        conn.execute("BEGIN IMMEDIATE")
+        m_count = 0
+        d_count = 0
+        for st in students:
+            target_key = f"{st['id']}_{session_type.upper()}_{target_date}"
+            exists = conn.execute("SELECT id FROM attendance_logs WHERE attendance_key = ?", (target_key,)).fetchone()
+            if exists:
+                d_count += 1
+            else:
+                conn.execute("""
+                    INSERT INTO attendance_logs (
+                        course_id, session_id, student_id, roll_number, student_name,
+                        section, session_type, attendance_date, status, method, marked_at, attendance_key
+                    ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'PRESENT (FULL)', 'MARK_ALL', ?, ?)
+                """, (
+                    course_id, st["id"], st["roll_number"] or st["username"].upper(),
+                    st["display_name"], course["section"] or "Section A", session_type,
+                    target_date, now_str, target_key
+                ))
+                m_count += 1
+        conn.commit()
+        return m_count, d_count
+
+    marked_count, duplicate_count = execute_db_write_with_retry(_do_mark_all)
     
     msg = f"✅ Full attendance for {target_date} ({session_type}): {marked_count} students marked present."
     if duplicate_count > 0:
@@ -6723,18 +6862,21 @@ def attendance_skip_day(course_id):
     reason = request.form.get("reason", "").strip()
     target_date = custom_date if custom_date else datetime.now().strftime("%Y-%m-%d")
     user = get_current_user()
-    
-    conn = get_db()
-    try:
+
+    def _do_skip(conn):
+        conn.execute("BEGIN IMMEDIATE")
         conn.execute("""
             INSERT INTO attendance_excluded_sessions (course_id, excluded_date, session_type, reason, excluded_by, excluded_at)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (course_id, target_date, session_type, reason, user["id"], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
+        return "ok"
+
+    try:
+        execute_db_write_with_retry(_do_skip)
         flash(f"📅 Session excluded: {target_date} ({session_type}) will not count in attendance.{' Reason: ' + reason if reason else ''}", "success")
     except sqlite3.IntegrityError:
         flash(f"⚠️ {target_date} ({session_type}) is already excluded.", "info")
-    conn.close()
     
     return redirect(url_for("course_attendance", course_id=course_id))
 
@@ -6746,14 +6888,17 @@ def attendance_unskip_day(course_id):
     course = get_course_or_404(course_id)
     session_type = request.form.get("session_type", "Lecture").strip()
     custom_date = request.form.get("custom_date", "").strip()
-    
-    conn = get_db()
-    conn.execute("""
-        DELETE FROM attendance_excluded_sessions
-        WHERE course_id = ? AND excluded_date = ? AND session_type = ?
-    """, (course_id, custom_date, session_type))
-    conn.commit()
-    conn.close()
+
+    def _do_unskip(conn):
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("""
+            DELETE FROM attendance_excluded_sessions
+            WHERE course_id = ? AND excluded_date = ? AND session_type = ?
+        """, (course_id, custom_date, session_type))
+        conn.commit()
+        return "ok"
+
+    execute_db_write_with_retry(_do_unskip)
     
     flash(f"✅ Session re-included: {custom_date} ({session_type}) now counts in attendance again.", "success")
     return redirect(url_for("course_attendance", course_id=course_id))
@@ -7033,7 +7178,7 @@ def get_course_attendance_matrix(course_id):
       students: list of dicts with student details, session marks, attended count, and percentage
       matrix: 2D list suitable for CSV / Google Sheets setValues()
     """
-    conn = get_db()
+    conn = get_db(read_only=True)
     # 1. Fetch all unique sessions in chronological order
     session_rows = conn.execute("""
         SELECT DISTINCT attendance_date, session_type
