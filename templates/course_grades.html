@@ -753,19 +753,39 @@
           </span>
           <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 0.72rem; font-weight: 700;">Automatic Live Refresh</span>
         </div>
-        <p style="font-size: 0.85rem; color: #166534; margin: 0 0 0.6rem 0; line-height: 1.45;">
+        <p style="font-size: 0.85rem; color: #166534; margin: 0 0 0.5rem 0; line-height: 1.45;">
           Open any Google Sheet and paste this formula into cell <strong>A1</strong>. Google Sheets will automatically import and daily-refresh the full student Grade Book matrix across all sections:
         </p>
 
-        <div style="position: relative; margin-bottom: 0.6rem;">
+        <!-- Primary Formula: Google Cloud Compatible via Tailscale Funnel -->
+        <label style="display: block; font-size: 0.74rem; font-weight: 700; color: #166534; text-transform: uppercase; margin-bottom: 0.25rem;">
+          Google Sheets Formula (Public Tailscale Funnel • Google Cloud Verified)
+        </label>
+        <div style="position: relative; margin-bottom: 0.5rem;">
           <input type="text" id="gradebookSheetFormulaInput" readonly value="{{ gradebook_sheet_formula }}" style="width: 100%; font-family: monospace; font-size: 0.82rem; padding: 0.65rem 6.5rem 0.65rem 0.75rem; background: white; border: 1px solid #86efac; border-radius: var(--radius-sm); color: #14532d; font-weight: 600;">
           <button type="button" class="btn btn-sm" onclick="copyGradebookFormulaToClipboard()" id="copyGradebookFormulaBtn" style="position: absolute; right: 4px; top: 4px; bottom: 4px; background: #16a34a; color: white; border: none; font-weight: 700; padding: 0 0.85rem; border-radius: 4px; cursor: pointer;">
             📋 Copy Formula
           </button>
         </div>
 
-        <div style="font-size: 0.78rem; color: #15803d; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.4rem;">
-          <span>✅ Includes Roll Number, Student Name, Email, Section, all Coursework scores, Category subtotals, Weighted Score, and Letter Grade.</span>
+        <!-- Tailnet Direct IP Formula -->
+        <div style="margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px dashed #bbf7d0;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem;">
+            <label style="font-size: 0.74rem; font-weight: 700; color: #15803d; text-transform: uppercase;">
+              Direct Tailnet Mesh Formula (For Tailscale VPN Connected Devices)
+            </label>
+            <span style="font-size: 0.7rem; color: #15803d; font-family: monospace;">IP: {{ tailscale_ip or '100.87.0.15' }}</span>
+          </div>
+          <div style="position: relative; margin-bottom: 0.5rem;">
+            <input type="text" id="gradebookSheetIpFormulaInput" readonly value="{{ gradebook_sheet_ip_formula }}" style="width: 100%; font-family: monospace; font-size: 0.78rem; padding: 0.5rem 6.5rem 0.5rem 0.65rem; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: var(--radius-sm); color: #334155;">
+            <button type="button" class="btn btn-sm" onclick="copyGradebookIpFormulaToClipboard()" id="copyGradebookIpFormulaBtn" style="position: absolute; right: 4px; top: 4px; bottom: 4px; background: #475569; color: white; border: none; font-weight: 700; padding: 0 0.85rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">
+              📋 Copy IP Formula
+            </button>
+          </div>
+        </div>
+
+        <div style="font-size: 0.78rem; color: #15803d; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.35rem;">
+          <span>🔒 <strong>Strictly Routed via Tailscale:</strong> Campus IP <code>10.10.14.104</code> is completely excluded so Google Cloud servers can import live data without network blocks.</span>
           <a href="{{ gradebook_sheet_feed_url }}" target="_blank" style="color: #166534; text-decoration: underline; font-weight: 600;">Preview Live CSV Feed ↗</a>
         </div>
       </div>
@@ -882,6 +902,21 @@
         setTimeout(() => {
           btn.textContent = '📋 Copy Formula';
           btn.style.background = '#16a34a';
+        }, 2500);
+      });
+    }
+
+    function copyGradebookIpFormulaToClipboard() {
+      const input = document.getElementById('gradebookSheetIpFormulaInput');
+      input.select();
+      input.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(input.value).then(() => {
+        const btn = document.getElementById('copyGradebookIpFormulaBtn');
+        btn.textContent = '✅ Copied!';
+        btn.style.background = '#15803d';
+        setTimeout(() => {
+          btn.textContent = '📋 Copy IP Formula';
+          btn.style.background = '#475569';
         }, 2500);
       });
     }

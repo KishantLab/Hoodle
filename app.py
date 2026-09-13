@@ -50,6 +50,31 @@ def hash_password(password):
     return generate_password_hash(password, method="pbkdf2:sha256")
 
 
+# In-memory TTL cache for verified password checks to eliminate CPU re-hashing delay
+_pwd_verify_cache = {}
+_pwd_verify_lock = threading.Lock()
+
+def verify_cached_password(user_id, password_hash, password):
+    """Verifies password using PBKDF2 hash, caching successful authentications for 5 minutes."""
+    cache_key = hashlib.sha256(f"{user_id}:{password}".encode("utf-8")).hexdigest()
+    now = time.time()
+    with _pwd_verify_lock:
+        if cache_key in _pwd_verify_cache:
+            ts = _pwd_verify_cache[cache_key]
+            if now - ts < 300:
+                return True
+            else:
+                del _pwd_verify_cache[cache_key]
+
+    is_valid = check_password_hash(password_hash, password)
+    if is_valid:
+        with _pwd_verify_lock:
+            if len(_pwd_verify_cache) > 1000:
+                _pwd_verify_cache.clear()
+            _pwd_verify_cache[cache_key] = now
+    return is_valid
+
+
 # --- Directory & Environment Configuration ---
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -80,6 +105,10 @@ HOST = os.environ.get("HOST", "0.0.0.0")
 MAX_CONTENT_LENGTH = 300 * 1024 * 1024  # 300 MB max upload limit
 SECRET_KEY = os.environ.get("SECRET_KEY", "accl_lms_classroom_secret_2026_super_secure")
 DEFAULT_LOCKER_QUOTA = 500 * 1024 * 1024  # 500 MB default private storage quota
+
+# Tailscale Network Configuration for Public and Mesh Google Sheet Feeds
+TAILSCALE_DOMAIN = os.environ.get("TAILSCALE_DOMAIN", "accllogin.tail77fd8b.ts.net")
+TAILSCALE_IP = os.environ.get("TAILSCALE_IP", "100.87.0.15")
 
 # Create directories if they do not exist
 for d in (STORAGE_DIR, LOCKERS_DIR, SUBMISSIONS_DIR, ATTACHMENTS_DIR, STATIC_DIR, UPLOADS_DIR, BACKUPS_DIR):
@@ -1601,15 +1630,15 @@ def login():
         """, (identifier, identifier, identifier)).fetchone()
         conn.close()
 
-        if user and check_password_hash(user["password_hash"], password):
+        if user and verify_cached_password(user["id"], user["password_hash"], password):
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["display_name"] = user["display_name"]
             session["role"] = user["role"]
             session["roll_number"] = user["roll_number"]
 
-            # Auto-enroll into any pending course invitations for this registered user
-            auto_enroll_registered_invitations(user_id=user["id"])
+            # Auto-enroll into pending course invitations in background daemon thread (non-blocking)
+            threading.Thread(target=auto_enroll_registered_invitations, kwargs={"user_id": user["id"]}, daemon=True).start()
 
             # Handle pending course join code from short link
             pending_code = session.pop("pending_join_code", None)
@@ -4967,8 +4996,11 @@ def course_grades(course_id):
         course = dict(course)
         course["gradebook_feed_token"] = gradebook_feed_token
 
-    gradebook_sheet_feed_url = url_for("api_course_grades_sheet_feed", course_id=course_id, token=gradebook_feed_token, _external=True)
+    # Strictly use Tailscale Funnel domain for Google Cloud IMPORTDATA compatibility
+    gradebook_sheet_feed_url = f"https://{TAILSCALE_DOMAIN}/lms/api/courses/{course_id}/grades/sheet-feed?token={gradebook_feed_token}"
     gradebook_sheet_formula = f'=IMPORTDATA("{gradebook_sheet_feed_url}")'
+    gradebook_sheet_feed_ip_url = f"http://{TAILSCALE_IP}/lms/api/courses/{course_id}/grades/sheet-feed?token={gradebook_feed_token}"
+    gradebook_sheet_ip_formula = f'=IMPORTDATA("{gradebook_sheet_feed_ip_url}")'
 
     return render_template(
         "course_grades.html",
@@ -4982,6 +5014,10 @@ def course_grades(course_id):
         total_scheme_weight=grade_data["total_scheme_weight"],
         gradebook_sheet_feed_url=gradebook_sheet_feed_url,
         gradebook_sheet_formula=gradebook_sheet_formula,
+        gradebook_sheet_feed_ip_url=gradebook_sheet_feed_ip_url,
+        gradebook_sheet_ip_formula=gradebook_sheet_ip_formula,
+        tailscale_domain=TAILSCALE_DOMAIN,
+        tailscale_ip=TAILSCALE_IP,
         active_tab="grades",
         is_teacher_or_admin=True
     )
@@ -7625,8 +7661,10 @@ def course_attendance(course_id):
         conn.close()
 
         token = course["attendance_feed_token"] or ""
-        google_sheet_feed_url = f"https://accllogin.tail77fd8b.ts.net/lms/api/courses/{course_id}/attendance/sheet-feed?token={token}"
+        google_sheet_feed_url = f"https://{TAILSCALE_DOMAIN}/lms/api/courses/{course_id}/attendance/sheet-feed?token={token}"
         google_sheet_formula = f'=IMPORTDATA("{google_sheet_feed_url}")'
+        attendance_sheet_feed_ip_url = f"http://{TAILSCALE_IP}/lms/api/courses/{course_id}/attendance/sheet-feed?token={token}"
+        attendance_sheet_ip_formula = f'=IMPORTDATA("{attendance_sheet_feed_ip_url}")'
 
         return render_template(
             "course_attendance.html",
@@ -7642,6 +7680,10 @@ def course_attendance(course_id):
             active_tab="attendance",
             google_sheet_feed_url=google_sheet_feed_url,
             google_sheet_formula=google_sheet_formula,
+            attendance_sheet_feed_ip_url=attendance_sheet_feed_ip_url,
+            attendance_sheet_ip_formula=attendance_sheet_ip_formula,
+            tailscale_domain=TAILSCALE_DOMAIN,
+            tailscale_ip=TAILSCALE_IP,
             qr_rotation_seconds=get_attendance_rotation_seconds(course_id)
         )
 
