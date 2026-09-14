@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Profile - Hoodle LMS{% endblock %}
+
+{% block content %}
+<div style="max-width: 650px; margin: 2rem auto; padding: 0 1rem;">
+  <div class="card" style="padding: 0; overflow: hidden; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.06); border: 1px solid var(--border);">
+    <!-- Profile Header Banner -->
+    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 2rem 2rem; color: white;">
+      <div style="display: flex; align-items: center; gap: 1.25rem;">
+        <div style="width: 68px; height: 68px; border-radius: 50%; background: white; color: #1e3a8a; font-size: 2rem; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.18);">
+          {{ user.display_name[0]|upper }}
+        </div>
+        <div>
+          <h1 style="margin: 0; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.01em; color: white;">Edit Profile Information</h1>
+          <div style="font-size: 0.88rem; opacity: 0.9; margin-top: 0.25rem;">
+            @{{ user.username }}
+            <span style="margin: 0 0.4rem;">•</span>
+            <span class="role-badge role-{{ user.role }}" style="background: rgba(255,255,255,0.25); color: white; border: 1px solid rgba(255,255,255,0.35); font-weight: 700;">
+              {{ user.role|upper }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Form Body -->
+    <div style="padding: 2rem;">
+      <form action="{{ url_for('profile_edit') }}" method="POST">
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+          <label class="form-label" for="display_name" style="font-weight: 700; color: var(--text-main); margin-bottom: 0.4rem; display: block;">
+            Full Name *
+          </label>
+          <input type="text" id="display_name" name="display_name" class="form-control" value="{{ user.display_name }}" required style="font-size: 0.95rem; padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid var(--border); width: 100%;">
+          <small style="color: var(--text-muted); font-size: 0.78rem; margin-top: 0.25rem; display: block;">
+            Your display name shown on course stream, assignment submissions, and attendance logs.
+          </small>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+          <label class="form-label" for="email" style="font-weight: 700; color: var(--text-main); margin-bottom: 0.4rem; display: block;">
+            Institute Email Address
+          </label>
+          <input type="email" id="email" name="email" class="form-control" value="{{ user.email or '' }}" placeholder="e.g. yourname@iitbhilai.ac.in" style="font-size: 0.95rem; padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid var(--border); width: 100%;">
+          <small style="color: var(--text-muted); font-size: 0.78rem; margin-top: 0.25rem; display: block;">
+            Used for system notifications, announcements, and grade alerts.
+          </small>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+          <label class="form-label" for="roll_number" style="font-weight: 700; color: var(--text-main); margin-bottom: 0.4rem; display: block;">
+            Roll Number / Faculty Code
+          </label>
+          <input type="text" id="roll_number" name="roll_number" class="form-control" value="{{ user.roll_number or '' }}" placeholder="e.g. 12140860 or FAC001" style="font-size: 0.95rem; padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid var(--border); width: 100%; text-transform: uppercase;">
+          <small style="color: var(--text-muted); font-size: 0.78rem; margin-top: 0.25rem; display: block;">
+            Official institute roll number or employee identification code.
+          </small>
+        </div>
+
+        <!-- Read-Only Account Details -->
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-bottom: 1.5rem;">
+          <div style="font-size: 0.76rem; font-weight: 800; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem;">
+            Account Identity &amp; Quotas
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; font-size: 0.85rem;">
+            <div>
+              <span style="color: var(--text-muted);">Username:</span>
+              <strong style="color: var(--text-main); margin-left: 0.25rem;">@{{ user.username }}</strong>
+            </div>
+            <div>
+              <span style="color: var(--text-muted);">System Role:</span>
+              <strong style="color: var(--primary); margin-left: 0.25rem;">{{ user.role|capitalize }}</strong>
+            </div>
+            <div>
+              <span style="color: var(--text-muted);">Locker Storage:</span>
+              <strong style="color: var(--text-main); margin-left: 0.25rem;">{{ (user.storage_quota_bytes or 524288000)|filesize }}</strong>
+            </div>
+            <div>
+              <span style="color: var(--text-muted);">Joined On:</span>
+              <span style="color: var(--text-main); margin-left: 0.25rem;">{{ user.created_at[:10] if user.created_at else '-' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="display: flex; gap: 0.75rem; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 1.25rem; flex-wrap: wrap;">
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="submit" class="btn btn-primary" style="padding: 0.6rem 1.25rem; font-weight: 700; border-radius: 8px;">
+              💾 Save Changes
+            </button>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary" style="padding: 0.6rem 1rem; border-radius: 8px;">
+              Cancel
+            </a>
+          </div>
+
+          <a href="{{ url_for('change_password') }}" class="btn btn-secondary" style="font-size: 0.85rem; border-radius: 8px;">
+            🔑 Change Password
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

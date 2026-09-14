@@ -92,6 +92,11 @@
                 <span>My Profile Details</span>
               </a>
 
+              <a href="{{ url_for('profile_edit') }}" class="user-dropdown-link">
+                <span>✏️</span>
+                <span>Edit Profile Info</span>
+              </a>
+
               <a href="{{ url_for('change_password') }}" class="user-dropdown-link">
                 <span>🔑</span>
                 <span>Change Password</span>
@@ -547,19 +552,25 @@
       </div>
 
       <!-- Body Content -->
-      <div style="padding: 1.25rem 1.5rem;">
+      <div id="userProfileViewPanel" style="padding: 1.25rem 1.5rem;">
+        <!-- Quick Edit Profile Button -->
+        <button type="button" class="btn btn-primary btn-sm" onclick="toggleProfileEdit(true)" style="width: 100%; margin-bottom: 0.95rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.55rem;">
+          <span>✏️</span>
+          <span>Edit Profile Information</span>
+        </button>
+
         <!-- Details Grid -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.1rem;">
           <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 0.85rem;">
             <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Roll / ID Number</div>
-            <div style="font-size: 0.95rem; font-weight: 800; color: #1e3a8a; font-family: monospace; margin-top: 0.2rem;">
+            <div id="modalDisplayRoll" style="font-size: 0.95rem; font-weight: 800; color: #1e3a8a; font-family: monospace; margin-top: 0.2rem;">
               {{ current_user.roll_number or 'Not Assigned' }}
             </div>
           </div>
 
           <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 0.85rem;">
             <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Institute Email</div>
-            <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-main); margin-top: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{ current_user.email }}">
+            <div id="modalDisplayEmail" style="font-size: 0.82rem; font-weight: 600; color: var(--text-main); margin-top: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{ current_user.email }}">
               {{ current_user.email or 'None' }}
             </div>
           </div>
@@ -625,7 +636,7 @@
         <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 0.75rem 0.85rem; margin-bottom: 0.85rem;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
             <span style="font-size: 0.78rem; font-weight: 700; color: #166534;">📲 Hoodle Android App</span>
-            <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 0.7rem; font-weight: 800; border-radius: 9999px; padding: 1px 7px;">v1.2.0 (Build 3)</span>
+            <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 0.7rem; font-weight: 800; border-radius: 9999px; padding: 1px 7px;">v1.3.0 (Build 4)</span>
           </div>
           <div style="font-size: 0.75rem; color: #166534; margin-bottom: 0.5rem; line-height: 1.4;">
             Auto-updatable Android client with real-time push sync and offline attendance QR scanner.
@@ -655,6 +666,36 @@
             🚪 Sign Out
           </a>
         </div>
+      </div>
+
+      <!-- Inline Edit Panel (Toggled via "Edit Profile Information" button) -->
+      <div id="userProfileEditPanel" style="display: none; padding: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <h4 style="font-size: 1.05rem; font-weight: 800; margin: 0; color: #1e3a8a;">✏️ Edit Personal Information</h4>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="toggleProfileEdit(false)" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">&larr; Back</button>
+        </div>
+
+        <div id="profileEditAlert" style="display: none; padding: 0.55rem 0.75rem; border-radius: 6px; font-size: 0.82rem; margin-bottom: 1rem;"></div>
+
+        <form id="profileEditForm" onsubmit="submitProfileEdit(event)">
+          <div style="margin-bottom: 0.9rem;">
+            <label style="font-size: 0.76rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 0.3rem;">Full Name *</label>
+            <input type="text" id="modal_display_name" class="form-control" value="{{ current_user.display_name }}" required style="width: 100%; padding: 0.6rem; border-radius: 6px; border: 1px solid var(--border);">
+          </div>
+          <div style="margin-bottom: 0.9rem;">
+            <label style="font-size: 0.76rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 0.3rem;">Institute Email</label>
+            <input type="email" id="modal_email" class="form-control" value="{{ current_user.email or '' }}" placeholder="name@iitbhilai.ac.in" style="width: 100%; padding: 0.6rem; border-radius: 6px; border: 1px solid var(--border);">
+          </div>
+          <div style="margin-bottom: 1.25rem;">
+            <label style="font-size: 0.76rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 0.3rem;">Roll / Faculty ID</label>
+            <input type="text" id="modal_roll_number" class="form-control" value="{{ current_user.roll_number or '' }}" placeholder="12140860 or FAC001" style="width: 100%; padding: 0.6rem; border-radius: 6px; border: 1px solid var(--border); text-transform: uppercase;">
+          </div>
+
+          <div style="display: flex; gap: 0.5rem; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 1rem;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="toggleProfileEdit(false)" style="padding: 0.5rem 0.85rem;">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-sm" id="modalProfileSaveBtn" style="font-weight: 700; padding: 0.5rem 1rem;">💾 Save Changes</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -691,7 +732,107 @@
 
     function closeUserProfileModal() {
       const modal = document.getElementById("userProfileModal");
-      if (modal) modal.style.display = "none";
+      if (modal) {
+        modal.style.display = "none";
+        toggleProfileEdit(false);
+      }
+    }
+
+    function toggleProfileEdit(showEdit) {
+      const viewPanel = document.getElementById("userProfileViewPanel");
+      const editPanel = document.getElementById("userProfileEditPanel");
+      if (viewPanel && editPanel) {
+        viewPanel.style.display = showEdit ? "none" : "block";
+        editPanel.style.display = showEdit ? "block" : "none";
+        const alertBox = document.getElementById("profileEditAlert");
+        if (alertBox) alertBox.style.display = "none";
+      }
+    }
+
+    async function submitProfileEdit(e) {
+      e.preventDefault();
+      const btn = document.getElementById("modalProfileSaveBtn");
+      const alertBox = document.getElementById("profileEditAlert");
+      const displayName = document.getElementById("modal_display_name").value.trim();
+      const email = document.getElementById("modal_email").value.trim();
+      const rollNumber = document.getElementById("modal_roll_number").value.trim();
+
+      if (!displayName) {
+        if (alertBox) {
+          alertBox.style.display = "block";
+          alertBox.style.background = "#fef2f2";
+          alertBox.style.color = "#991b1b";
+          alertBox.textContent = "Full name cannot be empty.";
+        }
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Saving...";
+
+      try {
+        const res = await fetch("{{ url_for('profile_edit') }}", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          body: JSON.stringify({
+            display_name: displayName,
+            email: email,
+            roll_number: rollNumber
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (alertBox) {
+            alertBox.style.display = "block";
+            alertBox.style.background = "#f0fdf4";
+            alertBox.style.color = "#166534";
+            alertBox.textContent = "✅ " + data.message;
+          }
+          // Update modal header display
+          const headerName = document.querySelector("#userProfileModal h3");
+          if (headerName) headerName.textContent = data.display_name;
+          const modalAvatar = document.querySelector("#userProfileModal .modal-content > div:first-child div[style*='border-radius: 50%']");
+          if (modalAvatar) modalAvatar.textContent = data.display_name.charAt(0).toUpperCase();
+
+          // Update navbar chip
+          const topName = document.querySelector("#userChipBtn .user-name");
+          if (topName) topName.textContent = data.display_name + " ▾";
+          const topAvatar = document.querySelector("#userChipBtn .user-avatar-circle");
+          if (topAvatar) topAvatar.textContent = data.display_name.charAt(0).toUpperCase();
+          const dropdownName = document.querySelector(".user-dropdown-name");
+          if (dropdownName) dropdownName.textContent = data.display_name;
+
+          // Update displayed roll and email
+          const rollEl = document.getElementById("modalDisplayRoll");
+          if (rollEl) rollEl.textContent = data.roll_number || "Not Assigned";
+          const emailEl = document.getElementById("modalDisplayEmail");
+          if (emailEl) emailEl.textContent = data.email || "None";
+
+          setTimeout(() => {
+            toggleProfileEdit(false);
+          }, 700);
+        } else {
+          if (alertBox) {
+            alertBox.style.display = "block";
+            alertBox.style.background = "#fef2f2";
+            alertBox.style.color = "#991b1b";
+            alertBox.textContent = data.error || "Failed to update profile.";
+          }
+        }
+      } catch (err) {
+        if (alertBox) {
+          alertBox.style.display = "block";
+          alertBox.style.background = "#fef2f2";
+          alertBox.style.color = "#991b1b";
+          alertBox.textContent = "Network error while saving profile.";
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "💾 Save Changes";
+      }
     }
 
     function toggleUserDropdown(e) {

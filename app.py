@@ -2198,6 +2198,97 @@ def set_password():
     return render_template("set_password.html", is_self_change=False)
 
 
+@app.route("/profile/edit", methods=["GET", "POST"])
+@login_required
+def profile_edit():
+    """
+    Allows any logged-in student, teacher, or admin to update their own profile information:
+    Full Name (display_name), Institute Email (email), and Roll Number / Faculty ID (roll_number).
+    Supports standard form submission and AJAX JSON.
+    """
+    curr_user = get_current_user()
+    if not curr_user:
+        flash("Session expired or user account not found. Please log in again.", "warning")
+        return redirect(url_for("login"))
+    uid = curr_user["id"]
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json
+
+    if request.method == "POST":
+        if request.is_json:
+            data = request.get_json(silent=True) or {}
+            display_name = (data.get("display_name") or "").strip()
+            email = (data.get("email") or "").strip().lower()
+            roll_number = (data.get("roll_number") or "").strip().upper()
+        else:
+            display_name = request.form.get("display_name", "").strip()
+            email = request.form.get("email", "").strip().lower()
+            roll_number = request.form.get("roll_number", "").strip().upper()
+
+        if not display_name:
+            err = "Full name cannot be empty."
+            if is_ajax:
+                return jsonify({"success": False, "error": err}), 400
+            flash(err, "danger")
+            return redirect(url_for("profile_edit"))
+
+        if email and ("@" not in email or "." not in email):
+            err = "Please enter a valid email address."
+            if is_ajax:
+                return jsonify({"success": False, "error": err}), 400
+            flash(err, "danger")
+            return redirect(url_for("profile_edit"))
+
+        conn = get_db()
+        if email:
+            conflict = conn.execute(
+                "SELECT id FROM users WHERE LOWER(email) = ? AND id != ?", (email, uid)
+            ).fetchone()
+            if conflict:
+                conn.close()
+                err = "This email is already registered with another account."
+                if is_ajax:
+                    return jsonify({"success": False, "error": err}), 400
+                flash(err, "danger")
+                return redirect(url_for("profile_edit"))
+
+        if roll_number:
+            conflict = conn.execute(
+                "SELECT id FROM users WHERE UPPER(roll_number) = ? AND id != ?", (roll_number, uid)
+            ).fetchone()
+            if conflict:
+                conn.close()
+                err = "This Roll / ID Number is already registered with another account."
+                if is_ajax:
+                    return jsonify({"success": False, "error": err}), 400
+                flash(err, "danger")
+                return redirect(url_for("profile_edit"))
+
+        conn.execute("""
+            UPDATE users
+            SET display_name = ?, email = ?, roll_number = ?
+            WHERE id = ?
+        """, (display_name, email or None, roll_number or None, uid))
+        conn.commit()
+        conn.close()
+
+        session["display_name"] = display_name
+        success_msg = "Your profile information has been updated successfully."
+
+        if is_ajax:
+            return jsonify({
+                "success": True,
+                "message": success_msg,
+                "display_name": display_name,
+                "email": email,
+                "roll_number": roll_number
+            })
+
+        flash(success_msg, "success")
+        return redirect(url_for("profile_edit"))
+
+    return render_template("profile_edit.html", user=curr_user)
+
+
 # --- Main Dashboard & Course Hub ---
 
 @app.route("/usage-guide")
@@ -6434,6 +6525,79 @@ def admin_create_teacher():
     conn.close()
 
     flash(f"Teacher account for {display_name} created successfully!", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/edit", methods=["POST"])
+@admin_required
+def admin_edit_user(user_id):
+    """
+    Allows Administrator to update user details:
+    display_name, username, roll_number, email, role, and storage_quota_bytes.
+    """
+    curr_user = get_current_user()
+    display_name = request.form.get("display_name", "").strip()
+    username = request.form.get("username", "").strip().lower()
+    roll_number = request.form.get("roll_number", "").strip().upper()
+    email = request.form.get("email", "").strip().lower()
+    role = request.form.get("role", "student").strip().lower()
+    quota_mb = request.form.get("quota_mb", type=int)
+
+    if not display_name or not username:
+        flash("Full Name and Username cannot be empty.", "danger")
+        return redirect(url_for("admin_users"))
+
+    if role not in ("student", "teacher", "admin"):
+        flash("Invalid role specified.", "danger")
+        return redirect(url_for("admin_users"))
+
+    # Admin self-demotion protection
+    if user_id == curr_user["id"] and role != "admin":
+        flash("Administrators cannot remove their own Administrator role.", "danger")
+        return redirect(url_for("admin_users"))
+
+    if email and ("@" not in email or "." not in email):
+        flash("Please enter a valid email address.", "danger")
+        return redirect(url_for("admin_users"))
+
+    conn = get_db()
+    target_user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not target_user:
+        conn.close()
+        flash("User not found.", "danger")
+        return redirect(url_for("admin_users"))
+
+    # Check conflicts with other users
+    conflict = conn.execute("""
+        SELECT id FROM users
+        WHERE id != ? AND (
+            LOWER(username) = ?
+            OR (? != '' AND LOWER(email) = ?)
+            OR (? != '' AND UPPER(roll_number) = ?)
+        )
+    """, (user_id, username, email, email, roll_number, roll_number)).fetchone()
+
+    if conflict:
+        conn.close()
+        flash("Another user already exists with this Username, Email, or Roll/ID Number.", "danger")
+        return redirect(url_for("admin_users"))
+
+    storage_quota_bytes = (quota_mb * 1024 * 1024) if (quota_mb and quota_mb > 0) else (target_user["storage_quota_bytes"] or 524288000)
+
+    conn.execute("""
+        UPDATE users
+        SET display_name = ?, username = ?, roll_number = ?, email = ?, role = ?, storage_quota_bytes = ?
+        WHERE id = ?
+    """, (display_name, username, roll_number or None, email or None, role, storage_quota_bytes, user_id))
+    conn.commit()
+    conn.close()
+
+    # Sync active session if admin edited their own account
+    if user_id == curr_user["id"]:
+        session["display_name"] = display_name
+        session["role"] = role
+
+    flash(f"User account @{username} ({display_name}) updated successfully.", "success")
     return redirect(url_for("admin_users"))
 
 
