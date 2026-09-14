@@ -1670,6 +1670,56 @@ def create_notification_bulk(user_ids, notif_type, title, body="", course_id=Non
         app.logger.warning("create_notification_bulk failed: %s", e)
 
 
+def sync_message_notifications(user_id=None, sender_id=None, db_conn=None):
+    """
+    Synchronizes notifications table with direct_messages table.
+    Any message notification where messages have been marked as read
+    is immediately marked is_read = 1, is_pushed = 1 so toasts and app notifications stop.
+    """
+    close_conn = False
+    if db_conn is None:
+        db_conn = get_db()
+        close_conn = True
+    try:
+        if sender_id and user_id:
+            db_conn.execute("""
+                UPDATE notifications
+                SET is_read = 1, is_pushed = 1
+                WHERE user_id = ? AND type = 'message'
+                  AND (link LIKE ? OR link LIKE ?)
+            """, (user_id, f"%user_id={sender_id}%", f"%user_id={sender_id}"))
+        elif user_id:
+            db_conn.execute("""
+                UPDATE notifications
+                SET is_read = 1, is_pushed = 1
+                WHERE user_id = ? AND type = 'message' AND (is_read = 0 OR is_pushed = 0)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM direct_messages dm
+                      WHERE dm.recipient_id = notifications.user_id
+                        AND dm.is_read = 0
+                        AND (notifications.link LIKE '%' || dm.sender_id || '%' OR notifications.link LIKE '%user_id=' || dm.sender_id)
+                  )
+            """, (user_id,))
+        else:
+            db_conn.execute("""
+                UPDATE notifications
+                SET is_read = 1, is_pushed = 1
+                WHERE type = 'message' AND (is_read = 0 OR is_pushed = 0)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM direct_messages dm
+                      WHERE dm.recipient_id = notifications.user_id
+                        AND dm.is_read = 0
+                        AND (notifications.link LIKE '%' || dm.sender_id || '%' OR notifications.link LIKE '%user_id=' || dm.sender_id)
+                  )
+            """)
+        db_conn.commit()
+    except Exception as e:
+        app.logger.warning("sync_message_notifications failed: %s", e)
+    finally:
+        if close_conn:
+            db_conn.close()
+
+
 @app.route("/api/heartbeat")
 @login_required
 def api_heartbeat():
@@ -1682,7 +1732,8 @@ def api_heartbeat():
     uid = user["id"]
     since = request.args.get("since", "")
 
-    conn = get_db(read_only=True)
+    conn = get_db()
+    sync_message_notifications(user_id=uid, db_conn=conn)
 
     # Unread message count
     msg_row = conn.execute(
@@ -1699,20 +1750,13 @@ def api_heartbeat():
     unread_notifications = notif_count_row[0] if notif_count_row else 0
 
     # Recent unread events (max 10, newest first)
-    if since:
-        events_rows = conn.execute("""
-            SELECT id, type, title, body, course_id, link, created_at
-            FROM notifications
-            WHERE user_id = ? AND is_read = 0 AND created_at > ?
-            ORDER BY created_at DESC LIMIT 10
-        """, (uid, since)).fetchall()
-    else:
-        events_rows = conn.execute("""
-            SELECT id, type, title, body, course_id, link, created_at
-            FROM notifications
-            WHERE user_id = ? AND is_read = 0
-            ORDER BY created_at DESC LIMIT 10
-        """, (uid,)).fetchall()
+    cutoff = since if since else (datetime.now() - timedelta(seconds=45)).strftime("%Y-%m-%d %H:%M:%S")
+    events_rows = conn.execute("""
+        SELECT id, type, title, body, course_id, link, created_at
+        FROM notifications
+        WHERE user_id = ? AND is_read = 0 AND created_at > ?
+        ORDER BY created_at DESC LIMIT 10
+    """, (uid, cutoff)).fetchall()
 
     events = []
     for r in events_rows:
@@ -1761,9 +1805,10 @@ def api_notifications_poll():
                 uid = user_row["id"]
 
     if not uid:
-        return jsonify({"notifications": [], "error": "not_authenticated"}), 200
+        return jsonify({"notifications": [], "unread_total": 0, "error": "not_authenticated"}), 200
 
     conn = get_db()
+    sync_message_notifications(user_id=uid, db_conn=conn)
 
     # Fetch un-pushed notifications (max 20)
     rows = conn.execute("""
@@ -1793,9 +1838,14 @@ def api_notifications_poll():
         conn.execute(f"UPDATE notifications SET is_pushed = 1 WHERE id IN ({placeholders})", ids_to_mark)
         conn.commit()
 
+    unread_count_row = conn.execute(
+        "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0", (uid,)
+    ).fetchone()
+    unread_total = unread_count_row[0] if unread_count_row else 0
+
     conn.close()
 
-    return jsonify({"notifications": notifications})
+    return jsonify({"notifications": notifications, "unread_total": unread_total})
 
 
 @app.route("/api/notifications/mark-read", methods=["POST"])
@@ -1810,12 +1860,12 @@ def api_notifications_mark_read():
     if notif_ids:
         placeholders = ",".join(["?"] * len(notif_ids))
         conn.execute(
-            f"UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id IN ({placeholders})",
+            f"UPDATE notifications SET is_read = 1, is_pushed = 1 WHERE user_id = ? AND id IN ({placeholders})",
             [uid] + notif_ids
         )
     else:
-        # Mark all unread as read
-        conn.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0", (uid,))
+        # Mark all unread as read & pushed
+        conn.execute("UPDATE notifications SET is_read = 1, is_pushed = 1 WHERE user_id = ? AND is_read = 0", (uid,))
     conn.commit()
     conn.close()
     return jsonify({"success": True})
@@ -9029,12 +9079,9 @@ def messages_view():
             UPDATE direct_messages SET is_read = 1
             WHERE recipient_id = ? AND sender_id = ?
         """, (curr_id, active_contact["id"]))
-        # Also mark all corresponding notification alerts as read & pushed
-        conn.execute("""
-            UPDATE notifications SET is_read = 1, is_pushed = 1
-            WHERE user_id = ? AND type = 'message' AND (link LIKE ? OR link LIKE ?)
-        """, (curr_id, f"%user_id={active_contact['id']}%", f"%user_id={active_contact['id']}"))
         conn.commit()
+        sync_message_notifications(user_id=curr_id, sender_id=active_contact["id"], db_conn=conn)
+        sync_message_notifications(user_id=curr_id, db_conn=conn)
 
         thread_messages = conn.execute("""
             SELECT m.*, s.display_name as sender_name, s.role as sender_role
@@ -9087,6 +9134,7 @@ def api_get_messages(other_user_id):
     # Mark as read
     conn.execute("UPDATE direct_messages SET is_read = 1 WHERE recipient_id = ? AND sender_id = ?", (curr_id, other_user_id))
     conn.commit()
+    sync_message_notifications(user_id=curr_id, sender_id=other_user_id, db_conn=conn)
 
     messages = conn.execute("""
         SELECT m.id, m.sender_id, m.recipient_id, m.message, m.is_read, m.created_at,
@@ -9161,6 +9209,7 @@ def api_messages_poll():
                 WHERE recipient_id = ? AND sender_id = ? AND is_read = 0
             """, (curr_id, active_user_id))
             conn.commit()
+            sync_message_notifications(user_id=curr_id, sender_id=active_user_id, db_conn=conn)
 
             rows = conn.execute("""
                 SELECT m.id, m.sender_id, m.recipient_id, m.message, m.is_read, m.created_at,
@@ -9437,12 +9486,9 @@ def api_mark_messages_read(other_user_id):
     curr_id = session.get("user_id")
     conn = get_db()
     conn.execute("UPDATE direct_messages SET is_read = 1 WHERE recipient_id = ? AND sender_id = ?", (curr_id, other_user_id))
-    # Also mark all corresponding message notification alerts as read & pushed
-    conn.execute("""
-        UPDATE notifications SET is_read = 1, is_pushed = 1
-        WHERE user_id = ? AND type = 'message' AND (link LIKE ? OR link LIKE ?)
-    """, (curr_id, f"%user_id={other_user_id}%", f"%user_id={other_user_id}"))
     conn.commit()
+    sync_message_notifications(user_id=curr_id, sender_id=other_user_id, db_conn=conn)
+    sync_message_notifications(user_id=curr_id, db_conn=conn)
     conn.close()
     return jsonify({"success": True})
 

@@ -416,6 +416,12 @@
           navBadge.style.display = 'none';
         }
       }
+
+      // 4. Ensure message toasts are stopped and Android notifications are cleared
+      document.querySelectorAll('.hoodle-toast[data-type="message"]').forEach(t => t.remove());
+      if (window.Android && typeof Android.clearNotifications === 'function') {
+        try { Android.clearNotifications(); } catch(e) {}
+      }
     } catch (err) {
       console.debug('Polling error (non-fatal):', err);
     } finally {
@@ -505,6 +511,12 @@
 
   document.addEventListener('DOMContentLoaded', function() {
     scrollChatToBottom(false);
+
+    // Immediately clear lingering message toasts and mobile notifications
+    document.querySelectorAll('.hoodle-toast[data-type="message"]').forEach(t => t.remove());
+    if (window.Android && typeof Android.clearNotifications === 'function') {
+      try { Android.clearNotifications(); } catch(e) {}
+    }
 
     // Start Real-time Auto-polling (every 2.5s when focused, 5s when blurred)
     let pollInterval = 2500;

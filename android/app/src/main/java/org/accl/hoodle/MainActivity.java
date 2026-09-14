@@ -151,6 +151,15 @@ public class MainActivity extends AppCompatActivity {
         loadPortalUrl();
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) {
+            nm.cancelAll();
+        }
+    }
+
     private void setupSwipeRefresh() {
         // Disable gesture pull-to-refresh to prevent accidental page reloads while scrolling
         swipeRefreshLayout.setEnabled(false);
@@ -548,6 +557,16 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public void downloadUrl(String url, String filename) {
             activity.runOnUiThread(() -> activity.handleDownloadInApp(url, filename, null));
+        }
+
+        @JavascriptInterface
+        public void clearNotifications() {
+            activity.runOnUiThread(() -> {
+                NotificationManager nm = (NotificationManager) activity.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) {
+                    nm.cancelAll();
+                }
+            });
         }
 
         @JavascriptInterface

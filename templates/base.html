@@ -977,6 +977,9 @@
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ids: [evt.id]})
         }).catch(() => {});
+        if (window.Android && typeof Android.clearNotifications === 'function') {
+          try { Android.clearNotifications(); } catch (e) {}
+        }
         return;
       }
 
@@ -1000,6 +1003,7 @@
       const toast = document.createElement('div');
       toast.className = 'hoodle-toast';
       toast.setAttribute('data-type', evt.type || 'system');
+      toast.setAttribute('data-notif-id', evt.id || '');
       toast.innerHTML = `
         <span class="toast-icon">${iconMap[evt.type] || '🔔'}</span>
         <div class="toast-content">
@@ -1007,19 +1011,29 @@
           ${evt.body ? `<div class="toast-body">${escapeHtml(evt.body)}</div>` : ''}
           <div class="toast-time">Just now</div>
         </div>
-        <span class="toast-close" onclick="event.stopPropagation(); this.parentElement.classList.add('toast-exit'); setTimeout(() => this.parentElement.remove(), 300);">✕</span>
+        <span class="toast-close" onclick="event.stopPropagation(); const p = this.parentElement; p.classList.add('toast-exit'); setTimeout(() => p.remove(), 300); fetch('{{ url_for('api_notifications_mark_read') }}', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: [${evt.id}]})}).catch(() => {}); if (window.Android && typeof Android.clearNotifications === 'function') { try { Android.clearNotifications(); } catch(e) {} }">✕</span>
       `;
 
       // Click to navigate
       if (evt.link) {
         toast.style.cursor = 'pointer';
         toast.addEventListener('click', function() {
-          // Mark as read
+          // Immediately dismiss toast
+          toast.classList.add('toast-exit');
+          setTimeout(() => toast.remove(), 200);
+
+          // Mark as read in backend
           fetch('{{ url_for("api_notifications_mark_read") }}', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ids: [evt.id]})
           }).catch(() => {});
+
+          // Clear mobile notifications
+          if (window.Android && typeof Android.clearNotifications === 'function') {
+            try { Android.clearNotifications(); } catch (e) {}
+          }
+
           let target = evt.link;
           if (target && target.startsWith('/') && !target.startsWith('/lms')) {
             const prefix = window.location.pathname.startsWith('/lms') ? '/lms' : '';
@@ -1076,6 +1090,21 @@
 
           // Update navbar badge live
           updateNavbarBadge(data.unread_messages);
+
+          // If no unread messages, stop and remove any active message toasts immediately
+          if (data.unread_messages === 0) {
+            const container = document.getElementById('hoodleToastContainer');
+            if (container) {
+              const msgToasts = container.querySelectorAll('.hoodle-toast[data-type="message"]');
+              msgToasts.forEach(t => {
+                t.classList.add('toast-exit');
+                setTimeout(() => t.remove(), 300);
+              });
+            }
+            if (window.Android && typeof Android.clearNotifications === 'function') {
+              try { Android.clearNotifications(); } catch (e) {}
+            }
+          }
 
           // Show toasts for new events
           if (data.events && data.events.length > 0) {

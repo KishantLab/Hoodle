@@ -129,6 +129,14 @@ public class NotificationPollReceiver extends BroadcastReceiver {
                         postNotification(context, title, body);
                     }
                 }
+
+                int unreadTotal = res.optInt("unread_total", -1);
+                if (unreadTotal == 0) {
+                    NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (nm != null) {
+                        nm.cancelAll();
+                    }
+                }
             }
             conn.disconnect();
         } catch (Exception e) {
