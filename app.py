@@ -9364,18 +9364,19 @@ def api_app_version():
     return jsonify({
         "app_name": "Hoodle LMS",
         "package_name": "com.accl.hoodle",
-        "latest_version": "1.2.0",
-        "version_code": 3,
+        "latest_version": "1.3.0",
+        "version_code": 4,
         "min_version": "1.0.0",
-        "release_date": "2026-09-13",
+        "release_date": "2026-09-14",
         "apk_available": apk_exists,
         "apk_size_bytes": file_size,
         "download_url": url_for("download_apk", _external=True),
         "changelog": [
+            "Real-time background notification alerts even when the app is closed",
+            "Live dynamic in-page notifications without manual page refresh",
             "Course-scoped student messaging with registered teachers & TAs",
             "Automated daily Google Sheets Grade Book synchronization",
-            "Support for multi-section student grade reporting",
-            "High-concurrency cluster performance optimizations"
+            "High-concurrency cluster load-balancing optimizations"
         ]
     })
 
