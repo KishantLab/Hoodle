@@ -10,18 +10,20 @@
   <script src="{{ url_for('static', filename='js/pdf/pdf.min.js') }}"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-      background: #0f172a;
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #0b0f19;
       color: #f8fafc;
-      height: 100vh;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
       -webkit-tap-highlight-color: transparent;
     }
+    /* Compact Toolbar */
     .pdf-toolbar {
-      height: 52px;
+      height: 48px;
       background: #1e293b;
       border-bottom: 1px solid rgba(255,255,255,0.08);
       display: flex;
@@ -38,25 +40,25 @@
       gap: 6px;
     }
     .doc-title {
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       font-weight: 700;
       color: #f1f5f9;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 240px;
+      max-width: 200px;
     }
     @media (max-width: 600px) {
-      .doc-title { max-width: 130px; font-size: 0.8rem; }
+      .doc-title { max-width: 110px; font-size: 0.78rem; }
       .hide-mobile { display: none !important; }
     }
     .tool-btn {
-      background: rgba(255,255,255,0.07);
+      background: rgba(255,255,255,0.08);
       border: 1px solid rgba(255,255,255,0.12);
       color: #e2e8f0;
-      padding: 6px 10px;
+      padding: 5px 10px;
       border-radius: 6px;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       font-weight: 600;
       cursor: pointer;
       display: inline-flex;
@@ -64,8 +66,9 @@
       gap: 4px;
       transition: all 0.15s ease;
       text-decoration: none;
+      user-select: none;
     }
-    .tool-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
+    .tool-btn:hover { background: rgba(255,255,255,0.18); color: #fff; }
     .tool-btn:active { transform: scale(0.96); }
     .tool-btn.btn-download {
       background: #2563eb;
@@ -78,37 +81,51 @@
       color: #94a3b8;
       font-weight: 600;
       white-space: nowrap;
-      padding: 0 4px;
+      padding: 0 6px;
     }
+    
+    /* Embedded inside modal iframe */
+    body.is-embedded .toolbar-left,
+    body.is-embedded .toolbar-right {
+      display: none !important;
+    }
+    body.is-embedded .pdf-toolbar {
+      justify-content: center !important;
+      height: 38px !important;
+      background: #111827 !important;
+      border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+    }
+
+    /* Main PDF Viewport */
     #pdfContainer {
       flex: 1;
+      width: 100%;
+      height: calc(100% - 48px);
       overflow-y: auto;
       overflow-x: auto;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 16px 8px 40px;
-      gap: 16px;
+      padding: 16px 8px 48px;
       background: #0b0f19;
-      scroll-behavior: smooth;
+      text-align: center;
+      -webkit-overflow-scrolling: touch;
       position: relative;
     }
     .pdf-page-wrapper {
-      position: relative;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      display: inline-block;
+      margin: 0 auto 16px auto;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.5);
       border-radius: 4px;
       background: white;
+      vertical-align: top;
       overflow: hidden;
-      max-width: 100%;
     }
     .pdf-page-wrapper canvas {
       display: block;
-      width: 100%;
-      height: auto;
+      margin: 0 auto;
     }
+    /* Loading & Error States */
     #loadingSpinner {
       position: absolute;
-      top: 50%;
+      top: 45%;
       left: 50%;
       transform: translate(-50%, -50%);
       display: flex;
@@ -130,7 +147,7 @@
     #errorMessage {
       display: none;
       position: absolute;
-      top: 50%;
+      top: 45%;
       left: 50%;
       transform: translate(-50%, -50%);
       background: #1e293b;
@@ -139,20 +156,21 @@
       border-radius: 12px;
       text-align: center;
       max-width: 90%;
-      width: 380px;
+      width: 360px;
     }
   </style>
 </head>
 <body>
-  <div class="pdf-toolbar">
+  <!-- Header Toolbar -->
+  <div class="pdf-toolbar" id="pdfToolbar">
     <div class="toolbar-left">
-      <span style="font-size: 1.15rem;">📕</span>
+      <span style="font-size: 1.1rem;">📕</span>
       <span class="doc-title" title="{{ title }}">{{ title or 'Document' }}</span>
     </div>
 
     <div class="toolbar-center">
       <button type="button" class="tool-btn" id="prevPageBtn" title="Previous Page">‹</button>
-      <span class="page-indicator" id="pageIndicator">...</span>
+      <span class="page-indicator" id="pageIndicator">1 / ...</span>
       <button type="button" class="tool-btn" id="nextPageBtn" title="Next Page">›</button>
 
       <div class="hide-mobile" style="display:flex; align-items:center; gap:4px; margin-left:8px;">
@@ -163,13 +181,14 @@
     </div>
 
     <div class="toolbar-right">
-      <button type="button" class="tool-btn btn-download" id="downloadBtn" title="Fast In-App Download">
+      <button type="button" class="tool-btn btn-download" id="downloadBtn" title="Download Document">
         <span>⬇</span>
         <span class="hide-mobile">Download</span>
       </button>
     </div>
   </div>
 
+  <!-- PDF Scroll Container -->
   <div id="pdfContainer">
     <div id="loadingSpinner">
       <div class="spinner"></div>
@@ -179,8 +198,8 @@
     <div id="errorMessage">
       <div style="font-size:1.8rem; margin-bottom:8px;">⚠️</div>
       <div style="font-weight:700; margin-bottom:6px; color:#f87171;">Unable to render PDF</div>
-      <p style="font-size:0.8rem; color:#94a3b8; margin-bottom:14px;" id="errorDetails">The document could not be loaded directly.</p>
-      <a id="fallbackDownloadBtn" href="#" class="tool-btn btn-download" style="display:inline-flex;">Download File Directly</a>
+      <p style="font-size:0.8rem; color:#94a3b8; margin-bottom:14px;" id="errorDetails">The document could not be loaded.</p>
+      <a id="fallbackDownloadBtn" href="#" class="tool-btn btn-download" style="display:inline-flex;">Download Directly</a>
     </div>
   </div>
 
@@ -192,12 +211,17 @@
       const downloadUrl = decodeURIComponent("{{ download_url or file_url | escape }}");
       const docTitle = "{{ title or 'document.pdf' | escape }}";
 
+      if (window.self !== window.top) {
+        document.body.classList.add('is-embedded');
+      }
+
+
       pdfjsLib.GlobalWorkerOptions.workerSrc = "{{ url_for('static', filename='js/pdf/pdf.worker.min.js') }}";
 
       let pdfDoc = null;
       let totalPages = 0;
       let currentPage = 1;
-      let currentScale = 1.2;
+      let currentScale = 1.0;
       let isRendering = false;
 
       const container = document.getElementById('pdfContainer');
@@ -211,39 +235,28 @@
 
       fallbackDownloadBtn.href = downloadUrl;
 
-      downloadBtn.addEventListener('click', function() {
-        downloadBtn.innerHTML = '<span>⏳</span> <span class="hide-mobile">Saving...</span>';
-        downloadBtn.disabled = true;
+      // Smart Download Handler: In Android App uses native bridge; In Browser uses direct link or blob
+      downloadBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        
+        // 1. Android App Bridge
+        if (window.Android && typeof Android.downloadUrl === 'function') {
+          Android.downloadUrl(downloadUrl, docTitle);
+          return;
+        }
 
-        fetch(downloadUrl, { credentials: 'include' })
-          .then(res => {
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            return res.blob();
-          })
-          .then(blob => {
-            const blobUrl = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = blobUrl;
-            a.download = docTitle.endsWith('.pdf') ? docTitle : (docTitle + '.pdf');
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(blobUrl);
-            a.remove();
-            downloadBtn.innerHTML = '<span>✅</span> <span class="hide-mobile">Saved</span>';
-            setTimeout(() => {
-              downloadBtn.innerHTML = '<span>⬇</span> <span class="hide-mobile">Download</span>';
-              downloadBtn.disabled = false;
-            }, 2000);
-          })
-          .catch(err => {
-            window.location.href = downloadUrl;
-            downloadBtn.innerHTML = '<span>⬇</span> <span class="hide-mobile">Download</span>';
-            downloadBtn.disabled = false;
-          });
+        // 2. Direct browser navigation with attachment header
+        let dl = downloadUrl;
+        if (dl.indexOf('?') === -1) {
+          dl += '?download=1';
+        } else if (dl.indexOf('download=') === -1) {
+          dl += '&download=1';
+        }
+        window.location.href = dl;
       });
 
-      loadingText.innerText = "Downloading PDF...";
+      // Load Document via PDF.js
+      loadingText.innerText = "Loading PDF...";
       const loadingTask = pdfjsLib.getDocument({
         url: fileUrl,
         withCredentials: true
@@ -262,8 +275,8 @@
         pageIndicator.innerText = `1 / ${totalPages}`;
         loadingSpinner.style.display = 'none';
 
+        // Auto-fit to viewport width
         fitToWidth();
-        renderAllPages();
       }).catch(function(err) {
         console.error("PDF.js load error:", err);
         loadingSpinner.style.display = 'none';
@@ -274,9 +287,11 @@
       function fitToWidth() {
         if (!pdfDoc) return;
         pdfDoc.getPage(1).then(page => {
-          const viewport = page.getViewport({ scale: 1.0 });
-          const containerWidth = container.clientWidth - 32;
-          currentScale = Math.min(Math.max(containerWidth / viewport.width, 0.6), 2.5);
+          const unscaledViewport = page.getViewport({ scale: 1.0 });
+          const availableWidth = Math.max((container.clientWidth || window.innerWidth) - 28, 260);
+          currentScale = availableWidth / unscaledViewport.width;
+          // Constrain zoom range
+          currentScale = Math.min(Math.max(currentScale, 0.4), 3.0);
           renderAllPages();
         });
       }
@@ -285,11 +300,12 @@
         if (!pdfDoc || isRendering) return;
         isRendering = true;
 
-        const existingPages = container.querySelectorAll('.pdf-page-wrapper');
-        existingPages.forEach(p => p.remove());
+        // Remove old page wrappers
+        const oldPages = container.querySelectorAll('.pdf-page-wrapper');
+        oldPages.forEach(p => p.remove());
 
         const outputScale = window.devicePixelRatio || 1;
-        let pagesRendered = 0;
+        let pagesRemaining = totalPages;
 
         for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
           const pageWrapper = document.createElement('div');
@@ -303,10 +319,18 @@
           (function(num, c, wrapper) {
             pdfDoc.getPage(num).then(function(page) {
               const viewport = page.getViewport({ scale: currentScale });
-              c.width = Math.floor(viewport.width * outputScale);
-              c.height = Math.floor(viewport.height * outputScale);
-              c.style.width = Math.floor(viewport.width) + "px";
-              c.style.height = Math.floor(viewport.height) + "px";
+
+              // Explicit pixel sizes on both wrapper and canvas to prevent aspect-ratio squishing
+              const displayWidth = Math.floor(viewport.width);
+              const displayHeight = Math.floor(viewport.height);
+
+              wrapper.style.width = displayWidth + "px";
+              wrapper.style.height = displayHeight + "px";
+
+              c.width = Math.floor(displayWidth * outputScale);
+              c.height = Math.floor(displayHeight * outputScale);
+              c.style.width = displayWidth + "px";
+              c.style.height = displayHeight + "px";
 
               const ctx = c.getContext('2d');
               ctx.setTransform(outputScale, 0, 0, outputScale, 0, 0);
@@ -317,8 +341,13 @@
               };
 
               page.render(renderContext).promise.then(() => {
-                pagesRendered++;
-                if (pagesRendered === totalPages) {
+                pagesRemaining--;
+                if (pagesRemaining <= 0) {
+                  isRendering = false;
+                }
+              }).catch(() => {
+                pagesRemaining--;
+                if (pagesRemaining <= 0) {
                   isRendering = false;
                 }
               });
@@ -327,10 +356,11 @@
         }
       }
 
+      // Scroll Spy for Page Indicator
       container.addEventListener('scroll', function() {
         if (!totalPages) return;
         const pageElements = container.querySelectorAll('.pdf-page-wrapper');
-        const containerTop = container.scrollTop + 60;
+        const containerTop = container.scrollTop + 80;
 
         for (let i = 0; i < pageElements.length; i++) {
           const el = pageElements[i];
@@ -342,6 +372,7 @@
         }
       });
 
+      // Navigation
       document.getElementById('prevPageBtn').addEventListener('click', function() {
         if (currentPage > 1) {
           currentPage--;
@@ -358,21 +389,31 @@
 
       function scrollToPage(num) {
         const el = document.getElementById(`page-${num}`);
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        pageIndicator.innerText = `${num} / ${totalPages}`;
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          pageIndicator.innerText = `${num} / ${totalPages}`;
+        }
       }
 
+      // Zoom Controls
       document.getElementById('zoomInBtn').addEventListener('click', function() {
-        currentScale = Math.min(currentScale + 0.25, 3.0);
+        currentScale = Math.min(currentScale + 0.2, 3.0);
         renderAllPages();
       });
 
       document.getElementById('zoomOutBtn').addEventListener('click', function() {
-        currentScale = Math.max(currentScale - 0.25, 0.5);
+        currentScale = Math.max(currentScale - 0.2, 0.4);
         renderAllPages();
       });
 
       document.getElementById('zoomFitBtn').addEventListener('click', fitToWidth);
+
+      // Handle orientation change / resize
+      let resizeTimer = null;
+      window.addEventListener('resize', function() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(fitToWidth, 300);
+      });
     })();
   </script>
 </body>

@@ -1633,6 +1633,8 @@ def create_notification(user_id, notif_type, title, body="", course_id=None, lin
     Types: 'announcement', 'grade', 'message', 'attendance', 'system'
     """
     try:
+        if link and link.startswith("/") and not link.startswith("/lms"):
+            link = "/lms" + link
         conn = get_db()
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute("""
@@ -1650,6 +1652,8 @@ def create_notification_bulk(user_ids, notif_type, title, body="", course_id=Non
     if not user_ids:
         return
     try:
+        if link and link.startswith("/") and not link.startswith("/lms"):
+            link = "/lms" + link
         conn = get_db()
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for uid in user_ids:

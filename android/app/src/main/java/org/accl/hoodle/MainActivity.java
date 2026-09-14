@@ -345,23 +345,12 @@ public class MainActivity extends AppCompatActivity {
 
         // Download Listener for course attachments, PDFs, templates, and exports
         webView.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
+            if (url == null || url.isEmpty() || url.startsWith("blob:")) {
+                return;
+            }
             try {
-                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-                request.setMimeType(mimetype);
-                String cookies = CookieManager.getInstance().getCookie(url);
-                request.addRequestHeader("cookie", cookies);
-                request.addRequestHeader("User-Agent", userAgent);
-                request.setDescription("Downloading file from Hoodle LMS...");
                 String filename = URLUtil.guessFileName(url, contentDisposition, mimetype);
-                request.setTitle(filename);
-                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename);
-
-                DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
-                if (dm != null) {
-                    dm.enqueue(request);
-                    Toast.makeText(getApplicationContext(), "Downloading " + filename, Toast.LENGTH_SHORT).show();
-                }
+                handleDownloadInApp(url, filename, mimetype);
             } catch (Exception e) {
                 Toast.makeText(getApplicationContext(), "Download error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
             }
@@ -469,11 +458,96 @@ public class MainActivity extends AppCompatActivity {
         nmc.notify((int) System.currentTimeMillis(), builder.build());
     }
 
+    public void handleDownloadInApp(String rawUrl, String filename, String mimetype) {
+        if (rawUrl == null || rawUrl.isEmpty() || rawUrl.startsWith("blob:")) {
+            return;
+        }
+
+        String fullUrl = rawUrl;
+        if (fullUrl.startsWith("/")) {
+            String base = getSavedServerUrl();
+            if (base.endsWith("/") && fullUrl.startsWith("/")) {
+                fullUrl = base.substring(0, base.length() - 1) + fullUrl;
+            } else {
+                fullUrl = base + fullUrl;
+            }
+        }
+
+        final String downloadUrl = fullUrl;
+        final String finalFilename = (filename != null && !filename.isEmpty()) ? filename : "document.pdf";
+
+        Toast.makeText(this, "⬇ Downloading " + finalFilename + "...", Toast.LENGTH_SHORT).show();
+
+        backgroundExecutor.execute(() -> {
+            try {
+                URL url = new URL(downloadUrl);
+                HttpURLConnection conn;
+                if (url.getProtocol().equalsIgnoreCase("https")) {
+                    javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) url.openConnection();
+                    javax.net.ssl.TrustManager[] trustAll = new javax.net.ssl.TrustManager[]{
+                        new javax.net.ssl.X509TrustManager() {
+                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return null; }
+                            public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                            public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                        }
+                    };
+                    javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
+                    sc.init(null, trustAll, new java.security.SecureRandom());
+                    httpsConn.setSSLSocketFactory(sc.getSocketFactory());
+                    httpsConn.setHostnameVerifier((hostname, session) -> true);
+                    conn = httpsConn;
+                } else {
+                    conn = (HttpURLConnection) url.openConnection();
+                }
+
+                conn.setRequestMethod("GET");
+                String cookies = CookieManager.getInstance().getCookie(downloadUrl);
+                if (cookies != null) {
+                    conn.setRequestProperty("Cookie", cookies);
+                }
+                conn.setRequestProperty("User-Agent", "Hoodle_Android_App/1.0");
+                conn.setConnectTimeout(10000);
+                conn.setReadTimeout(30000);
+
+                int code = conn.getResponseCode();
+                if (code >= 200 && code < 400) {
+                    java.io.File destDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                    if (!destDir.exists()) destDir.mkdirs();
+                    java.io.File destFile = new java.io.File(destDir, finalFilename);
+
+                    try (java.io.InputStream in = conn.getInputStream();
+                         java.io.FileOutputStream out = new java.io.FileOutputStream(destFile)) {
+                        byte[] buffer = new byte[32768];
+                        int read;
+                        while ((read = in.read(buffer)) != -1) {
+                            out.write(buffer, 0, read);
+                        }
+                    }
+
+                    mainHandler.post(() -> {
+                        Toast.makeText(MainActivity.this, "✅ Saved to Downloads: " + finalFilename, Toast.LENGTH_LONG).show();
+                        postStatusBarNotification("Download Complete", finalFilename);
+                    });
+                } else {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, "Download failed (HTTP " + code + ")", Toast.LENGTH_SHORT).show());
+                }
+                conn.disconnect();
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Download error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
     public static class WebAppInterface {
         private final MainActivity activity;
 
         WebAppInterface(MainActivity activity) {
             this.activity = activity;
+        }
+
+        @JavascriptInterface
+        public void downloadUrl(String url, String filename) {
+            activity.runOnUiThread(() -> activity.handleDownloadInApp(url, filename, null));
         }
 
         @JavascriptInterface

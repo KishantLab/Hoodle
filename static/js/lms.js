@@ -56,22 +56,15 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadBtn.setAttribute("download", title || "document.pdf");
       downloadBtn.onclick = function(e) {
         e.preventDefault();
-        fetch(targetDownload, { credentials: 'include' })
-          .then(res => res.blob())
-          .then(blob => {
-            const blobUrl = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = blobUrl;
-            a.download = (title && title.endsWith('.pdf')) ? title : ((title || 'document') + '.pdf');
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(blobUrl);
-            a.remove();
-          })
-          .catch(() => {
-            window.location.href = targetDownload;
-          });
+        const docName = (title && title.endsWith('.pdf')) ? title : ((title || 'document') + '.pdf');
+        if (window.Android && typeof Android.downloadUrl === 'function') {
+          Android.downloadUrl(targetDownload, docName);
+          return;
+        }
+        let dl = targetDownload;
+        if (dl.indexOf('?') === -1) dl += '?download=1';
+        else if (dl.indexOf('download=') === -1) dl += '&download=1';
+        window.location.href = dl;
       };
     }
 

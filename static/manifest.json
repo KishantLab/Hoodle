@@ -1,0 +1,31 @@
+{
+  "name": "Hoodle LMS",
+  "short_name": "Hoodle",
+  "description": "ACCL Classroom Portal & Learning Management System",
+  "start_url": "/lms/dashboard",
+  "scope": "/lms/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e3a8a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/lms/static/images/hoodle_app_icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/lms/static/images/hoodle_icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/lms/static/images/hoodle_icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

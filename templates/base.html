@@ -1003,7 +1003,12 @@
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ids: [evt.id]})
           }).catch(() => {});
-          window.location.href = evt.link;
+          let target = evt.link;
+          if (target && target.startsWith('/') && !target.startsWith('/lms')) {
+            const prefix = window.location.pathname.startsWith('/lms') ? '/lms' : '';
+            target = prefix + target;
+          }
+          window.location.href = target;
         });
       }
 
