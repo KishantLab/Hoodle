@@ -1769,7 +1769,7 @@ def api_notifications_poll():
     rows = conn.execute("""
         SELECT id, type, title, body, course_id, link, created_at
         FROM notifications
-        WHERE user_id = ? AND is_pushed = 0
+        WHERE user_id = ? AND is_pushed = 0 AND is_read = 0
         ORDER BY created_at DESC LIMIT 20
     """, (uid,)).fetchall()
 
@@ -9029,6 +9029,11 @@ def messages_view():
             UPDATE direct_messages SET is_read = 1
             WHERE recipient_id = ? AND sender_id = ?
         """, (curr_id, active_contact["id"]))
+        # Also mark all corresponding notification alerts as read & pushed
+        conn.execute("""
+            UPDATE notifications SET is_read = 1, is_pushed = 1
+            WHERE user_id = ? AND type = 'message' AND (link LIKE ? OR link LIKE ?)
+        """, (curr_id, f"%user_id={active_contact['id']}%", f"%user_id={active_contact['id']}"))
         conn.commit()
 
         thread_messages = conn.execute("""
@@ -9432,6 +9437,11 @@ def api_mark_messages_read(other_user_id):
     curr_id = session.get("user_id")
     conn = get_db()
     conn.execute("UPDATE direct_messages SET is_read = 1 WHERE recipient_id = ? AND sender_id = ?", (curr_id, other_user_id))
+    # Also mark all corresponding message notification alerts as read & pushed
+    conn.execute("""
+        UPDATE notifications SET is_read = 1, is_pushed = 1
+        WHERE user_id = ? AND type = 'message' AND (link LIKE ? OR link LIKE ?)
+    """, (curr_id, f"%user_id={other_user_id}%", f"%user_id={other_user_id}"))
     conn.commit()
     conn.close()
     return jsonify({"success": True})

@@ -970,6 +970,23 @@
       if (seenEventIds.has(evt.id)) return;
       seenEventIds.add(evt.id);
 
+      // Do not show toast for messages if user is already looking at messages page
+      if (evt.type === 'message' && window.location.pathname.includes('/messages')) {
+        fetch('{{ url_for("api_notifications_mark_read") }}', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ids: [evt.id]})
+        }).catch(() => {});
+        return;
+      }
+
+      // Mark as read in backend as soon as it is shown so it never repeats on any page or app
+      fetch('{{ url_for("api_notifications_mark_read") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ids: [evt.id]})
+      }).catch(() => {});
+
       // Limit max visible toasts
       while (container.children.length >= MAX_TOASTS) {
         container.removeChild(container.firstChild);
