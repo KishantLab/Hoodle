@@ -40,10 +40,8 @@ public class NotificationPollReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         if (intent == null) return;
 
-        String action = intent.getAction();
-        if (Intent.ACTION_BOOT_COMPLETED.equals(action) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
-            scheduleRecurringAlarm(context);
-        }
+        // Always reschedule next poll so background alarm repeats continuously even when app is closed
+        scheduleRecurringAlarm(context);
 
         // Acquire WakeLock briefly for network fetch
         PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);

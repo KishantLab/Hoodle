@@ -1643,6 +1643,9 @@ def create_notification(user_id, notif_type, title, body="", course_id=None, lin
         """, (user_id, notif_type, title, body, course_id, link, now_str))
         conn.commit()
         conn.close()
+
+        # Trigger FCM push to mobile devices
+        threading.Thread(target=send_fcm_notification, args=(user_id, title, body, link), daemon=True).start()
     except Exception as e:
         app.logger.warning("create_notification failed for user %s: %s", user_id, e)
 
@@ -1813,6 +1816,69 @@ def api_notifications_mark_read():
     else:
         # Mark all unread as read
         conn.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0", (uid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
+
+
+def send_fcm_notification(user_id, title, body="", link=""):
+    """
+    Dispatches Firebase Cloud Messaging (FCM) push notification to registered devices.
+    """
+    fcm_key = os.environ.get("FCM_SERVER_KEY") or load_email_config_file().get("fcm_server_key")
+    if not fcm_key:
+        return
+    try:
+        conn = get_db(read_only=True)
+        tokens_rows = conn.execute("SELECT token FROM device_tokens WHERE user_id = ?", (user_id,)).fetchall()
+        conn.close()
+        tokens = [r["token"] for r in tokens_rows if r["token"]]
+        if not tokens:
+            return
+
+        payload = {
+            "registration_ids": tokens,
+            "priority": "high",
+            "notification": {
+                "title": title,
+                "body": body,
+                "sound": "default"
+            },
+            "data": {
+                "url": link,
+                "title": title,
+                "body": body
+            }
+        }
+        headers = {
+            "Authorization": f"key={fcm_key}",
+            "Content-Type": "application/json"
+        }
+        requests.post("https://fcm.googleapis.com/fcm/send", json=payload, headers=headers, timeout=5)
+    except Exception as e:
+        app.logger.warning("FCM dispatch failed: %s", e)
+
+
+@app.route("/api/devices/register", methods=["POST"])
+def api_devices_register():
+    """
+    Registers an FCM / Web Push device token for push notifications when app is closed.
+    """
+    data = request.get_json(silent=True) or {}
+    token = data.get("token", "").strip()
+    user_id = session.get("user_id") or data.get("user_id")
+    platform = data.get("platform", "android")
+
+    if not token or not user_id:
+        return jsonify({"success": False, "error": "Missing token or user_id"}), 400
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO device_tokens (user_id, token, platform, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = EXCLUDED.updated_at
+    """, (user_id, token, platform, now_str, now_str))
     conn.commit()
     conn.close()
     return jsonify({"success": True})
