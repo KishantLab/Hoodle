@@ -138,11 +138,17 @@ class PgCursorWrapper:
 
         if is_insert:
             try:
+                self._cur.execute("SAVEPOINT sp_lastval")
                 self._cur.execute("SELECT lastval()")
                 res = self._cur.fetchone()
                 if res:
                     self.lastrowid = res[0]
+                self._cur.execute("RELEASE SAVEPOINT sp_lastval")
             except Exception:
+                try:
+                    self._cur.execute("ROLLBACK TO SAVEPOINT sp_lastval")
+                except Exception:
+                    pass
                 self.lastrowid = None
 
         return self

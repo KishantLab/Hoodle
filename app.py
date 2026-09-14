@@ -6179,6 +6179,28 @@ def download_submission(sub_id):
     )
 
 
+@app.route("/pdf/viewer")
+@login_required
+def pdf_viewer():
+    """
+    Dedicated in-app HTML5 Canvas PDF Viewer powered by Mozilla PDF.js.
+    Supports mobile touch zoom, responsive continuous scroll, and reliable in-app download.
+    """
+    file_url = request.args.get("file", "").strip()
+    title = request.args.get("title", "").strip()
+    download_url = request.args.get("download", "").strip() or file_url
+
+    if not file_url:
+        abort(400, "Missing PDF file URL parameter.")
+
+    return render_template(
+        "pdf_viewer.html",
+        file_url=file_url,
+        title=title or "Document",
+        download_url=download_url
+    )
+
+
 # --- Hoodle Brand Assets & Logo Downloads ---
 
 @app.route("/brand")

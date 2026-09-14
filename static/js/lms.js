@@ -35,7 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
-  // In-App PDF Viewer
+  // In-App PDF Viewer powered by Mozilla PDF.js
   window.openPdfViewer = function(url, title, downloadUrl) {
     const modal = document.getElementById("pdfViewerModal");
     const frame = document.getElementById("pdfViewerFrame");
@@ -45,14 +45,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!modal || !frame) return;
 
+    const basePrefix = window.location.pathname.startsWith("/lms") ? "/lms" : "";
+    const targetDownload = downloadUrl || url;
+    const viewerPageUrl = `${basePrefix}/pdf/viewer?file=${encodeURIComponent(url)}&title=${encodeURIComponent(title || "Document")}&download=${encodeURIComponent(targetDownload)}`;
+
     if (titleEl) titleEl.innerText = title || "Document Viewer";
-    if (newTabBtn) newTabBtn.href = url;
+    if (newTabBtn) newTabBtn.href = viewerPageUrl;
     if (downloadBtn) {
-      downloadBtn.href = downloadUrl || url;
+      downloadBtn.href = targetDownload;
       downloadBtn.setAttribute("download", title || "document.pdf");
+      downloadBtn.onclick = function(e) {
+        e.preventDefault();
+        fetch(targetDownload, { credentials: 'include' })
+          .then(res => res.blob())
+          .then(blob => {
+            const blobUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = blobUrl;
+            a.download = (title && title.endsWith('.pdf')) ? title : ((title || 'document') + '.pdf');
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(blobUrl);
+            a.remove();
+          })
+          .catch(() => {
+            window.location.href = targetDownload;
+          });
+      };
     }
 
-    frame.src = url;
+    frame.src = viewerPageUrl;
     modal.style.display = "flex";
     document.body.style.overflow = "hidden";
   };
