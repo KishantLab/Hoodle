@@ -910,5 +910,198 @@
     }
   </script>
   {% block extra_js %}{% endblock %}
+
+  {% if current_user %}
+  <!-- Real-Time Toast Notification Container -->
+  <div id="hoodleToastContainer" style="position:fixed; top:16px; right:16px; z-index:99999; display:flex; flex-direction:column; gap:10px; pointer-events:none; max-width:380px; width:calc(100vw - 32px);"></div>
+
+  <style>
+    @keyframes toastSlideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes toastSlideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(120%); opacity: 0; } }
+    .hoodle-toast {
+      pointer-events: auto;
+      background: #1e293b; color: #f8fafc; border-radius: 12px; padding: 12px 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15);
+      font-family: 'Plus Jakarta Sans', 'Outfit', system-ui, sans-serif;
+      font-size: 0.84rem; line-height: 1.4; cursor: pointer;
+      animation: toastSlideIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      border-left: 4px solid #6366f1; display: flex; align-items: flex-start; gap: 10px;
+      transition: transform 0.2s, box-shadow 0.2s;
+      max-width: 100%; word-break: break-word;
+    }
+    .hoodle-toast:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+    .hoodle-toast.toast-exit { animation: toastSlideOut 0.3s ease-in forwards; }
+    .hoodle-toast .toast-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 1px; }
+    .hoodle-toast .toast-content { flex: 1; min-width: 0; }
+    .hoodle-toast .toast-title { font-weight: 700; font-size: 0.84rem; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hoodle-toast .toast-body { font-size: 0.78rem; color: #94a3b8; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .hoodle-toast .toast-time { font-size: 0.68rem; color: #64748b; margin-top: 3px; }
+    .hoodle-toast .toast-close { font-size: 1rem; color: #64748b; cursor: pointer; padding: 2px 4px; border-radius: 4px; flex-shrink: 0; }
+    .hoodle-toast .toast-close:hover { background: rgba(255,255,255,0.1); color: #f8fafc; }
+    .hoodle-toast[data-type="announcement"] { border-left-color: #f59e0b; }
+    .hoodle-toast[data-type="grade"] { border-left-color: #10b981; }
+    .hoodle-toast[data-type="message"] { border-left-color: #3b82f6; }
+    .hoodle-toast[data-type="attendance"] { border-left-color: #8b5cf6; }
+    @media (max-width: 600px) {
+      #hoodleToastContainer { top: 8px; right: 8px; max-width: calc(100vw - 16px); }
+      .hoodle-toast { padding: 10px 12px; font-size: 0.8rem; border-radius: 10px; }
+    }
+  </style>
+
+  <script>
+  (function() {
+    'use strict';
+
+    const HEARTBEAT_ACTIVE_MS  = 15000;   // 15s when tab is focused
+    const HEARTBEAT_BG_MS      = 60000;   // 60s when tab is hidden
+    const TOAST_DURATION_MS    = 6000;     // Toast stays visible 6s
+    const MAX_TOASTS           = 4;
+
+    let lastHeartbeatTime = '';
+    let heartbeatTimer = null;
+    let seenEventIds = new Set();
+
+    // --- Toast System ---
+    function showToast(evt) {
+      const container = document.getElementById('hoodleToastContainer');
+      if (!container) return;
+
+      // Deduplicate
+      if (seenEventIds.has(evt.id)) return;
+      seenEventIds.add(evt.id);
+
+      // Limit max visible toasts
+      while (container.children.length >= MAX_TOASTS) {
+        container.removeChild(container.firstChild);
+      }
+
+      const iconMap = {
+        announcement: '📢', grade: '📝', message: '💬',
+        attendance: '✅', system: '🔔'
+      };
+
+      const toast = document.createElement('div');
+      toast.className = 'hoodle-toast';
+      toast.setAttribute('data-type', evt.type || 'system');
+      toast.innerHTML = `
+        <span class="toast-icon">${iconMap[evt.type] || '🔔'}</span>
+        <div class="toast-content">
+          <div class="toast-title">${escapeHtml(evt.title)}</div>
+          ${evt.body ? `<div class="toast-body">${escapeHtml(evt.body)}</div>` : ''}
+          <div class="toast-time">Just now</div>
+        </div>
+        <span class="toast-close" onclick="event.stopPropagation(); this.parentElement.classList.add('toast-exit'); setTimeout(() => this.parentElement.remove(), 300);">✕</span>
+      `;
+
+      // Click to navigate
+      if (evt.link) {
+        toast.style.cursor = 'pointer';
+        toast.addEventListener('click', function() {
+          // Mark as read
+          fetch('{{ url_for("api_notifications_mark_read") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ids: [evt.id]})
+          }).catch(() => {});
+          window.location.href = evt.link;
+        });
+      }
+
+      container.appendChild(toast);
+
+      // Auto-dismiss
+      setTimeout(() => {
+        if (toast.parentElement) {
+          toast.classList.add('toast-exit');
+          setTimeout(() => toast.remove(), 300);
+        }
+      }, TOAST_DURATION_MS);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    }
+
+    // --- Navbar Badge Live Update ---
+    function updateNavbarBadge(unreadMessages) {
+      // Find the Messages nav pill badge
+      const msgLinks = document.querySelectorAll('a.nav-pill[href*="messages"]');
+      msgLinks.forEach(link => {
+        let badge = link.querySelector('.badge');
+        if (unreadMessages > 0) {
+          if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'badge';
+            badge.style.cssText = 'background:#ef4444;color:white;border-radius:9999px;padding:1px 6px;font-size:0.7rem;font-weight:800;margin-left:0.2rem;';
+            link.appendChild(badge);
+          }
+          badge.textContent = unreadMessages > 99 ? '99+' : unreadMessages;
+        } else if (badge) {
+          badge.remove();
+        }
+      });
+    }
+
+    // --- Heartbeat Poller ---
+    function doHeartbeat() {
+      const url = '{{ url_for("api_heartbeat") }}' + (lastHeartbeatTime ? '?since=' + encodeURIComponent(lastHeartbeatTime) : '');
+      fetch(url, { credentials: 'same-origin' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return;
+
+          // Update navbar badge live
+          updateNavbarBadge(data.unread_messages);
+
+          // Show toasts for new events
+          if (data.events && data.events.length > 0) {
+            // Show newest last so they stack top-to-bottom correctly
+            const sorted = data.events.slice().reverse();
+            sorted.forEach(evt => showToast(evt));
+          }
+
+          // Update since marker
+          if (data.server_time) {
+            lastHeartbeatTime = data.server_time;
+          }
+        })
+        .catch(() => { /* silent */ });
+    }
+
+    function startHeartbeat() {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      const interval = document.hidden ? HEARTBEAT_BG_MS : HEARTBEAT_ACTIVE_MS;
+      heartbeatTimer = setInterval(doHeartbeat, interval);
+    }
+
+    // Start on DOMContentLoaded
+    document.addEventListener('DOMContentLoaded', function() {
+      // Initial heartbeat after 3s (let page fully render first)
+      setTimeout(doHeartbeat, 3000);
+      startHeartbeat();
+
+      // Adjust polling rate on visibility change
+      document.addEventListener('visibilitychange', function() {
+        startHeartbeat();
+        if (!document.hidden) {
+          // Immediate poll when user returns to tab
+          doHeartbeat();
+        }
+      });
+
+      // Pass auth credentials to Android app for background notification polling
+      if (window.Android && typeof Android.setAuthCredentials === 'function') {
+        try {
+          const userId = '{{ current_user.id }}';
+          const token = '{{ current_user.username }}';
+          Android.setAuthCredentials(token, userId);
+        } catch(e) {}
+      }
+    });
+  })();
+  </script>
+  {% endif %}
 </body>
 </html>

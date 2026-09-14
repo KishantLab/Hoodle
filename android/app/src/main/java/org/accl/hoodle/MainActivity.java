@@ -100,6 +100,9 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
+        // Start background notification polling (every 15 min, even when app is closed)
+        NotificationPollReceiver.scheduleRecurringAlarm(this);
+
         // Request Camera permission for QR Attendance Scanner
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.CAMERA}, 102);

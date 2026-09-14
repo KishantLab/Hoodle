@@ -720,6 +720,25 @@ def init_db():
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_announcement_reads_lookup ON system_announcement_reads (announcement_id, user_id)")
 
+    # 18. Real-Time Notifications Table (heartbeat + Android app push)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT DEFAULT '',
+            course_id INTEGER,
+            link TEXT DEFAULT '',
+            is_read INTEGER DEFAULT 0,
+            is_pushed INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications (user_id, is_read, created_at)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_pushed ON notifications (user_id, is_pushed, created_at)")
+
     # High-Performance Concurrency & Lookups Indices
     c.execute("CREATE INDEX IF NOT EXISTS idx_att_course_session_date ON attendance_logs (course_id, session_type, attendance_date)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_att_key ON attendance_logs (attendance_key)")
@@ -1604,6 +1623,195 @@ def inject_global_variables():
         "get_course_unread_count": get_course_unread_count,
         "get_person_unread_count": get_person_unread_count
     }
+
+
+# --- Real-Time Notification System ---
+
+def create_notification(user_id, notif_type, title, body="", course_id=None, link=""):
+    """
+    Insert a notification row for a specific user.
+    Types: 'announcement', 'grade', 'message', 'attendance', 'system'
+    """
+    try:
+        conn = get_db()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("""
+            INSERT INTO notifications (user_id, type, title, body, course_id, link, is_read, is_pushed, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?)
+        """, (user_id, notif_type, title, body, course_id, link, now_str))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        app.logger.warning("create_notification failed for user %s: %s", user_id, e)
+
+
+def create_notification_bulk(user_ids, notif_type, title, body="", course_id=None, link=""):
+    """Create same notification for multiple users at once."""
+    if not user_ids:
+        return
+    try:
+        conn = get_db()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for uid in user_ids:
+            conn.execute("""
+                INSERT INTO notifications (user_id, type, title, body, course_id, link, is_read, is_pushed, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?)
+            """, (uid, notif_type, title, body, course_id, link, now_str))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        app.logger.warning("create_notification_bulk failed: %s", e)
+
+
+@app.route("/api/heartbeat")
+@login_required
+def api_heartbeat():
+    """
+    Lightweight JSON heartbeat for live in-page updates.
+    Returns unread counts and recent unread notification events.
+    Called by base.html JS every 15s (active) / 60s (background).
+    """
+    user = get_current_user()
+    uid = user["id"]
+    since = request.args.get("since", "")
+
+    conn = get_db(read_only=True)
+
+    # Unread message count
+    msg_row = conn.execute(
+        "SELECT COUNT(*) FROM direct_messages WHERE recipient_id = ? AND is_read = 0",
+        (uid,)
+    ).fetchone()
+    unread_messages = msg_row[0] if msg_row else 0
+
+    # Unread notification count
+    notif_count_row = conn.execute(
+        "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0",
+        (uid,)
+    ).fetchone()
+    unread_notifications = notif_count_row[0] if notif_count_row else 0
+
+    # Recent unread events (max 10, newest first)
+    if since:
+        events_rows = conn.execute("""
+            SELECT id, type, title, body, course_id, link, created_at
+            FROM notifications
+            WHERE user_id = ? AND is_read = 0 AND created_at > ?
+            ORDER BY created_at DESC LIMIT 10
+        """, (uid, since)).fetchall()
+    else:
+        events_rows = conn.execute("""
+            SELECT id, type, title, body, course_id, link, created_at
+            FROM notifications
+            WHERE user_id = ? AND is_read = 0
+            ORDER BY created_at DESC LIMIT 10
+        """, (uid,)).fetchall()
+
+    events = []
+    for r in events_rows:
+        events.append({
+            "id": r["id"],
+            "type": r["type"],
+            "title": r["title"],
+            "body": r["body"],
+            "course_id": r["course_id"],
+            "link": r["link"],
+            "time": r["created_at"]
+        })
+
+    conn.close()
+
+    return jsonify({
+        "unread_messages": unread_messages,
+        "unread_notifications": unread_notifications,
+        "events": events,
+        "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+
+@app.route("/api/notifications/poll")
+def api_notifications_poll():
+    """
+    Background notification poll endpoint for Android app.
+    Returns unread & un-pushed notifications, then marks them as pushed.
+    Auth via session cookie OR Bearer token + user_id query param.
+    """
+    # Try session auth first
+    uid = session.get("user_id")
+
+    # Fallback: token-based auth for background Android receiver
+    if not uid:
+        user_id_param = request.args.get("user_id", type=int)
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
+        if user_id_param and token:
+            conn_auth = get_db(read_only=True)
+            user_row = conn_auth.execute(
+                "SELECT id, username FROM users WHERE id = ?", (user_id_param,)
+            ).fetchone()
+            conn_auth.close()
+            if user_row:
+                uid = user_row["id"]
+
+    if not uid:
+        return jsonify({"notifications": [], "error": "not_authenticated"}), 200
+
+    conn = get_db()
+
+    # Fetch un-pushed notifications (max 20)
+    rows = conn.execute("""
+        SELECT id, type, title, body, course_id, link, created_at
+        FROM notifications
+        WHERE user_id = ? AND is_pushed = 0
+        ORDER BY created_at DESC LIMIT 20
+    """, (uid,)).fetchall()
+
+    notifications = []
+    ids_to_mark = []
+    for r in rows:
+        notifications.append({
+            "id": r["id"],
+            "type": r["type"],
+            "title": r["title"],
+            "body": r["body"],
+            "course_id": r["course_id"],
+            "link": r["link"],
+            "time": r["created_at"]
+        })
+        ids_to_mark.append(r["id"])
+
+    # Mark as pushed so Android app doesn't get duplicates
+    if ids_to_mark:
+        placeholders = ",".join(["?"] * len(ids_to_mark))
+        conn.execute(f"UPDATE notifications SET is_pushed = 1 WHERE id IN ({placeholders})", ids_to_mark)
+        conn.commit()
+
+    conn.close()
+
+    return jsonify({"notifications": notifications})
+
+
+@app.route("/api/notifications/mark-read", methods=["POST"])
+@login_required
+def api_notifications_mark_read():
+    """Mark specific notifications as read, or all unread for current user."""
+    uid = get_current_user()["id"]
+    data = request.get_json(silent=True) or {}
+    notif_ids = data.get("ids", [])
+
+    conn = get_db()
+    if notif_ids:
+        placeholders = ",".join(["?"] * len(notif_ids))
+        conn.execute(
+            f"UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id IN ({placeholders})",
+            [uid] + notif_ids
+        )
+    else:
+        # Mark all unread as read
+        conn.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0", (uid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
 
 
 # --- Authentication Routes ---
@@ -2843,6 +3051,28 @@ def post_announcement(course_id):
             actor_name=t_name,
             actor_role=t_role
         )
+
+    # Real-time in-app + Android push notifications for all enrolled users
+    try:
+        n_conn = get_db(read_only=True)
+        enrolled_rows = n_conn.execute("""
+            SELECT DISTINCT user_id FROM (
+                SELECT ce.user_id FROM course_enrollments ce WHERE ce.course_id = ?
+                UNION
+                SELECT c.teacher_id FROM courses c WHERE c.id = ?
+            ) enrolled WHERE user_id != ?
+        """, (course_id, course_id, session["user_id"])).fetchall()
+        n_conn.close()
+        enrolled_ids = [r["user_id"] for r in enrolled_rows if r["user_id"]]
+        c_code = c_info["code"] if c_info else ""
+        snippet = (content[:120] + "...") if len(content) > 120 else content
+        threading.Thread(
+            target=create_notification_bulk,
+            args=(enrolled_ids, "announcement", f"📢 [{c_code}] {t_name}", snippet, course_id, f"/courses/{course_id}/stream"),
+            daemon=True
+        ).start()
+    except Exception:
+        pass
 
     flash("Announcement published to course stream.", "success")
     return redirect(url_for("course_stream", course_id=course_id))
@@ -5385,6 +5615,19 @@ def grade_submission(course_id, coursework_id, submission_id):
             actor_role=grader_role
         )
 
+    # Real-time in-app + Android push notification for graded student
+    if sub_info:
+        score_str = f"{grade}/{sub_info['cw_points'] or 100}" if grade is not None else "Feedback posted"
+        threading.Thread(
+            target=create_notification,
+            args=(sub_info["student_id"], "grade",
+                  f"📝 [{sub_info['course_code']}] Grade: {score_str}",
+                  f"{sub_info['cw_title']} graded by {grader_name}",
+                  course_id, f"/courses/{course_id}/coursework/{coursework_id}"),
+            daemon=True
+        ).start()
+
+    conn.close()
     flash("Grade and feedback saved.", "success")
     return redirect(request.referrer or url_for("course_grades", course_id=course_id))
 
@@ -9068,6 +9311,18 @@ def api_send_message():
             actor_name=curr_user["display_name"],
             actor_role=sender_role
         )
+
+    # Real-time in-app + Android push notification for message recipient
+    msg_snippet = (message[:80] + "...") if len(message) > 80 else message
+    threading.Thread(
+        target=create_notification,
+        args=(recipient_id, "message",
+              f"💬 {curr_user['display_name']}",
+              msg_snippet,
+              course_id or (course_info["id"] if course_info else None),
+              f"/messages?user_id={curr_id}"),
+        daemon=True
+    ).start()
 
     return jsonify({
         "success": True,
