@@ -73,23 +73,52 @@ class DummyCursor:
         pass
 
 
-def translate_sql(sql):
+try:
+    import psycopg2
+    import psycopg2.pool
+    import psycopg2.extras
+    DB_INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg2.IntegrityError)
+except ImportError:
+    psycopg2 = None
+    DB_INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
+
+
+def translate_sql(sql, has_params=False):
     """
     Translates SQLite query syntax into PostgreSQL dialect:
     1. Replaces '?' placeholders with '%s' (ignoring literals in single quotes).
-    2. Translates 'INSERT OR IGNORE INTO' to 'ON CONFLICT DO NOTHING'.
-    3. Translates 'INSERT OR REPLACE INTO system_settings' to upsert on conflict key.
+    2. Escapes literal '%' to '%%' when has_params=True so psycopg2 string interpolation won't fail.
+    3. Translates 'INSERT OR IGNORE INTO' to 'ON CONFLICT DO NOTHING'.
+    4. Translates 'INSERT OR REPLACE INTO system_settings' to upsert on conflict key.
+    5. Translates 'INTEGER PRIMARY KEY AUTOINCREMENT' to 'SERIAL PRIMARY KEY'.
+    6. Translates 'SELECT last_insert_rowid()' to 'SELECT lastval()'.
     """
     out = []
     in_quote = False
-    for ch in sql:
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
         if ch == "'":
             in_quote = not in_quote
             out.append(ch)
+            i += 1
         elif ch == "?" and not in_quote:
             out.append("%s")
+            i += 1
+        elif ch == "%" and has_params:
+            if i + 1 < n and sql[i + 1] == "%":
+                out.append("%%")
+                i += 2
+            elif i + 1 < n and sql[i + 1] == "s" and not in_quote:
+                out.append("%s")
+                i += 2
+            else:
+                out.append("%%")
+                i += 1
         else:
             out.append(ch)
+            i += 1
     result = "".join(out)
 
     # Convert INSERT OR IGNORE INTO table ... -> INSERT INTO table ... ON CONFLICT DO NOTHING
@@ -105,6 +134,15 @@ def translate_sql(sql):
     # Convert INTEGER PRIMARY KEY AUTOINCREMENT -> SERIAL PRIMARY KEY for PostgreSQL DDL
     if re.search(r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT", result, re.IGNORECASE):
         result = re.sub(r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT", "SERIAL PRIMARY KEY", result, flags=re.IGNORECASE)
+
+    # Convert SELECT last_insert_rowid() -> SELECT lastval() compatible across all fetch styles
+    if re.search(r"last_insert_rowid\(\)", result, re.IGNORECASE):
+        result = re.sub(
+            r"SELECT\s+last_insert_rowid\(\)(?:\s+as\s+\w+)?",
+            'SELECT lastval() AS id, lastval() AS last_insert_rowid, lastval() AS "last_insert_rowid()"',
+            result,
+            flags=re.IGNORECASE
+        )
 
     return result
 
@@ -128,7 +166,8 @@ class PgCursorWrapper:
         if sql_clean.upper().startswith("PRAGMA") or sql_clean.upper().startswith("BEGIN"):
             return DummyCursor()
 
-        translated_sql = translate_sql(sql)
+        has_params = params is not None
+        translated_sql = translate_sql(sql, has_params=has_params)
         is_insert = translated_sql.strip().upper().startswith("INSERT INTO")
 
         if params is not None:
@@ -157,7 +196,7 @@ class PgCursorWrapper:
         sql_clean = sql.strip()
         if sql_clean.upper().startswith("PRAGMA") or sql_clean.upper().startswith("BEGIN"):
             return DummyCursor()
-        translated_sql = translate_sql(sql)
+        translated_sql = translate_sql(sql, has_params=True)
         self._cur.executemany(translated_sql, params_seq)
         return self
 

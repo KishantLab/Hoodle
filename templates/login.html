@@ -43,6 +43,7 @@
 
     <!-- Sign In Form -->
     <form id="signInForm" action="{{ url_for('login') }}" method="POST" style="display: {% if register_active %}none{% else %}block{% endif %};">
+      <input type="hidden" name="join_code" value="{{ request.args.get('join', session.get('pending_join_code', '')) }}">
       <div class="form-group">
         <label class="form-label" for="identifier">Roll Number</label>
         <input type="text" id="identifier" name="identifier" class="form-control" placeholder="B26DS001" required autofocus>
@@ -65,6 +66,7 @@
 
     <!-- Student Registration Form -->
     <form id="registerForm" action="{{ url_for('register') }}" method="POST" style="display: {% if register_active %}block{% else %}none{% endif %};">
+      <input type="hidden" name="join_code" value="{{ request.args.get('join', session.get('pending_join_code', '')) }}">
       <div class="form-group">
         <label class="form-label" for="full_name">Full Name</label>
         <input type="text" id="full_name" name="full_name" class="form-control" placeholder="e.g. Aarav Sharma" required>

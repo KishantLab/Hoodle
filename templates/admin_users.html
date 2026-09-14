@@ -118,7 +118,6 @@
                       data-roll-number="{{ u.roll_number or '' }}"
                       data-email="{{ u.email or '' }}"
                       data-role="{{ u.role }}"
-                      data-quota-mb="{{ ((u.storage_quota_bytes or 524288000) / 1048576)|round|int }}"
                       title="Edit User Details">
                       ✏️ Edit
                     </button>
@@ -225,20 +224,9 @@
           </select>
         </div>
       </div>
-      <div class="form-group" style="margin-bottom: 1rem;">
+      <div class="form-group" style="margin-bottom: 1.25rem;">
         <label class="form-label" for="edit_email" style="font-weight: 700; color: var(--text-main); margin-bottom: 0.35rem; display: block;">Institute Email</label>
         <input type="email" id="edit_email" name="email" class="form-control" placeholder="user@iitbhilai.ac.in" style="width: 100%; padding: 0.6rem; border-radius: 8px; border: 1px solid var(--border);">
-      </div>
-      <div class="form-group" style="margin-bottom: 1.25rem;">
-        <label class="form-label" for="edit_quota" style="font-weight: 700; color: var(--text-main); margin-bottom: 0.35rem; display: block;">Private Locker Storage Quota</label>
-        <select id="edit_quota" name="quota_mb" class="form-control" style="width: 100%; padding: 0.6rem; border-radius: 8px; border: 1px solid var(--border);">
-          <option value="250">250 MB</option>
-          <option value="500">500 MB (Default)</option>
-          <option value="1024">1 GB</option>
-          <option value="2048">2 GB</option>
-          <option value="5120">5 GB</option>
-          <option value="10240">10 GB</option>
-        </select>
       </div>
       <div style="display: flex; gap: 0.5rem; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 1rem;">
         <button type="button" class="btn btn-secondary" onclick="closeModal('editUserModal')">Cancel</button>
@@ -259,26 +247,6 @@ function openEditUserModal(btn) {
   document.getElementById('edit_roll').value = btn.getAttribute('data-roll-number') || '';
   document.getElementById('edit_email').value = btn.getAttribute('data-email') || '';
   document.getElementById('edit_role').value = btn.getAttribute('data-role') || 'student';
-  
-  const quotaMb = btn.getAttribute('data-quota-mb') || '500';
-  const quotaSelect = document.getElementById('edit_quota');
-  if (quotaSelect) {
-    let found = false;
-    for (let i = 0; i < quotaSelect.options.length; i++) {
-      if (quotaSelect.options[i].value === quotaMb) {
-        quotaSelect.selectedIndex = i;
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      const opt = document.createElement('option');
-      opt.value = quotaMb;
-      opt.textContent = quotaMb + ' MB (Custom)';
-      quotaSelect.appendChild(opt);
-      quotaSelect.value = quotaMb;
-    }
-  }
 
   openModal('editUserModal');
 }

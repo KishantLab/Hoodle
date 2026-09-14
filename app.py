@@ -22,8 +22,10 @@ import secrets
 import smtplib
 import threading
 import urllib.request
+import uuid
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import make_msgid, formatdate
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
@@ -214,9 +216,10 @@ def filter_nl2br(s):
 # --- Database Connection & Schema Setup ---
 try:
     import db_adapter
-    from db_adapter import get_db, execute_db_write_with_retry
+    from db_adapter import get_db, execute_db_write_with_retry, DB_INTEGRITY_ERRORS
 except ImportError:
     db_adapter = None
+    DB_INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
     def get_db(read_only=False):
         """
         Returns an optimized SQLite connection with 256MB memory-mapped I/O,
@@ -614,7 +617,19 @@ def init_db():
             c.execute("SELECT id FROM courses WHERE gradebook_feed_token IS NULL OR gradebook_feed_token = ''")
             for crow in c.fetchall():
                 cid = crow["id"] if isinstance(crow, dict) or hasattr(crow, "__getitem__") else crow[0]
-                c.execute("UPDATE courses SET gradebook_feed_token = %s WHERE id = %s", (secrets.token_hex(16), cid))
+                c.execute("UPDATE courses SET gradebook_feed_token = ? WHERE id = ?", (secrets.token_hex(16), cid))
+            for constr_sql in (
+                "ALTER TABLE attendance_logs ADD CONSTRAINT attendance_logs_attendance_key_key UNIQUE (attendance_key)",
+                "ALTER TABLE users ADD CONSTRAINT users_username_key UNIQUE (username)",
+                "CREATE UNIQUE INDEX IF NOT EXISTS users_roll_number_uindex ON users (roll_number) WHERE roll_number IS NOT NULL AND roll_number != ''",
+                "ALTER TABLE courses ADD CONSTRAINT courses_join_code_key UNIQUE (join_code)",
+                "ALTER TABLE submissions ADD CONSTRAINT submissions_receipt_token_key UNIQUE (receipt_token)",
+                "ALTER TABLE course_invitations ADD CONSTRAINT course_invitations_token_key UNIQUE (token)",
+            ):
+                try:
+                    c.execute(constr_sql)
+                except Exception:
+                    pass
     except Exception as e:
         logger.warning(f"PostgreSQL courses column migration notice: {e}")
 
@@ -990,15 +1005,31 @@ def create_smtp_connection():
 
 def get_portal_base_url():
     """
-    Returns the fully qualified base URL of the Hoodle LMS portal (e.g. http://10.10.14.104/lms).
+    Returns the fully qualified base URL of the Hoodle LMS portal (e.g. http://10.10.14.104:8095 or http://10.10.14.104/lms).
     Priority:
-    1. SQLite system_settings ('portal_base_url')
-    2. os.environ.get('PORTAL_BASE_URL')
-    3. Active request context (script_root, X-Forwarded-Prefix, host)
-    4. Fallback default: http://10.10.14.104/lms
+    1. Active request context (script_root, X-Forwarded-Prefix, host) - matches what active client is connected to
+    2. SQLite system_settings ('portal_base_url')
+    3. os.environ.get('PORTAL_BASE_URL')
+    4. Fallback default: http://10.10.14.104:8095
     """
     try:
-        conn = get_db()
+        from flask import has_request_context, request
+        if has_request_context():
+            base = request.url_root.rstrip("/")
+            prefix = request.headers.get("X-Forwarded-Prefix", "").strip().rstrip("/")
+            if prefix and not base.endswith(prefix):
+                base = f"{base}{prefix}"
+            # Only append /lms if connecting through Nginx reverse proxy expecting /lms prefix
+            # If client is connecting directly to port 8095, do NOT append /lms since 8095 serves root routes!
+            if ":8095" not in base and not prefix and ("10.10.14.104" in base or "accl" in base or "ts.net" in base or "100.87.0.15" in base) and not base.endswith(("/lms", "/hoodle")):
+                base = f"{base}/lms"
+            if base:
+                return base
+    except Exception:
+        pass
+
+    try:
+        conn = get_db(read_only=True)
         row = conn.execute("SELECT value FROM system_settings WHERE key = 'portal_base_url'").fetchone()
         conn.close()
         if row and row["value"] and row["value"].strip():
@@ -1010,21 +1041,7 @@ def get_portal_base_url():
     if env_url:
         return env_url
 
-    try:
-        from flask import has_request_context, request
-        if has_request_context():
-            base = request.url_root.rstrip("/")
-            prefix = request.headers.get("X-Forwarded-Prefix", "").strip().rstrip("/")
-            if prefix and not base.endswith(prefix):
-                base = f"{base}{prefix}"
-            if ("10.10.14.104" in base or "accl" in base or "ts.net" in base or "100.87.0.15" in base) and not base.endswith(("/lms", "/hoodle")):
-                base = f"{base}/lms"
-            if base:
-                return base
-    except Exception:
-        pass
-
-    return "https://10.10.14.104/lms"
+    return "http://10.10.14.104:8095"
 
 
 def resolve_portal_url(path_or_url):
@@ -1060,27 +1077,45 @@ def enqueue_email(recipient_email, subject, heading, body_text, html_content, pl
     """
     Inserts an outgoing email into the persistent outbox queue and triggers immediate dispatch.
     Zero dropped messages: Guaranteed persistence before network transmission.
+    Deduplication: Prevents enqueuing duplicate identical emails to the same recipient within a 10-minute window.
     """
     if not recipient_email or "@" not in recipient_email:
         return None
 
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    clean_email = recipient_email.strip().lower()
+    clean_subj = subject.strip()
+    now_dt = datetime.now()
+    now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+    dedup_cutoff_str = (now_dt - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
 
     def _do_enqueue(conn):
         conn.execute("BEGIN IMMEDIATE")
+        # Check if identical email is already queued or was recently sent
+        existing = conn.execute("""
+            SELECT id FROM email_queue
+            WHERE LOWER(recipient_email) = ? AND subject = ?
+              AND (status IN ('pending', 'processing') OR (status = 'sent' AND created_at >= ?))
+            LIMIT 1
+        """, (clean_email, clean_subj, dedup_cutoff_str)).fetchone()
+
+        if existing:
+            conn.rollback()
+            app.logger.info("Email deduplication suppressed duplicate enqueue to %s: '%s'", clean_email, clean_subj)
+            return None
+
         cursor = conn.execute("""
             INSERT INTO email_queue (
                 recipient_email, subject, heading, body_text,
                 html_content, plain_content, status, attempts, max_attempts,
                 last_error, created_at, next_retry_at
             ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, 5, '', ?, ?)
-        """, (recipient_email.strip(), subject, heading or "", body_text or "", html_content, plain_content, now_str, now_str))
+        """, (clean_email, clean_subj, heading or "", body_text or "", html_content, plain_content, now_str, now_str))
         conn.commit()
         return cursor.lastrowid
 
     try:
         queue_id = execute_db_write_with_retry(_do_enqueue)
-        if not app.config.get("TESTING"):
+        if queue_id and not app.config.get("TESTING"):
             trigger_email_queue_processing()
         return queue_id
     except Exception as e:
@@ -1088,9 +1123,12 @@ def enqueue_email(recipient_email, subject, heading, body_text, html_content, pl
         return None
 
 
-def process_email_queue(limit=50):
+def process_email_queue(limit=25):
     """
     Processes pending emails in email_queue whose next_retry_at <= now.
+    Atomically claims items into 'processing' status using PostgreSQL FOR UPDATE SKIP LOCKED
+    (or SQLite BEGIN IMMEDIATE) to guarantee ZERO duplicate deliveries across multi-worker
+    Gunicorn and multi-node clusters.
     Reuses a single authenticated SMTP connection across the batch for maximum efficiency.
     Updates status to 'sent' or applies exponential backoff on error.
     """
@@ -1104,15 +1142,87 @@ def process_email_queue(limit=50):
 
         now_dt = datetime.now()
         now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+        stale_cutoff = (now_dt - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
 
         conn = get_db()
-        items = conn.execute("""
-            SELECT id, recipient_email, subject, heading, body_text, html_content, plain_content, attempts, max_attempts
-            FROM email_queue
-            WHERE status = 'pending' AND next_retry_at <= ?
-            ORDER BY id ASC
-            LIMIT ?
-        """, (now_str, limit)).fetchall()
+        items = []
+
+        # Reclaim any stale 'processing' jobs older than 5 minutes (in case a worker died)
+        try:
+            conn.execute("""
+                UPDATE email_queue
+                SET status = 'pending', next_retry_at = ?
+                WHERE status = 'processing' AND next_retry_at <= ?
+            """, (now_str, stale_cutoff))
+            conn.commit()
+        except Exception:
+            pass
+
+        is_postgres = getattr(db_adapter, "DATABASE_BACKEND", "") == "postgres"
+
+        if is_postgres and hasattr(conn, "_conn"):
+            # PostgreSQL atomic reservation using row-level locking (FOR UPDATE SKIP LOCKED)
+            # This ensures that out of 48 cluster workers, exactly ONE worker claims any given email.
+            try:
+                pg_conn = conn._conn
+                with pg_conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE email_queue
+                        SET status = 'processing',
+                            next_retry_at = to_char(NOW() + INTERVAL '5 minutes', 'YYYY-MM-DD HH24:MI:SS')
+                        WHERE id IN (
+                            SELECT id FROM email_queue
+                            WHERE status = 'pending' AND next_retry_at <= %s
+                            ORDER BY id ASC
+                            LIMIT %s
+                            FOR UPDATE SKIP LOCKED
+                        )
+                        RETURNING id, recipient_email, subject, heading, body_text, html_content, plain_content, attempts, max_attempts
+                    """, (now_str, limit))
+                    cols = [d[0] for d in cur.description]
+                    for row in cur.fetchall():
+                        items.append(dict(zip(cols, row)))
+                pg_conn.commit()
+            except Exception as e:
+                app.logger.warning("Postgres atomic email claim error: %s", e)
+                try:
+                    conn._conn.rollback()
+                except Exception:
+                    pass
+        else:
+            # SQLite atomic reservation: BEGIN IMMEDIATE locks file and claims batch
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                pending_rows = conn.execute("""
+                    SELECT id FROM email_queue
+                    WHERE status = 'pending' AND next_retry_at <= ?
+                    ORDER BY id ASC
+                    LIMIT ?
+                """, (now_str, limit)).fetchall()
+                if pending_rows:
+                    p_ids = [r["id"] if isinstance(r, dict) or hasattr(r, "__getitem__") else r[0] for r in pending_rows]
+                    placeholders = ",".join(["?"] * len(p_ids))
+                    next_timeout = (now_dt + timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
+                    conn.execute(f"""
+                        UPDATE email_queue
+                        SET status = 'processing', next_retry_at = ?
+                        WHERE id IN ({placeholders})
+                    """, [next_timeout] + p_ids)
+                    conn.commit()
+                    items = conn.execute(f"""
+                        SELECT id, recipient_email, subject, heading, body_text, html_content, plain_content, attempts, max_attempts
+                        FROM email_queue
+                        WHERE id IN ({placeholders})
+                    """, p_ids).fetchall()
+                else:
+                    conn.commit()
+            except Exception as e:
+                app.logger.warning("SQLite atomic email claim error: %s", e)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
         conn.close()
 
         if not items:
@@ -1154,8 +1264,18 @@ def process_email_queue(limit=50):
                 msg["Subject"] = subj
                 msg["From"] = f"{from_name} <{smtp_user}>"
                 msg["To"] = rec_email
-                msg.attach(MIMEText(plain_body, "plain"))
-                msg.attach(MIMEText(html_body, "html"))
+
+                # Anti-threading & delivery headers: ensure every notification has a globally unique RFC-compliant Message-ID
+                smtp_domain = smtp_user.split("@")[-1] if ("@" in smtp_user) else "hoodle.accl.iitbhilai.ac.in"
+                unique_mid = make_msgid(idstring=f"hdl-{q_id}-{secrets.token_hex(4)}", domain=smtp_domain)
+                msg["Message-ID"] = unique_mid
+                msg["Date"] = formatdate(localtime=True)
+                msg["X-Entity-Ref-ID"] = str(uuid.uuid4())
+                msg["Auto-Submitted"] = "auto-generated"
+                msg["X-Auto-Response-Suppress"] = "All"
+
+                msg.attach(MIMEText(plain_body, "plain", "utf-8"))
+                msg.attach(MIMEText(html_body, "html", "utf-8"))
 
                 server.sendmail(smtp_user, [rec_email], msg.as_string())
 
@@ -1205,11 +1325,40 @@ def trigger_email_queue_processing():
 
 
 def _email_queue_background_daemon():
-    """Periodic daemon that checks for retryable pending emails every 60 seconds."""
+    """
+    Periodic daemon that checks for retryable pending emails.
+    Uses a PostgreSQL advisory lock so only ONE worker across the cluster runs the periodic check.
+    """
     while True:
         try:
-            time.sleep(60)
-            process_email_queue()
+            # Stagger check interval to eliminate thunderous herd
+            time.sleep(random.uniform(50, 70))
+
+            is_postgres = getattr(db_adapter, "DATABASE_BACKEND", "") == "postgres"
+            conn = get_db()
+            should_run = True
+
+            if is_postgres and hasattr(conn, "_conn"):
+                try:
+                    with conn._conn.cursor() as cur:
+                        cur.execute("SELECT pg_try_advisory_lock(789123)")
+                        should_run = bool(cur.fetchone()[0])
+                except Exception:
+                    should_run = False
+
+            if should_run:
+                try:
+                    process_email_queue()
+                finally:
+                    if is_postgres and hasattr(conn, "_conn"):
+                        try:
+                            with conn._conn.cursor() as cur:
+                                cur.execute("SELECT pg_advisory_unlock(789123)")
+                            conn._conn.commit()
+                        except Exception:
+                            pass
+
+            conn.close()
         except Exception:
             pass
 
@@ -1241,6 +1390,10 @@ def send_course_invitation_email(course, recipient_email, student_roll, teacher_
     role_badge = f"""<div style="font-size: 11px; font-weight: 700; color: #3730a3; background: #e0e7ff; display: inline-block; padding: 2px 8px; border-radius: 9999px; margin-top: 6px; text-transform: uppercase;">Role: {role_label}</div>""" if is_ta else ""
     btn_text = f"Accept Invitation & Join as {role_label}" if is_ta else "Accept Invitation & Join Class"
 
+    evt_token = secrets.token_hex(4).upper()
+    now_dt = datetime.now()
+    now_readable = now_dt.strftime("%d %b %Y, %I:%M %p")
+
     plain_text = f"""Hello,
 
 You have been invited by Prof. {teacher_name} {role_desc} {course_code}: {course_title} ({course_section}) on Hoodle LMS.
@@ -1253,11 +1406,18 @@ Alternatively, you can sign in to your Hoodle account where this invitation is w
 Best regards,
 Hoodle LMS • Accelerated Classroom & Lab Learning
 ACCL Research Lab, IIT Bhilai
+
+---
+Ref: HDL-{evt_token} | Sent: {now_readable}
 """
     html_text = f"""<!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><title>Course Invitation</title></head>
+<head><meta charset="UTF-8"><title>{subject}</title></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px;">
+  <!-- Anti-Quoting Hidden Salt & Pre-header for Gmail -->
+  <div style="display:none !important; font-size:0; max-height:0; line-height:0; mso-hide:all; opacity:0; color:transparent; visibility:hidden; width:0; height:0; overflow:hidden;">
+    Course Invitation [HDL-{evt_token}] &bull; Dispatched {now_readable}
+  </div>
   <div style="max-width: 580px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
     <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 28px 24px; text-align: center; color: white;">
       <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em;">Hoodle LMS</h1>
@@ -1284,7 +1444,8 @@ ACCL Research Lab, IIT Bhilai
       </p>
     </div>
     <div style="background: #f8fafc; padding: 14px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
-      Hoodle LMS &bull; Accelerated Computing Research Lab (ACCL), IIT Bhilai
+      Hoodle LMS &bull; Accelerated Computing Research Lab (ACCL), IIT Bhilai<br>
+      <span style="font-size: 10px; color: #94a3b8; font-family: monospace;">Ref: HDL-{evt_token} &bull; {now_readable}</span>
     </div>
   </div>
 </body>
@@ -1302,6 +1463,7 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
     4. Course announcements
     5. Course enrollment / role assignment
     Zero lost messages: Persisted to database outbox before async delivery.
+    Includes anti-quoting tokens and timestamp markers so Gmail renders full message body on all emails.
     """
     if not recipient_emails:
         return
@@ -1315,6 +1477,17 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
         return
 
     full_action_url = resolve_portal_url(action_url) if action_url else None
+
+    evt_token = secrets.token_hex(4).upper()
+    now_dt = datetime.now()
+    now_readable = now_dt.strftime("%d %b %Y, %I:%M %p")
+    now_short = now_dt.strftime("%d %b %H:%M")
+
+    # If the subject does not already carry a dynamic reference or timestamp, add a clean suffix
+    # so Gmail will not group 11 or 18 independent notifications into one mega-thread.
+    effective_subject = subject
+    if not any(token in subject for token in ("•", "#", "[HDL-")):
+        effective_subject = f"{subject} • {now_short}"
 
     attribution_html = ""
     attribution_plain = ""
@@ -1339,14 +1512,22 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
 
     html_text = f"""<!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><title>{subject}</title></head>
+<head><meta charset="UTF-8"><title>{effective_subject}</title></head>
 <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <!-- Anti-Quoting Hidden Salt & Pre-header for Gmail -->
+  <div style="display:none !important; font-size:0; max-height:0; line-height:0; mso-hide:all; opacity:0; color:transparent; visibility:hidden; width:0; height:0; overflow:hidden;">
+    Event Notice [HDL-{evt_token}] &bull; Dispatched {now_readable} &bull; Distinct LMS Event
+  </div>
   <div style="max-width: 580px; margin: 30px auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
     <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 24px; text-align: center; color: white;">
       <h1 style="margin: 0 0 4px; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">Hoodle LMS</h1>
       <p style="margin: 0; font-size: 13px; opacity: 0.9;">Accelerated Classroom &amp; Lab Learning</p>
     </div>
     <div style="padding: 26px 24px;">
+      <div style="font-size: 11px; color: #64748b; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px;">
+        <span style="text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; color: #2563eb;">Notification</span>
+        <span style="font-family: monospace; font-size: 10px;">{now_readable} &bull; #{evt_token}</span>
+      </div>
       <h2 style="font-size: 18px; font-weight: 700; color: #0f172a; margin-top: 0; margin-bottom: 14px;">{heading}</h2>
       {attribution_html}
       <div style="font-size: 14px; line-height: 1.6; color: #475569; white-space: pre-line; margin-bottom: 20px;">
@@ -1355,15 +1536,16 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
       {button_html}
     </div>
     <div style="background: #f8fafc; padding: 14px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
-      Hoodle LMS &bull; Accelerated Computing Research Lab (ACCL), IIT Bhilai
+      Hoodle LMS &bull; Accelerated Computing Research Lab (ACCL), IIT Bhilai<br>
+      <span style="font-size: 10px; color: #94a3b8; font-family: monospace;">Ref: HDL-{evt_token} &bull; {now_readable}</span>
     </div>
   </div>
 </body>
 </html>"""
-    plain_text = f"{heading}\n\n{attribution_plain}{body_text}\n\n{full_action_url if full_action_url else ''}"
+    plain_text = f"{heading}\n\n{attribution_plain}{body_text}\n\n{full_action_url if full_action_url else ''}\n\n---\nRef: HDL-{evt_token} | Sent: {now_readable}"
 
     for rec_email in clean_emails:
-        enqueue_email(rec_email, subject, heading, body_text, html_text, plain_text)
+        enqueue_email(rec_email, effective_subject, heading, body_text, html_text, plain_text)
 
 
 # --- Authentication & Authorization Helpers ---
@@ -1494,6 +1676,23 @@ def get_active_exam_lockdown_for_student(user_id):
 
     conn.close()
     return None
+
+
+@app.before_request
+def handle_reverse_proxy_prefixes():
+    """
+    Auto-strip redundant proxy prefixes (/lms or /hoodle) if Gunicorn receives them directly
+    on port 8095. This completely eliminates 404 errors if a student navigates to /lms/j/... or /lms/attend/... on port 8095.
+    """
+    path = request.path
+    if path.startswith(("/lms/", "/hoodle/")):
+        clean_path = re.sub(r"^/(?:lms|hoodle)/", "/", path)
+        query = request.query_string.decode("utf-8")
+        if query:
+            clean_path += f"?{query}"
+        return redirect(clean_path, code=302)
+    elif path in ("/lms", "/hoodle"):
+        return redirect("/", code=302)
 
 
 @app.before_request
@@ -1969,7 +2168,7 @@ def login():
             threading.Thread(target=auto_enroll_registered_invitations, kwargs={"user_id": user["id"]}, daemon=True).start()
 
             # Handle pending course join code from short link
-            pending_code = session.pop("pending_join_code", None)
+            pending_code = session.pop("pending_join_code", None) or (request.form.get("join_code") or "").strip().upper()
             session.pop("pending_course_name", None)
             if pending_code:
                 conn = get_db()
@@ -2002,6 +2201,10 @@ def login():
 def register():
     if "user_id" in session:
         return redirect(url_for("dashboard"))
+
+    join_code_arg = (request.args.get("join") or "").strip().upper()
+    if join_code_arg:
+        session["pending_join_code"] = join_code_arg
 
     if request.method == "POST":
         full_name = request.form.get("full_name", "").strip()
@@ -2043,12 +2246,14 @@ def register():
                     c.close()
                     return ("exists", None)
 
-                c.execute("""
+                cur = c.execute("""
                     INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (username, roll_number, email, pwd_hash, full_name, role, now_str))
-                new_user = c.execute("SELECT last_insert_rowid() as id").fetchone()
-                uid = new_user["id"] if new_user else None
+                uid = getattr(cur, "lastrowid", None)
+                if not uid:
+                    user_row = c.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username.lower(),)).fetchone()
+                    uid = user_row["id"] if user_row else None
 
                 if uid:
                     c.execute("""
@@ -2063,7 +2268,7 @@ def register():
                 c.commit()
                 c.close()
                 return ("ok", uid)
-            except sqlite3.IntegrityError:
+            except DB_INTEGRITY_ERRORS:
                 c.rollback()
                 c.close()
                 return ("exists", None)
@@ -2088,7 +2293,7 @@ def register():
             auto_enroll_registered_invitations(user_id=new_user_id)
 
         # Auto-login and auto-enroll newly registered student if joining via short link
-        pending_code = session.get("pending_join_code")
+        pending_code = session.get("pending_join_code") or request.form.get("join_code")
         if pending_code and new_user_id:
             session["user_id"] = new_user_id
             session["username"] = username
@@ -2100,7 +2305,7 @@ def register():
             session.pop("pending_course_name", None)
 
             conn = get_db()
-            target_course = conn.execute("SELECT * FROM courses WHERE UPPER(join_code) = ? AND is_archived = 0", (pending_code.upper(),)).fetchone()
+            target_course = conn.execute("SELECT * FROM courses WHERE UPPER(join_code) = ? AND is_archived = 0", (str(pending_code).upper(),)).fetchone()
             if target_course:
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 conn.execute("INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at) VALUES (?, ?, 'student', ?)", (target_course["id"], new_user_id, now_str))
@@ -3706,6 +3911,7 @@ def coursework_detail(course_id, coursework_id):
     my_submission = None
     all_submissions = []
     stats = {"turned_in": 0, "graded": 0, "assigned": 0}
+    lab_counts = {}
 
     if not is_teacher_or_admin:
         my_submission = conn.execute("""
@@ -3757,6 +3963,12 @@ def coursework_detail(course_id, coursework_id):
         stats["late"] = late
         stats["total_enrolled"] = len(all_submissions)
 
+        lab_counts = {}
+        for s in all_submissions:
+            if s["submission_id"]:
+                l_name = (s["lab_name"] or "Lab 1").strip()
+                lab_counts[l_name] = lab_counts.get(l_name, 0) + 1
+
         private_comments = []
         locker_files = []
 
@@ -3792,6 +4004,7 @@ def coursework_detail(course_id, coursework_id):
         is_past_due=is_past_due,
         is_exam_ended=is_exam_ended,
         stats=stats,
+        lab_counts=lab_counts,
         is_teacher_or_admin=is_teacher_or_admin,
         active_tab="classwork"
     )
@@ -3849,6 +4062,7 @@ def api_live_submissions(course_id, coursework_id):
     late = 0
 
     items = []
+    lab_counts = {}
     for s in subs:
         sub_id = s["submission_id"]
         if sub_id:
@@ -3860,6 +4074,8 @@ def api_live_submissions(course_id, coursework_id):
                 late += 1
             else:
                 on_time += 1
+            l_name = (s["lab_name"] or "Lab 1").strip()
+            lab_counts[l_name] = lab_counts.get(l_name, 0) + 1
         else:
             assigned += 1
 
@@ -3874,6 +4090,8 @@ def api_live_submissions(course_id, coursework_id):
             "is_late": bool(s["is_late"]) if sub_id else False,
             "late_minutes": s["late_minutes"] if sub_id else 0,
             "original_filename": s["original_filename"] if sub_id else None,
+            "filename": s["original_filename"] if sub_id else None,
+            "lab_name": (s["lab_name"] or "Lab 1").strip() if sub_id else "Unassigned",
             "file_size": s["file_size"] if sub_id else 0,
             "receipt_token": s["receipt_token"] if sub_id else None,
             "grade": s["grade"] if sub_id else None,
@@ -3898,6 +4116,7 @@ def api_live_submissions(course_id, coursework_id):
         "pending_count": assigned,
         "turned_in_count": turned_in,
         "graded_count": graded,
+        "lab_counts": lab_counts,
         "time_remaining_sec": time_remaining_sec,
         "submissions": items
     })
@@ -6164,12 +6383,6 @@ def locker_upload():
             file.save(dest)
             f_size = dest.stat().st_size
 
-            if current_used + f_size > quota:
-                if dest.exists():
-                    dest.unlink()
-                flash(f"Storage quota exceeded! Could not upload '{orig_name}'. Reclaim space and try again.", "danger")
-                break
-
             current_used += f_size
             conn.execute("""
                 INSERT INTO student_locker_files (user_id, original_filename, stored_filename, file_path, file_size, mime_type, uploaded_at)
@@ -6533,7 +6746,7 @@ def admin_create_teacher():
 def admin_edit_user(user_id):
     """
     Allows Administrator to update user details:
-    display_name, username, roll_number, email, role, and storage_quota_bytes.
+    display_name, username, roll_number, email, and role.
     """
     curr_user = get_current_user()
     display_name = request.form.get("display_name", "").strip()
@@ -6541,7 +6754,6 @@ def admin_edit_user(user_id):
     roll_number = request.form.get("roll_number", "").strip().upper()
     email = request.form.get("email", "").strip().lower()
     role = request.form.get("role", "student").strip().lower()
-    quota_mb = request.form.get("quota_mb", type=int)
 
     if not display_name or not username:
         flash("Full Name and Username cannot be empty.", "danger")
@@ -6582,13 +6794,11 @@ def admin_edit_user(user_id):
         flash("Another user already exists with this Username, Email, or Roll/ID Number.", "danger")
         return redirect(url_for("admin_users"))
 
-    storage_quota_bytes = (quota_mb * 1024 * 1024) if (quota_mb and quota_mb > 0) else (target_user["storage_quota_bytes"] or 524288000)
-
     conn.execute("""
         UPDATE users
-        SET display_name = ?, username = ?, roll_number = ?, email = ?, role = ?, storage_quota_bytes = ?
+        SET display_name = ?, username = ?, roll_number = ?, email = ?, role = ?
         WHERE id = ?
-    """, (display_name, username, roll_number or None, email or None, role, storage_quota_bytes, user_id))
+    """, (display_name, username, roll_number or None, email or None, role, user_id))
     conn.commit()
     conn.close()
 
@@ -7751,25 +7961,55 @@ def get_attendance_seconds_remaining(course_id=None):
 
 
 def generate_qr_svg(data_url):
-    """Generate high-quality vector SVG QR code."""
+    """
+    Generate high-quality, high-contrast vector SVG QR code.
+    Configured with ERROR_CORRECT_M and 4-module quiet zone border for optimal
+    optical contrast and long-distance scanning by smartphone cameras in auditoriums.
+    """
     try:
         import qrcode
         import qrcode.image.svg
-        factory = qrcode.image.svg.SvgPathImage
-        img = qrcode.make(data_url, image_factory=factory)
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=16,
+            border=4,
+            image_factory=qrcode.image.svg.SvgPathImage
+        )
+        qr.add_data(data_url)
+        qr.make(fit=True)
+        img = qr.make_image()
         buf = io.BytesIO()
         img.save(buf)
-        return buf.getvalue()
+        raw_svg = buf.getvalue().decode("utf-8")
+        if "<svg" in raw_svg and "</svg>" in raw_svg:
+            if '<rect width="100%" height="100%" fill="#ffffff"/>' not in raw_svg:
+                raw_svg = re.sub(r'(<svg[^>]*>)', r'\1<rect width="100%" height="100%" fill="#ffffff"/>', raw_svg, count=1)
+        return raw_svg.encode("utf-8")
     except Exception:
-        # Standalone vector SVG fallback
-        escaped_url = data_url.replace("&", "&amp;")
-        return f"""<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
-            <rect width="300" height="300" fill="#ffffff" rx="12"/>
-            <rect x="20" y="20" width="260" height="260" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2" rx="8"/>
-            <text x="150" y="110" font-family="sans-serif" font-size="28" text-anchor="middle" fill="#0f172a">📱</text>
-            <text x="150" y="150" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="#0f172a">Scan with Phone Camera</text>
-            <text x="150" y="180" font-family="monospace" font-size="11" text-anchor="middle" fill="#2563eb">{escaped_url[:35]}...</text>
-        </svg>""".encode("utf-8")
+        # Secondary fallback using standard make
+        try:
+            import qrcode
+            import qrcode.image.svg
+            factory = qrcode.image.svg.SvgPathImage
+            img = qrcode.make(data_url, image_factory=factory)
+            buf = io.BytesIO()
+            img.save(buf)
+            raw_svg = buf.getvalue().decode("utf-8")
+            if "<svg" in raw_svg and "</svg>" in raw_svg:
+                if '<rect width="100%" height="100%" fill="#ffffff"/>' not in raw_svg:
+                    raw_svg = re.sub(r'(<svg[^>]*>)', r'\1<rect width="100%" height="100%" fill="#ffffff"/>', raw_svg, count=1)
+            return raw_svg.encode("utf-8")
+        except Exception:
+            # Standalone vector SVG fallback
+            escaped_url = data_url.replace("&", "&amp;")
+            return f"""<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
+                <rect width="300" height="300" fill="#ffffff" rx="12"/>
+                <rect x="20" y="20" width="260" height="260" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2" rx="8"/>
+                <text x="150" y="110" font-family="sans-serif" font-size="28" text-anchor="middle" fill="#0f172a">📱</text>
+                <text x="150" y="150" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="#0f172a">Scan with Phone Camera</text>
+                <text x="150" y="180" font-family="monospace" font-size="11" text-anchor="middle" fill="#2563eb">{escaped_url[:35]}...</text>
+            </svg>""".encode("utf-8")
 
 
 @app.route("/api/attendance/qr/<int:course_id>")
@@ -8070,7 +8310,7 @@ def attend_submit(course_id):
 
     try:
         status = execute_db_write_with_retry(_do_submit)
-    except sqlite3.IntegrityError:
+    except DB_INTEGRITY_ERRORS:
         status = "duplicate"
 
     if status == "duplicate":
@@ -8398,7 +8638,7 @@ def attendance_skip_day(course_id):
     try:
         execute_db_write_with_retry(_do_skip)
         flash(f"📅 Session excluded: {target_date} ({session_type}) will not count in attendance.{' Reason: ' + reason if reason else ''}", "success")
-    except sqlite3.IntegrityError:
+    except DB_INTEGRITY_ERRORS:
         flash(f"⚠️ {target_date} ({session_type}) is already excluded.", "info")
     
     return redirect(url_for("course_attendance", course_id=course_id))
@@ -8467,15 +8707,37 @@ def attendance_import(course_id):
     
     def parse_attendance_date(s):
         s = s.strip()
+        if not s:
+            return None
+        # ISO format: 2026-08-19 or 2026/08/19
+        m_iso = re.match(r"^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$", s)
+        if m_iso:
+            yr, mo, da = int(m_iso.group(1)), int(m_iso.group(2)), int(m_iso.group(3))
+            try:
+                return datetime(yr, mo, da).strftime("%Y-%m-%d")
+            except ValueError:
+                return None
+        m = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", s)
+        if m:
+            p1, p2, yr = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if p1 > 12 and p2 <= 12:
+                day, month = p1, p2
+            elif p2 > 12 and p1 <= 12:
+                day, month = p2, p1
+            else:
+                try:
+                    return datetime(yr, p1, p2).strftime("%Y-%m-%d")
+                except ValueError:
+                    day, month = p2, p1
+            try:
+                return datetime(yr, month, day).strftime("%Y-%m-%d")
+            except ValueError:
+                return None
         for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y", "%Y/%m/%d"):
             try:
                 return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
             except ValueError:
                 pass
-        m = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", s)
-        if m:
-            p1, p2, yr = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            return f"{yr:04d}-{p1:02d}-{p2:02d}"
         return None
 
     lines = raw_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
@@ -8592,12 +8854,15 @@ def attendance_import(course_id):
         """, (course_id, row_date, row_type)).fetchone()
         
         if not sess_row:
-            conn.execute("""
+            cur_sess = conn.execute("""
                 INSERT INTO attendance_sessions (
                     course_id, title, session_type, session_date, start_time, end_time, is_active, created_by, created_at
                 ) VALUES (?, ?, ?, ?, '09:00', '10:00', 0, ?, ?)
             """, (course_id, f"{row_type} - {row_date}", row_type, row_date, current_u["id"], now_str))
-            session_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            session_id = getattr(cur_sess, "lastrowid", None)
+            if not session_id:
+                s_row = conn.execute("SELECT id FROM attendance_sessions WHERE course_id = ? AND session_date = ? AND LOWER(session_type) = LOWER(?)", (course_id, row_date, row_type)).fetchone()
+                session_id = s_row["id"] if s_row else None
         else:
             session_id = sess_row["id"]
             
@@ -8614,16 +8879,22 @@ def attendance_import(course_id):
                 pwd_hash = hash_password(username_part)
                 
                 try:
-                    conn.execute("""
-                        INSERT INTO users (username, roll_number, email, password_hash, display_name, role, must_change_password, created_at)
+                    cur_u = conn.execute("""
+                        INSERT OR IGNORE INTO users (username, roll_number, email, password_hash, display_name, role, must_change_password, created_at)
                         VALUES (?, ?, ?, ?, ?, 'student', 1, ?)
                     """, (username_part, roll_val, email_val, pwd_hash, roll_val, now_str))
-                    user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-                    display_name = roll_val
-                    roll_number = roll_val
-                    created_users_count += 1
-                except sqlite3.IntegrityError:
-                    user_row = conn.execute("SELECT id, username, roll_number, display_name FROM users WHERE LOWER(username) = LOWER(?)", (username_part,)).fetchone()
+                    user_row = conn.execute("SELECT id, username, roll_number, display_name FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(roll_number) = LOWER(?) OR LOWER(email) = LOWER(?)", (username_part, roll_val, email_val)).fetchone()
+                    if user_row:
+                        user_id = user_row["id"]
+                        display_name = user_row["display_name"]
+                        roll_number = user_row["roll_number"] or user_row["username"].upper()
+                        if getattr(cur_u, "lastrowid", None) or getattr(cur_u, "rowcount", 0) > 0:
+                            created_users_count += 1
+                    else:
+                        skipped_count += 1
+                        continue
+                except DB_INTEGRITY_ERRORS:
+                    user_row = conn.execute("SELECT id, username, roll_number, display_name FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(roll_number) = LOWER(?) OR LOWER(email) = LOWER(?)", (username_part, roll_val, email_val)).fetchone()
                     if user_row:
                         user_id = user_row["id"]
                         display_name = user_row["display_name"]

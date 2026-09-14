@@ -124,11 +124,23 @@ def migrate():
             lines.append(f'PRIMARY KEY ("{multi_pks[0]}")')
 
         # Add UNIQUE constraints from sqlite table DDL if present
+        import re
         if "UNIQUE(" in sql.upper():
-            import re
             unique_matches = re.findall(r'UNIQUE\s*\(([^)]+)\)', sql, re.IGNORECASE)
             for u in unique_matches:
                 lines.append(f"UNIQUE ({u})")
+
+        # Also extract inline UNIQUE column declarations (e.g. attendance_key TEXT UNIQUE NOT NULL)
+        for s_line in sql.split('\n'):
+            s_line_str = s_line.strip()
+            if "UNIQUE" in s_line_str.upper() and not s_line_str.upper().startswith("UNIQUE"):
+                m = re.search(r'^\s*"?([a-zA-Z0-9_]+)"?\s+.*UNIQUE', s_line_str, re.IGNORECASE)
+                if m:
+                    col_u = m.group(1)
+                    if tbl == "users" and col_u.lower() == "roll_number":
+                        continue
+                    if not any(f'"{col_u}"' in l and "UNIQUE" in l for l in lines):
+                        lines.append(f'UNIQUE ("{col_u}")')
 
         create_stmt = f'CREATE TABLE "{tbl}" (\n  ' + ",\n  ".join(lines) + "\n);"
         p_cursor.execute(create_stmt)
@@ -169,6 +181,12 @@ def migrate():
             print(f"  -> Created index {idx['name']}")
         except Exception as e:
             print(f"  -- Note on index {idx['name']}: {e}")
+
+    try:
+        p_cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_roll_number_uindex ON users (roll_number) WHERE roll_number IS NOT NULL AND roll_number != \'\';')
+        print("  -> Created partial unique index users_roll_number_uindex")
+    except Exception as e:
+        print(f"  -- Note on users_roll_number_uindex: {e}")
 
     p_conn.commit()
 

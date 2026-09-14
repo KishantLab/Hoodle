@@ -157,7 +157,7 @@
       {% endif %}
 
       <div class="card" style="margin-top: 1.5rem;">
-        <div class="card-header roster-header-row">
+        <div class="card-header roster-header-row" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
           <div>
             <h2 class="card-title" style="font-size: 1.2rem;">Student Submissions Roster</h2>
             <div style="display: flex; gap: 1rem; font-size: 0.82rem; color: var(--text-muted); margin-top: 0.35rem; flex-wrap: wrap;">
@@ -167,9 +167,35 @@
             </div>
           </div>
 
-          <a href="{{ url_for('download_all_submissions_zip', course_id=course.id, coursework_id=cw.id) }}" class="btn btn-primary btn-sm">
-            📦 Download All Submissions (ZIP)
-          </a>
+          <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <!-- Lab Venue Filter Dropdown -->
+            <div style="display: flex; align-items: center; gap: 0.4rem; background: #f8fafc; padding: 0.25rem 0.5rem; border-radius: 6px; border: 1px solid var(--border);">
+              <label for="labFilterSelect" style="font-size: 0.82rem; font-weight: 700; color: var(--text-muted);">🏛️ Venue:</label>
+              <select id="labFilterSelect" class="form-control" style="width: auto; padding: 0.3rem 0.6rem; font-size: 0.82rem; font-weight: 600; border: none; background: transparent; cursor: pointer;" onchange="filterSubmissionsByLab(this.value)">
+                <option value="all">All Labs &amp; Venues ({{ stats.total_submissions }} subs)</option>
+                {% for lab, cnt in lab_counts.items() %}
+                  <option value="{{ lab }}">{{ lab }} ({{ cnt }} subs)</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <a href="{{ url_for('download_all_submissions_zip', course_id=course.id, coursework_id=cw.id) }}" class="btn btn-primary btn-sm">
+              📦 Download All Submissions (ZIP)
+            </a>
+          </div>
+        </div>
+
+        <!-- Lab Breakdown Summary Pill Bar -->
+        <div id="labBreakdownBar" style="padding: 0.65rem 1.25rem; background: #f8fafc; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.85rem;">
+          <span style="font-weight: 700; color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;">🏛️ Labs:</span>
+          <button type="button" class="btn btn-sm lab-pill" onclick="filterSubmissionsByLab('all')" id="labPill-all" style="padding: 0.2rem 0.65rem; font-size: 0.8rem; border-radius: 9999px; background: #0284c7; color: white; border: none; font-weight: 700; cursor: pointer;">
+            All Labs (<span id="labCount-all">{{ stats.total_submissions }}</span>)
+          </button>
+          {% for lab, cnt in lab_counts.items() %}
+            <button type="button" class="btn btn-sm lab-pill" onclick="filterSubmissionsByLab('{{ lab }}')" id="labPill-{{ lab | replace(' ', '_') }}" style="padding: 0.2rem 0.65rem; font-size: 0.8rem; border-radius: 9999px; background: #ffffff; color: var(--text-main); border: 1px solid var(--border); font-weight: 600; cursor: pointer;">
+              {{ lab }}: <strong id="labCount-{{ lab | replace(' ', '_') }}">{{ cnt }}</strong>
+            </button>
+          {% endfor %}
         </div>
 
         <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
@@ -178,6 +204,7 @@
               <tr>
                 <th>Roll Number</th>
                 <th>Student</th>
+                <th>Venue / Lab</th>
                 <th>Status &amp; Timing</th>
                 <th>Submission File</th>
                 <th>Grade / Score</th>
@@ -186,11 +213,20 @@
             </thead>
             <tbody>
               {% for sub in all_submissions %}
-                <tr id="sub-row-{{ sub.student_id }}">
+                <tr id="sub-row-{{ sub.student_id }}" data-lab="{{ sub.lab_name or 'Lab 1' }}">
                   <td class="sub-roll-cell" style="font-family: monospace; font-weight: 700;">{{ sub.roll_number or 'N/A' }}</td>
                   <td class="sub-student-cell">
                     <div style="font-weight: 600;">{{ sub.display_name }}</div>
                     <div style="font-size: 0.75rem; color: var(--text-muted);">{{ sub.email }}</div>
+                  </td>
+                  <td class="sub-lab-cell">
+                    {% if sub.submission_id %}
+                      <span class="badge" style="background: #f1f5f9; color: #1e293b; font-weight: 700; border: 1px solid #cbd5e1;">
+                        🏛️ {{ sub.lab_name or 'Lab 1' }}
+                      </span>
+                    {% else %}
+                      <span style="color: var(--text-muted); font-size: 0.8rem;">—</span>
+                    {% endif %}
                   </td>
                   <td class="sub-status-cell">
                     {% if sub.submission_id %}
@@ -477,7 +513,42 @@ async function fetchLiveTelemetry() {
       }
     }
 
-    // 2. Update Student Rows Live
+    // 2. Update Lab Breakdown Pills & Counts
+    if (data.lab_counts) {
+      const allCountEl = document.getElementById("labCount-all");
+      if (allCountEl) allCountEl.textContent = data.total_submissions;
+
+      for (const [lName, lCnt] of Object.entries(data.lab_counts)) {
+        const safeId = lName.replace(/\s+/g, '_');
+        const pCountEl = document.getElementById("labCount-" + safeId);
+        if (pCountEl) {
+          pCountEl.textContent = lCnt;
+        } else {
+          // Dynamic lab button creation
+          const bar = document.getElementById("labBreakdownBar");
+          if (bar) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "btn btn-sm lab-pill";
+            btn.id = "labPill-" + safeId;
+            btn.style = "padding: 0.2rem 0.65rem; font-size: 0.8rem; border-radius: 9999px; background: #ffffff; color: var(--text-main); border: 1px solid var(--border); font-weight: 600; cursor: pointer;";
+            btn.onclick = () => filterSubmissionsByLab(lName);
+            btn.innerHTML = `${escapeHtml(lName)}: <strong id="labCount-${safeId}">${lCnt}</strong>`;
+            bar.appendChild(btn);
+
+            const select = document.getElementById("labFilterSelect");
+            if (select) {
+              const opt = document.createElement("option");
+              opt.value = lName;
+              opt.textContent = `${lName} (${lCnt} subs)`;
+              select.appendChild(opt);
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Update Student Rows Live
     data.submissions.forEach(sub => {
       const row = document.getElementById(`sub-row-${sub.student_id}`);
       if (!row) return;
@@ -487,6 +558,24 @@ async function fetchLiveTelemetry() {
         knownSubmissions[sub.student_id] = true;
         row.classList.add("new-submission-pulse");
         setTimeout(() => row.classList.remove("new-submission-pulse"), 3500);
+      }
+
+      // Update Lab Cell & data-lab
+      const labCell = row.querySelector(".sub-lab-cell");
+      if (labCell && sub.submission_id) {
+        const labVal = sub.lab_name || "Lab 1";
+        row.setAttribute("data-lab", labVal);
+        labCell.innerHTML = `<span class="badge" style="background: #f1f5f9; color: #1e293b; font-weight: 700; border: 1px solid #cbd5e1;">🏛️ ${escapeHtml(labVal)}</span>`;
+      }
+
+      // Apply current lab filter visibility
+      if (currentLabFilter !== 'all') {
+        const rowLab = (row.getAttribute("data-lab") || "").trim();
+        if (rowLab !== currentLabFilter) {
+          row.style.display = "none";
+        } else {
+          row.style.display = "";
+        }
       }
 
       // Update Status Cell
@@ -508,13 +597,14 @@ async function fetchLiveTelemetry() {
 
       // Update File Cell
       const fileCell = row.querySelector(".sub-file-cell");
-      if (fileCell && sub.submission_id && sub.filename) {
+      const subFilename = sub.filename || sub.original_filename;
+      if (fileCell && sub.submission_id && subFilename) {
         let fileHtml = `<div style="display:flex; flex-direction:column; gap:0.25rem;">
           <div style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">`;
         if (sub.is_pdf) {
-          fileHtml += `<button type="button" class="btn btn-secondary btn-sm" onclick="openPdfViewer('/view/submission/${sub.submission_id}', '${sub.filename}', '/download/submission/${sub.submission_id}')" style="font-size:0.75rem; padding:0.2rem 0.45rem; color:#b91c1c; font-weight:700;">👁 View PDF</button>`;
+          fileHtml += `<button type="button" class="btn btn-secondary btn-sm" onclick="openPdfViewer('/view/submission/${sub.submission_id}', '${escapeHtml(subFilename)}', '/download/submission/${sub.submission_id}')" style="font-size:0.75rem; padding:0.2rem 0.45rem; color:#b91c1c; font-weight:700;">👁 View PDF</button>`;
         }
-        fileHtml += `<a href="/download/submission/${sub.submission_id}" style="color:var(--primary); text-decoration:none; font-weight:600; font-size:0.85rem;" title="Download ${sub.filename}">⬇️ ${sub.filename}</a>
+        fileHtml += `<a href="/download/submission/${sub.submission_id}" style="color:var(--primary); text-decoration:none; font-weight:600; font-size:0.85rem;" title="Download ${escapeHtml(subFilename)}">⬇️ ${escapeHtml(subFilename)}</a>
           </div>
           <div style="font-size:0.72rem; color:var(--text-muted);">${sub.file_size || 0} bytes</div>
         </div>`;
@@ -531,6 +621,45 @@ async function fetchLiveTelemetry() {
   } catch (e) {
     console.warn("Live telemetry poll error:", e);
   }
+}
+
+// Interactive Lab-Wise Filter
+let currentLabFilter = 'all';
+
+function filterSubmissionsByLab(labName) {
+  currentLabFilter = labName;
+  const select = document.getElementById("labFilterSelect");
+  if (select) select.value = labName;
+
+  document.querySelectorAll(".lab-pill").forEach(p => {
+    p.style.background = "#ffffff";
+    p.style.color = "var(--text-main)";
+    p.style.border = "1px solid var(--border)";
+    p.style.fontWeight = "600";
+  });
+  const safeId = labName === 'all' ? 'all' : labName.replace(/\s+/g, '_');
+  const activePill = document.getElementById("labPill-" + safeId);
+  if (activePill) {
+    activePill.style.background = "#0284c7";
+    activePill.style.color = "#ffffff";
+    activePill.style.border = "none";
+    activePill.style.fontWeight = "700";
+  }
+
+  const rows = document.querySelectorAll('tbody tr[id^="sub-row-"]');
+  rows.forEach(row => {
+    const rowLab = (row.getAttribute("data-lab") || "").trim();
+    if (labName === 'all' || rowLab === labName) {
+      row.style.display = "";
+    } else {
+      row.style.display = "none";
+    }
+  });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 document.addEventListener("DOMContentLoaded", () => {

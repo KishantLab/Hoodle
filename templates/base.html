@@ -576,20 +576,6 @@
           </div>
         </div>
 
-        <!-- Locker Storage Quota -->
-        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 0.8rem 0.85rem; margin-bottom: 1.1rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
-            <span style="font-size: 0.78rem; font-weight: 700; color: var(--text-main);">💾 Private Locker Storage</span>
-            <span style="font-size: 0.75rem; color: var(--text-muted);">
-              {{ locker_used_bytes|filesize }} / {{ (current_user.storage_quota_bytes or 524288000)|filesize }}
-            </span>
-          </div>
-          {% set quota = current_user.storage_quota_bytes or 524288000 %}
-          {% set used_pct = [(locker_used_bytes / quota * 100)|round(1), 100]|min %}
-          <div style="height: 6px; background: #e2e8f0; border-radius: 9999px; overflow: hidden;">
-            <div style="height: 100%; width: {{ used_pct }}%; background: {% if used_pct > 85 %}#ef4444{% elif used_pct > 60 %}#f59e0b{% else %}#10b981{% endif %}; border-radius: 9999px;"></div>
-          </div>
-        </div>
 
         <!-- Active Enrolled Courses -->
         <div style="margin-bottom: 1.25rem;">

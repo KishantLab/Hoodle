@@ -22,6 +22,11 @@ class ACCLLMSTestCase(unittest.TestCase):
         self.db_path = Path(self.test_dir) / "test_lms.db"
         self.storage_dir = Path(self.test_dir) / "storage"
 
+        import db_adapter
+        self.old_backend = db_adapter.DATABASE_BACKEND
+        db_adapter.DATABASE_BACKEND = "sqlite"
+        db_adapter.DB_PATH = self.db_path
+
         app.DB_PATH = self.db_path
         app.STORAGE_DIR = self.storage_dir
         app.LOCKERS_DIR = self.storage_dir / "lockers"
@@ -40,6 +45,8 @@ class ACCLLMSTestCase(unittest.TestCase):
 
     def tearDown(self):
         try:
+            import db_adapter
+            db_adapter.DATABASE_BACKEND = getattr(self, "old_backend", "sqlite")
             shutil.rmtree(self.test_dir)
         except Exception:
             pass

@@ -477,20 +477,20 @@
     </div>
 
     <!-- Classroom Projection QR Code & Announcement -->
-    <div style="display: grid; grid-template-columns: 160px 1fr; gap: 1.25rem; align-items: center; background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
+    <div style="display: grid; grid-template-columns: 200px 1fr; gap: 1.25rem; align-items: center; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.25rem;">
       <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-        <div id="shareQrCode" style="background: white; padding: 6px; border-radius: 8px; border: 1px solid #e2e8f0; display: inline-flex; align-items: center; justify-content: center; width: 140px; height: 140px;"></div>
-        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.35rem; font-weight: 600;">📱 Scan to Join</div>
+        <div id="shareQrCode" style="background: white; padding: 6px; border-radius: 8px; border: 2px solid #0f172a; display: inline-flex; align-items: center; justify-content: center; width: 192px; height: 192px;"></div>
+        <div style="font-size: 0.75rem; color: #0f172a; margin-top: 0.45rem; font-weight: 700;">📱 Scan to Join Class</div>
       </div>
       <div>
-        <div style="font-size: 0.82rem; font-weight: 700; color: #1e3a8a; margin-bottom: 0.35rem;">
+        <div style="font-size: 0.88rem; font-weight: 700; color: #1e3a8a; margin-bottom: 0.35rem;">
           📢 Class Invitation Message
         </div>
         <div style="font-size: 0.76rem; color: var(--text-muted); margin-bottom: 0.4rem;">
           Copy and share with students via messaging or email:
         </div>
-        <textarea id="shareMsgText" rows="3" readonly style="width: 100%; font-size: 0.78rem; border-radius: 6px; border: 1px solid #cbd5e1; padding: 0.4rem 0.5rem; resize: none; background: white; color: var(--text-main); font-family: inherit; margin-bottom: 0.5rem;"></textarea>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="copyAnnouncementMsg(this)" style="font-size: 0.78rem;">
+        <textarea id="shareMsgText" rows="4" readonly style="width: 100%; font-size: 0.82rem; border-radius: 6px; border: 1px solid #cbd5e1; padding: 0.5rem; resize: none; background: #f8fafc; color: var(--text-main); font-family: inherit; margin-bottom: 0.5rem; line-height: 1.4;"></textarea>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="copyAnnouncementMsg(this)" style="font-size: 0.78rem; font-weight: 600;">
           📋 Copy Announcement
         </button>
       </div>
@@ -546,7 +546,7 @@ function setShareTarget(target) {
     activeBtn.style.color = 'var(--primary)';
   }
 
-  // Render QR Code
+  // Render High-Contrast Black QR Code
   const qrContainer = document.getElementById('shareQrCode');
   if (qrContainer) {
     qrContainer.innerHTML = '';
@@ -554,9 +554,9 @@ function setShareTarget(target) {
       try {
         new QRCode(qrContainer, {
           text: joinUrl,
-          width: 128,
-          height: 128,
-          colorDark: "#1e3a8a",
+          width: 180,
+          height: 180,
+          colorDark: "#000000",
           colorLight: "#ffffff",
           correctLevel: QRCode.CorrectLevel.M
         });
