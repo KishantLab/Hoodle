@@ -4227,7 +4227,7 @@ def coursework_detail(course_id, coursework_id):
         lab_counts = {}
         for s in all_submissions:
             if s["submission_id"]:
-                l_name = (s["lab_name"] or "Lab 1").strip()
+                l_name = (s["lab_name"] or "Offline Exam / Pendrive").strip()
                 lab_counts[l_name] = lab_counts.get(l_name, 0) + 1
 
         private_comments = []
@@ -4362,7 +4362,7 @@ def api_live_submissions(course_id, coursework_id):
                 late += 1
             else:
                 on_time += 1
-            l_name = (s["lab_name"] or "Lab 1").strip()
+            l_name = (s["lab_name"] or "Offline Exam / Pendrive").strip()
             lab_counts[l_name] = lab_counts.get(l_name, 0) + 1
         else:
             assigned += 1
@@ -4379,7 +4379,7 @@ def api_live_submissions(course_id, coursework_id):
             "late_minutes": s["late_minutes"] if sub_id else 0,
             "original_filename": s["original_filename"] if sub_id else None,
             "filename": s["original_filename"] if sub_id else None,
-            "lab_name": (s["lab_name"] or "Lab 1").strip() if sub_id else "Unassigned",
+            "lab_name": (s["lab_name"] or "Offline Exam / Pendrive").strip() if sub_id else "Unassigned",
             "file_size": s["file_size"] if sub_id else 0,
             "receipt_token": s["receipt_token"] if sub_id else None,
             "grade": s["grade"] if sub_id else None,
@@ -4592,9 +4592,11 @@ def unsubmit_coursework(course_id, coursework_id):
 def coursework_bulk_solution_upload(course_id, coursework_id):
     """
     Teacher & TA Offline Solution Batch Ingestion:
-    Accepts a single .zip archive containing student solutions collected via pendrive or offline exam.
-    Auto-detects each student's roll number from filename or directory, validates enrolled students,
-    writes files to their submission lockers, and generates official submission records.
+    Accepts a single .zip archive containing student solutions (nested zips or folders).
+    - Protects portal submissions: skips any student who already submitted via portal (unless overwrite_existing is checked).
+    - Groups multi-file submissions into individual student ZIP archives so nothing is lost.
+    - Saves directly into SUBMISSIONS_DIR / course_id / coursework_id / stored_filename.
+    - Sets lab_name = 'Offline Exam / Pendrive'.
     """
     course = get_course_or_404(course_id)
     conn = get_db()
@@ -4614,78 +4616,146 @@ def coursework_bulk_solution_upload(course_id, coursework_id):
         flash("The uploaded file is not a valid ZIP archive format.", "danger")
         return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
 
-    zip_file.seek(0)
+    overwrite_existing = request.form.get("overwrite_existing") == "1"
+    coursework_dir = SUBMISSIONS_DIR / str(course_id) / str(coursework_id)
+    coursework_dir.mkdir(parents=True, exist_ok=True)
 
-    # Fetch all enrolled students
-    enrolled = conn.execute("""
-        SELECT u.id, u.roll_number, u.username, u.display_name
-        FROM course_enrollments ce
-        JOIN users u ON ce.user_id = u.id
-        WHERE ce.course_id = ? AND ce.role = 'student'
-    """, (course_id,)).fetchall()
+    # Fetch all users and enrollments
+    users = conn.execute("SELECT id, roll_number, username, display_name, email FROM users").fetchall()
+    user_map = {}
+    for u in users:
+        if u["roll_number"]:
+            user_map[u["roll_number"].strip().upper()] = u
+        if u["username"]:
+            user_map[u["username"].strip().upper()] = u
+        if u["email"]:
+            prefix = u["email"].split("@")[0].strip().upper()
+            if prefix not in user_map:
+                user_map[prefix] = u
 
-    roll_map = {}
-    for st in enrolled:
-        if st["roll_number"]:
-            roll_map[st["roll_number"].strip().upper()] = st
-        if st["username"]:
-            roll_map[st["username"].strip().upper()] = st
+    enrolled = conn.execute("SELECT user_id FROM course_enrollments WHERE course_id = ? AND role = 'student'", (course_id,)).fetchall()
+    enrolled_ids = {e["user_id"] for e in enrolled}
 
+    # Fetch existing submissions
+    existing_subs = conn.execute("SELECT student_id, roll_number, id, version FROM submissions WHERE coursework_id = ?", (coursework_id,)).fetchall()
+    submitted_student_ids = {s["student_id"]: s for s in existing_subs}
+    submitted_rolls = {s["roll_number"].strip().upper(): s for s in existing_subs}
+
+    roll_pattern = re.compile(r'([0-9]{8}|[a-zA-Z][0-9]{2}[a-zA-Z]{2}[0-9]{3})', re.IGNORECASE)
+
+    import tempfile
     matched_count = 0
-    unmatched_files = []
+    skipped_count = 0
+    created_count = 0
     matched_rolls = []
+    unmatched_files = []
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        with zipfile.ZipFile(zip_file, "r") as zf:
-            for info in zf.infolist():
-                if info.is_dir() or "__MACOSX" in info.filename or os.path.basename(info.filename).startswith("."):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zf_path = Path(tmpdir) / "uploaded.zip"
+            zip_file.seek(0)
+            zip_file.save(zf_path)
+
+            extract_dir = Path(tmpdir) / "extracted"
+            extract_dir.mkdir()
+            with zipfile.ZipFile(zf_path, "r") as zf:
+                zf.extractall(extract_dir)
+
+            all_entries = list(extract_dir.rglob("*"))
+            student_bundles = {}
+
+            for p in all_entries:
+                if p.is_dir() or "__MACOSX" in str(p) or p.name.startswith("."):
                     continue
 
-                raw_name = info.filename.replace("\\", "/")
-                base_name = os.path.basename(raw_name)
+                rel = p.relative_to(extract_dir)
+                parts = rel.parts
 
-                matched_student = None
-                tokens = re.split(r"[_\-/\s\.]+", raw_name.upper())
-                for t in tokens:
-                    if t in roll_map:
-                        matched_student = roll_map[t]
-                        break
+                matched_roll = None
+                m = roll_pattern.search(p.name)
+                if m:
+                    matched_roll = m.group(1).upper()
+                else:
+                    for part in parts[:-1]:
+                        m2 = roll_pattern.search(part)
+                        if m2:
+                            matched_roll = m2.group(1).upper()
+                            break
 
-                if not matched_student:
-                    unmatched_files.append(base_name)
+                if not matched_roll:
+                    unmatched_files.append(p.name)
                     continue
 
-                file_bytes = zf.read(info)
-                file_size = len(file_bytes)
-                sha256_hash = hashlib.sha256(file_bytes).hexdigest()
+                if matched_roll not in student_bundles:
+                    student_bundles[matched_roll] = []
+                student_bundles[matched_roll].append(p)
 
-                student_sub_dir = SUBMISSIONS_DIR / str(coursework_id) / str(matched_student["id"])
-                student_sub_dir.mkdir(parents=True, exist_ok=True)
+            for roll, files_list in student_bundles.items():
+                u = user_map.get(roll)
 
-                safe_name = secure_filename(base_name) or f"{matched_student['roll_number']}_solution.bin"
-                stored_filename = f"{int(time.time())}_{safe_name}"
-                target_path = student_sub_dir / stored_filename
-                target_path.write_bytes(file_bytes)
+                already_submitted = False
+                if u and (u["id"] in submitted_student_ids or roll in submitted_rolls):
+                    already_submitted = True
+                elif roll in submitted_rolls:
+                    already_submitted = True
 
-                receipt_token = f"HDL-OFFLINE-{uuid.uuid4().hex[:10].upper()}"
+                if already_submitted and not overwrite_existing:
+                    skipped_count += 1
+                    continue
 
-                existing = conn.execute("""
-                    SELECT id, version FROM submissions
-                    WHERE coursework_id = ? AND student_id = ?
-                """, (coursework_id, matched_student["id"])).fetchone()
+                if not u:
+                    from werkzeug.security import generate_password_hash
+                    pwd_hash = generate_password_hash("password123", method="pbkdf2:sha256")
+                    email = f"{roll.lower()}@iitbhilai.ac.in"
+                    conn.execute("""
+                        INSERT INTO users (username, roll_number, email, password_hash, display_name, role, created_at)
+                        VALUES (?, ?, ?, ?, ?, 'student', ?)
+                    """, (roll.lower(), roll, email, pwd_hash, roll, now_str))
+                    u = conn.execute("SELECT id, roll_number, username, display_name FROM users WHERE roll_number = ?", (roll,)).fetchone()
+                    user_map[roll] = u
+                    created_count += 1
 
-                version = (existing["version"] + 1) if existing else 1
-                if existing:
+                if u["id"] not in enrolled_ids:
+                    conn.execute("""
+                        INSERT INTO course_enrollments (course_id, user_id, role, enrolled_at)
+                        VALUES (?, ?, 'student', ?)
+                    """, (course_id, u["id"], now_str))
+                    enrolled_ids.add(u["id"])
+
+                stored_filename = f"{roll}.zip"
+                target_filepath = coursework_dir / stored_filename
+
+                orig_filename = ""
+                zip_candidates = [f for f in files_list if f.suffix.lower() == ".zip"]
+                if zip_candidates:
+                    chosen_zip = zip_candidates[0]
+                    orig_filename = chosen_zip.name
+                    shutil.copy2(chosen_zip, target_filepath)
+                else:
+                    orig_filename = f"{roll}_solution.zip"
+                    with zipfile.ZipFile(target_filepath, "w", zipfile.ZIP_DEFLATED) as new_z:
+                        for sf in files_list:
+                            new_z.write(sf, arcname=sf.name)
+
+                file_size = target_filepath.stat().st_size
+                sha256_hash = calc_sha256(target_filepath)
+                receipt_token = f"HDL-OFFLINE-{secrets.token_hex(8).upper()}"
+
+                existing_record = submitted_student_ids.get(u["id"]) or submitted_rolls.get(roll)
+                version = (existing_record["version"] + 1) if existing_record else 1
+
+                if existing_record:
                     conn.execute("""
                         UPDATE submissions SET
                             original_filename = ?, stored_filename = ?, file_path = ?, file_size = ?,
                             sha256 = ?, ip_address = 'OFFLINE_UPLOAD', submitted_at = ?, version = ?,
-                            status = 'turned_in', receipt_token = ?
+                            lab_name = 'Offline Exam / Pendrive', status = 'turned_in', receipt_token = ?
                         WHERE id = ?
                     """, (
-                        safe_name, stored_filename, str(target_path), file_size,
-                        sha256_hash, now_str, version, receipt_token, existing["id"]
+                        orig_filename, stored_filename, str(target_filepath), file_size,
+                        sha256_hash, now_str, version, receipt_token, existing_record["id"]
                     ))
                 else:
                     conn.execute("""
@@ -4693,15 +4763,19 @@ def coursework_bulk_solution_upload(course_id, coursework_id):
                             coursework_id, student_id, roll_number, student_name, lab_name,
                             status, original_filename, stored_filename, file_path, file_size,
                             sha256, ip_address, submitted_at, version, is_late, late_minutes, receipt_token
-                        ) VALUES (?, ?, ?, ?, 'Offline Exam / Pendrive', 'turned_in', ?, ?, ?, ?, ?, 'OFFLINE_UPLOAD', ?, ?, 0, 0, ?)
+                        ) VALUES (
+                            ?, ?, ?, ?, 'Offline Exam / Pendrive',
+                            'turned_in', ?, ?, ?, ?,
+                            ?, 'OFFLINE_UPLOAD', ?, 1, 0, 0, ?
+                        )
                     """, (
-                        coursework_id, matched_student["id"], matched_student["roll_number"] or matched_student["username"].upper(),
-                        matched_student["display_name"], safe_name, stored_filename, str(target_path), file_size,
-                        sha256_hash, now_str, version, receipt_token
+                        coursework_id, u["id"], roll, u["display_name"],
+                        orig_filename, stored_filename, str(target_filepath), file_size,
+                        sha256_hash, now_str, receipt_token
                     ))
 
                 matched_count += 1
-                matched_rolls.append(matched_student["roll_number"] or matched_student["username"])
+                matched_rolls.append(roll)
 
         conn.commit()
     except Exception as e:
@@ -4712,15 +4786,97 @@ def coursework_bulk_solution_upload(course_id, coursework_id):
 
     conn.close()
 
-    roll_preview = ", ".join(sorted(list(set(matched_rolls)))[:8])
-    if len(set(matched_rolls)) > 8:
-        roll_preview += f" and {len(set(matched_rolls)) - 8} more"
-
-    flash_msg = f"✅ Bulk Solution Import: Successfully processed {matched_count} solution file(s) for enrolled students ({roll_preview})."
-    if unmatched_files:
-        flash_msg += f" ⚠️ {len(unmatched_files)} file(s) could not be matched to any enrolled student roll number."
-    flash(flash_msg, "success" if matched_count > 0 else "warning")
+    flash_msg = f"✅ Bulk Solution Import: Successfully processed {matched_count} offline submission(s) (tagged under 'Offline Exam / Pendrive')."
+    if skipped_count > 0:
+        flash_msg += f" Skipped {skipped_count} student(s) who already submitted on the portal (portal is final)."
+    if created_count > 0:
+        flash_msg += f" Auto-registered & enrolled {created_count} student(s)."
+    flash(flash_msg, "success" if matched_count > 0 else "info")
     return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
+
+@app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/submissions/<int:student_id>/teacher-replace", methods=["POST"])
+@teacher_required
+def teacher_replace_submission(course_id, coursework_id, student_id):
+    """Teacher override: Replace or upload a student's submission file."""
+    course = get_course_or_404(course_id)
+    conn = get_db()
+    cw = conn.execute("SELECT * FROM coursework WHERE id = ? AND course_id = ?", (coursework_id, course_id)).fetchone()
+    if not cw:
+        conn.close()
+        abort(404, "Coursework not found")
+
+    student = conn.execute("SELECT * FROM users WHERE id = ?", (student_id,)).fetchone()
+    if not student:
+        conn.close()
+        abort(404, "Student not found")
+
+    file = request.files.get("replacement_file")
+    if not file or not file.filename:
+        conn.close()
+        flash("Please choose a replacement file to upload.", "warning")
+        return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
+    lab_name = request.form.get("lab_name", "Offline Exam / Pendrive").strip() or "Offline Exam / Pendrive"
+    reason = request.form.get("reason", "").strip()
+
+    coursework_dir = SUBMISSIONS_DIR / str(course_id) / str(coursework_id)
+    coursework_dir.mkdir(parents=True, exist_ok=True)
+
+    roll_number = student["roll_number"] or student["username"].upper()
+    orig_filename = secure_filename(file.filename) or f"{roll_number}_solution.bin"
+
+    existing = conn.execute(
+        "SELECT id, version FROM submissions WHERE coursework_id = ? AND student_id = ?",
+        (coursework_id, student_id)
+    ).fetchone()
+
+    version = (existing["version"] + 1) if existing else 1
+    stored_filename = f"{roll_number}_v{version}_{orig_filename}" if version > 1 else (f"{roll_number}.zip" if orig_filename.lower().endswith(".zip") else f"{roll_number}_{orig_filename}")
+    target_filepath = coursework_dir / stored_filename
+    file.save(target_filepath)
+
+    file_size = target_filepath.stat().st_size
+    sha256_hash = calc_sha256(target_filepath)
+    receipt_token = f"HDL-TEACHER-{secrets.token_hex(8).upper()}"
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user = get_current_user()
+
+    if existing:
+        conn.execute("""
+            UPDATE submissions SET
+                original_filename = ?, stored_filename = ?, file_path = ?, file_size = ?,
+                sha256 = ?, ip_address = ?, submitted_at = ?, version = ?,
+                lab_name = ?, status = 'turned_in', receipt_token = ?
+            WHERE id = ?
+        """, (
+            orig_filename, stored_filename, str(target_filepath), file_size,
+            sha256_hash, f"teacher_override_{user['id']}", now_str, version,
+            lab_name, receipt_token, existing["id"]
+        ))
+    else:
+        conn.execute("""
+            INSERT INTO submissions (
+                coursework_id, student_id, roll_number, student_name, lab_name,
+                status, original_filename, stored_filename, file_path, file_size,
+                sha256, ip_address, submitted_at, version, is_late, late_minutes, receipt_token
+            ) VALUES (
+                ?, ?, ?, ?, ?,
+                'turned_in', ?, ?, ?, ?,
+                ?, ?, ?, ?, 0, 0, ?
+            )
+        """, (
+            coursework_id, student_id, roll_number, student["display_name"], lab_name,
+            orig_filename, stored_filename, str(target_filepath), file_size,
+            sha256_hash, f"teacher_override_{user['id']}", now_str, version, receipt_token
+        ))
+
+    conn.commit()
+    conn.close()
+
+    flash(f"✅ Successfully replaced submission for {roll_number} ({student['display_name']}). New file: {orig_filename}.", "success")
+    return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
 
 
 @app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/room-allocations", methods=["POST"])

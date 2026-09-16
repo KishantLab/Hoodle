@@ -195,6 +195,7 @@
                 {% for lab, cnt in lab_counts.items() %}
                   <option value="{{ lab }}">{{ lab }} ({{ cnt }} subs)</option>
                 {% endfor %}
+                <option value="pending">Pending / Assigned ({{ stats.assigned }} students)</option>
               </select>
             </div>
 
@@ -207,14 +208,17 @@
         <!-- Lab Breakdown Summary Pill Bar -->
         <div id="labBreakdownBar" style="padding: 0.65rem 1.25rem; background: #f8fafc; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.85rem;">
           <span style="font-weight: 700; color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;">🏛️ Labs:</span>
-          <button type="button" class="btn btn-sm lab-pill" onclick="filterSubmissionsByLab('all')" id="labPill-all" style="padding: 0.2rem 0.65rem; font-size: 0.8rem; border-radius: 9999px; background: #0284c7; color: white; border: none; font-weight: 700; cursor: pointer;">
+          <button type="button" class="btn btn-sm lab-pill" data-lab-target="all" onclick="filterSubmissionsByLab('all')" id="labPill-all" style="padding: 0.2rem 0.65rem; font-size: 0.8rem; border-radius: 9999px; background: #0284c7; color: white; border: none; font-weight: 700; cursor: pointer;">
             All Labs (<span id="labCount-all">{{ stats.total_submissions }}</span>)
           </button>
           {% for lab, cnt in lab_counts.items() %}
-            <button type="button" class="btn btn-sm lab-pill" onclick="filterSubmissionsByLab('{{ lab }}')" id="labPill-{{ lab | replace(' ', '_') }}" style="padding: 0.2rem 0.65rem; font-size: 0.8rem; border-radius: 9999px; background: #ffffff; color: var(--text-main); border: 1px solid var(--border); font-weight: 600; cursor: pointer;">
-              {{ lab }}: <strong id="labCount-{{ lab | replace(' ', '_') }}">{{ cnt }}</strong>
+            <button type="button" class="btn btn-sm lab-pill" data-lab-target="{{ lab }}" onclick="filterSubmissionsByLab('{{ lab|escape }}')" id="labPill-{{ loop.index }}" style="padding: 0.2rem 0.65rem; font-size: 0.8rem; border-radius: 9999px; background: #ffffff; color: var(--text-main); border: 1px solid var(--border); font-weight: 600; cursor: pointer;">
+              {{ lab }}: <strong>{{ cnt }}</strong>
             </button>
           {% endfor %}
+          <button type="button" class="btn btn-sm lab-pill" data-lab-target="pending" onclick="filterSubmissionsByLab('pending')" id="labPill-pending" style="padding: 0.2rem 0.65rem; font-size: 0.8rem; border-radius: 9999px; background: #ffffff; color: #b45309; border: 1px solid #fde68a; font-weight: 600; cursor: pointer;">
+            Pending: <strong>{{ stats.assigned }}</strong>
+          </button>
         </div>
 
         <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
@@ -232,7 +236,7 @@
             </thead>
             <tbody>
               {% for sub in all_submissions %}
-                <tr id="sub-row-{{ sub.student_id }}" data-lab="{{ sub.lab_name or 'Lab 1' }}">
+                <tr id="sub-row-{{ sub.student_id }}" data-lab="{{ sub.lab_name or 'Unassigned' }}" data-status="{{ sub.status or 'assigned' }}" data-sub-id="{{ sub.submission_id or '' }}">
                   <td class="sub-roll-cell" style="font-family: monospace; font-weight: 700;">{{ sub.roll_number or 'N/A' }}</td>
                   <td class="sub-student-cell">
                     <div style="font-weight: 600;">{{ sub.display_name }}</div>
@@ -241,7 +245,7 @@
                   <td class="sub-lab-cell">
                     {% if sub.submission_id %}
                       <span class="badge" style="background: #f1f5f9; color: #1e293b; font-weight: 700; border: 1px solid #cbd5e1;">
-                        🏛️ {{ sub.lab_name or 'Lab 1' }}
+                        🏛️ {{ sub.lab_name or 'Offline Exam / Pendrive' }}
                       </span>
                     {% else %}
                       <span style="color: var(--text-muted); font-size: 0.8rem;">—</span>
@@ -298,12 +302,19 @@
                       <span style="color: var(--text-light); font-size: 0.85rem;">-</span>
                     {% endif %}
                   </td>
-                  <td class="sub-action-cell">
-                    {% if sub.submission_id %}
-                      <a href="{{ url_for('exam_receipt', receipt_token=sub.receipt_token) }}" target="_blank" class="btn btn-secondary btn-sm" style="font-size: 0.75rem;" title="View Digital Receipt">
-                        Receipt
-                      </a>
-                    {% endif %}
+                  <td class="sub-action-cell" style="white-space: nowrap;">
+                    <div style="display: flex; align-items: center; gap: 0.35rem;">
+                      {% if sub.submission_id %}
+                        <a href="{{ url_for('exam_receipt', receipt_token=sub.receipt_token) }}" target="_blank" class="btn btn-secondary btn-sm" style="font-size: 0.75rem; padding: 2px 7px;" title="View Digital Receipt">
+                          Receipt
+                        </a>
+                      {% endif %}
+                      {% if is_teacher_or_admin %}
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openReplaceModal('{{ sub.student_id }}', '{{ (sub.roll_number or '')|escape }}', '{{ (sub.display_name or '')|escape }}', '{{ (sub.original_filename or '')|escape }}', '{{ (sub.lab_name or '')|escape }}')" style="font-size: 0.75rem; padding: 2px 7px; color: #0284c7; font-weight: 600;" title="Teacher Override: Replace or Upload solution for this student">
+                          🔄 Replace
+                        </button>
+                      {% endif %}
+                    </div>
                   </td>
                 </tr>
               {% endfor %}
@@ -538,10 +549,15 @@ async function fetchLiveTelemetry() {
       if (allCountEl) allCountEl.textContent = data.total_submissions;
 
       for (const [lName, lCnt] of Object.entries(data.lab_counts)) {
-        const safeId = lName.replace(/\s+/g, '_');
-        const pCountEl = document.getElementById("labCount-" + safeId);
-        if (pCountEl) {
-          pCountEl.textContent = lCnt;
+        let pill = null;
+        try {
+          pill = document.querySelector(`.lab-pill[data-lab-target="${CSS.escape ? CSS.escape(lName) : lName}"]`);
+        } catch(e) {
+          pill = null;
+        }
+        if (pill) {
+          const strongEl = pill.querySelector("strong");
+          if (strongEl) strongEl.textContent = lCnt;
         } else {
           // Dynamic lab button creation
           const bar = document.getElementById("labBreakdownBar");
@@ -549,10 +565,10 @@ async function fetchLiveTelemetry() {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "btn btn-sm lab-pill";
-            btn.id = "labPill-" + safeId;
+            btn.setAttribute("data-lab-target", lName);
             btn.style = "padding: 0.2rem 0.65rem; font-size: 0.8rem; border-radius: 9999px; background: #ffffff; color: var(--text-main); border: 1px solid var(--border); font-weight: 600; cursor: pointer;";
             btn.onclick = () => filterSubmissionsByLab(lName);
-            btn.innerHTML = `${escapeHtml(lName)}: <strong id="labCount-${safeId}">${lCnt}</strong>`;
+            btn.innerHTML = `${escapeHtml(lName)}: <strong>${lCnt}</strong>`;
             bar.appendChild(btn);
 
             const select = document.getElementById("labFilterSelect");
@@ -582,19 +598,21 @@ async function fetchLiveTelemetry() {
       // Update Lab Cell & data-lab
       const labCell = row.querySelector(".sub-lab-cell");
       if (labCell && sub.submission_id) {
-        const labVal = sub.lab_name || "Lab 1";
+        const labVal = sub.lab_name || "Offline Exam / Pendrive";
         row.setAttribute("data-lab", labVal);
+        row.setAttribute("data-status", sub.status || "turned_in");
+        row.setAttribute("data-sub-id", sub.submission_id);
         labCell.innerHTML = `<span class="badge" style="background: #f1f5f9; color: #1e293b; font-weight: 700; border: 1px solid #cbd5e1;">🏛️ ${escapeHtml(labVal)}</span>`;
       }
 
       // Apply current lab filter visibility
-      if (currentLabFilter !== 'all') {
+      if (currentLabFilter === 'all') {
+        row.style.display = "";
+      } else if (currentLabFilter === 'pending') {
+        row.style.display = sub.submission_id ? "none" : "";
+      } else {
         const rowLab = (row.getAttribute("data-lab") || "").trim();
-        if (rowLab !== currentLabFilter) {
-          row.style.display = "none";
-        } else {
-          row.style.display = "";
-        }
+        row.style.display = (rowLab === currentLabFilter) ? "" : "none";
       }
 
       // Update Status Cell
@@ -630,10 +648,18 @@ async function fetchLiveTelemetry() {
         fileCell.innerHTML = fileHtml;
       }
 
-      // Update Action Cell (Receipt)
+      // Update Action Cell (Receipt & Replace)
       const actionCell = row.querySelector(".sub-action-cell");
-      if (actionCell && sub.submission_id && sub.receipt_token) {
-        actionCell.innerHTML = `<a href="/receipt/${sub.receipt_token}" target="_blank" class="btn btn-secondary btn-sm" style="font-size:0.75rem;" title="View Digital Receipt">Receipt</a>`;
+      if (actionCell) {
+        let actHtml = '<div style="display: flex; align-items: center; gap: 0.35rem;">';
+        if (sub.submission_id && sub.receipt_token) {
+          actHtml += `<a href="/receipt/${sub.receipt_token}" target="_blank" class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding: 2px 7px;" title="View Digital Receipt">Receipt</a>`;
+        }
+        {% if is_teacher_or_admin %}
+          actHtml += `<button type="button" class="btn btn-secondary btn-sm" onclick="openReplaceModal('${sub.student_id}', '${escapeHtml(sub.roll_number || '')}', '${escapeHtml(sub.display_name || '')}', '${escapeHtml(sub.original_filename || '')}', '${escapeHtml(sub.lab_name || '')}')" style="font-size:0.75rem; padding: 2px 7px; color: #0284c7; font-weight: 600;" title="Teacher Override: Replace or Upload solution for this student">🔄 Replace</button>`;
+        {% endif %}
+        actHtml += '</div>';
+        actionCell.innerHTML = actHtml;
       }
     });
 
@@ -648,30 +674,37 @@ let currentLabFilter = 'all';
 function filterSubmissionsByLab(labName) {
   currentLabFilter = labName;
   const select = document.getElementById("labFilterSelect");
-  if (select) select.value = labName;
+  if (select && select.value !== labName) {
+    select.value = labName;
+  }
 
   document.querySelectorAll(".lab-pill").forEach(p => {
-    p.style.background = "#ffffff";
-    p.style.color = "var(--text-main)";
-    p.style.border = "1px solid var(--border)";
-    p.style.fontWeight = "600";
+    const target = p.getAttribute("data-lab-target");
+    if (target === labName) {
+      p.style.background = "#0284c7";
+      p.style.color = "#ffffff";
+      p.style.border = "none";
+      p.style.fontWeight = "700";
+    } else {
+      p.style.background = "#ffffff";
+      p.style.color = target === "pending" ? "#b45309" : "var(--text-main)";
+      p.style.border = target === "pending" ? "1px solid #fde68a" : "1px solid var(--border)";
+      p.style.fontWeight = "600";
+    }
   });
-  const safeId = labName === 'all' ? 'all' : labName.replace(/\s+/g, '_');
-  const activePill = document.getElementById("labPill-" + safeId);
-  if (activePill) {
-    activePill.style.background = "#0284c7";
-    activePill.style.color = "#ffffff";
-    activePill.style.border = "none";
-    activePill.style.fontWeight = "700";
-  }
 
   const rows = document.querySelectorAll('tbody tr[id^="sub-row-"]');
   rows.forEach(row => {
     const rowLab = (row.getAttribute("data-lab") || "").trim();
-    if (labName === 'all' || rowLab === labName) {
+    const rowStatus = (row.getAttribute("data-status") || "").trim();
+    const hasSub = (row.getAttribute("data-sub-id") || "").trim();
+
+    if (labName === 'all') {
       row.style.display = "";
+    } else if (labName === 'pending') {
+      row.style.display = (!hasSub || rowStatus === 'assigned') ? "" : "none";
     } else {
-      row.style.display = "none";
+      row.style.display = (rowLab === labName) ? "" : "none";
     }
   });
 }
@@ -679,6 +712,28 @@ function filterSubmissionsByLab(labName) {
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function openReplaceModal(studentId, roll, name, currentFile, lab) {
+  const form = document.getElementById("replaceSubmissionForm");
+  if (form) {
+    form.action = `/courses/{{ course.id }}/coursework/{{ cw.id }}/submissions/${studentId}/teacher-replace`;
+  }
+  const nameEl = document.getElementById("replaceModalStudentName");
+  if (nameEl) nameEl.textContent = name || "Unknown";
+  const rollEl = document.getElementById("replaceModalRollNumber");
+  if (rollEl) rollEl.textContent = roll || "N/A";
+  const fileEl = document.getElementById("replaceModalCurrentFile");
+  if (fileEl) fileEl.textContent = currentFile || "No submission";
+  const labSelect = document.getElementById("replaceModalLabName");
+  if (labSelect) {
+    if (lab && (lab === "ED1" || lab === "ED2" || lab === "Offline Exam / Pendrive")) {
+      labSelect.value = lab;
+    } else {
+      labSelect.value = "Offline Exam / Pendrive";
+    }
+  }
+  openModal("replaceSubmissionModal");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -818,10 +873,75 @@ document.addEventListener("DOMContentLoaded", () => {
         <input type="file" name="solution_zip" accept=".zip" class="form-control" required style="padding: 0.8rem; border: 2px dashed var(--border); background: #ffffff; cursor: pointer;">
       </div>
 
+      <div style="margin-bottom: 1.25rem; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 0.75rem 1rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 700; color: #92400e; cursor: pointer; margin: 0;">
+          <input type="checkbox" name="overwrite_existing" value="1" style="width: 16px; height: 16px; cursor: pointer;">
+          <span>Overwrite existing portal submissions</span>
+        </label>
+        <div style="font-size: 0.76rem; color: #b45309; margin-top: 0.25rem; margin-left: 1.5rem;">
+          Unchecked (default): Portal submissions are kept as final. Files are only uploaded for students with no existing portal submission.
+        </div>
+      </div>
+
       <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
         <button type="button" class="btn btn-secondary" onclick="closeModal('bulkSolutionModal')">Cancel</button>
         <button type="submit" class="btn btn-primary" style="font-weight: 700;">
           🚀 Extract &amp; Ingest Solutions →
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Teacher Replace / Upload Submission -->
+<div id="replaceSubmissionModal" class="modal-backdrop" style="display: none;">
+  <div class="modal-content" style="max-width: 540px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span style="font-size: 1.3rem;">🔄</span>
+        <h3 style="font-size: 1.18rem; font-weight: 800; margin: 0;">Replace Student Submission</h3>
+      </div>
+      <button type="button" class="modal-close" onclick="closeModal('replaceSubmissionModal')">&times;</button>
+    </div>
+    <form id="replaceSubmissionForm" method="POST" enctype="multipart/form-data">
+      <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1.25rem; font-size: 0.85rem;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.35rem;">
+          <span style="color: var(--text-muted);">Student:</span>
+          <strong id="replaceModalStudentName" style="color: var(--text-main);">-</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.35rem;">
+          <span style="color: var(--text-muted);">Roll Number:</span>
+          <span id="replaceModalRollNumber" style="font-family: monospace; font-weight: 700;">-</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">Current File:</span>
+          <span id="replaceModalCurrentFile" style="font-size: 0.82rem; color: #0369a1; font-weight: 600;">None</span>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700;">Select New Solution File (.zip, .c, .py, etc.)</label>
+        <input type="file" name="replacement_file" class="form-control" required style="padding: 0.6rem; border: 2px dashed var(--border); background: #ffffff; cursor: pointer;">
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700;">Venue / Lab Tag</label>
+        <select name="lab_name" id="replaceModalLabName" class="form-control">
+          <option value="Offline Exam / Pendrive">Offline Exam / Pendrive</option>
+          <option value="ED1">ED1</option>
+          <option value="ED2">ED2</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label class="form-label" style="font-weight: 700;">Teacher Override Reason (Optional)</label>
+        <input type="text" name="reason" class="form-control" placeholder="e.g. Pendrive sync fix, corrupt file submitted, re-upload">
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('replaceSubmissionModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" style="font-weight: 700;">
+          💾 Upload &amp; Replace
         </button>
       </div>
     </form>
