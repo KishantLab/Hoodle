@@ -469,6 +469,7 @@
 
 {% if is_teacher_or_admin and cw.is_exam_mode %}
 <script>
+const _p = "{{ url_for('dashboard') }}".replace(/\/dashboard\/?$/, '');
 let telemetryTimer = null;
 let telemetryPaused = false;
 let knownSubmissions = {};
@@ -495,7 +496,7 @@ function toggleTelemetryPolling() {
       btn.style.background = "rgba(255,255,255,0.12)";
     }
     fetchLiveTelemetry();
-    telemetryTimer = setInterval(fetchLiveTelemetry, 1000);
+    telemetryTimer = setInterval(fetchLiveTelemetry, 3000);
   }
 }
 
@@ -639,9 +640,9 @@ async function fetchLiveTelemetry() {
         let fileHtml = `<div style="display:flex; flex-direction:column; gap:0.25rem;">
           <div style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">`;
         if (sub.is_pdf) {
-          fileHtml += `<button type="button" class="btn btn-secondary btn-sm" onclick="openPdfViewer('/view/submission/${sub.submission_id}', '${escapeHtml(subFilename)}', '/download/submission/${sub.submission_id}')" style="font-size:0.75rem; padding:0.2rem 0.45rem; color:#b91c1c; font-weight:700;">👁 View PDF</button>`;
+          fileHtml += `<button type="button" class="btn btn-secondary btn-sm" onclick="openPdfViewer('${_p}/view/submission/${sub.submission_id}', '${escapeHtml(subFilename)}', '${_p}/download/submission/${sub.submission_id}')" style="font-size:0.75rem; padding:0.2rem 0.45rem; color:#b91c1c; font-weight:700;">👁 View PDF</button>`;
         }
-        fileHtml += `<a href="/download/submission/${sub.submission_id}" style="color:var(--primary); text-decoration:none; font-weight:600; font-size:0.85rem;" title="Download ${escapeHtml(subFilename)}">⬇️ ${escapeHtml(subFilename)}</a>
+        fileHtml += `<a href="${_p}/download/submission/${sub.submission_id}" style="color:var(--primary); text-decoration:none; font-weight:600; font-size:0.85rem;" title="Download ${escapeHtml(subFilename)}">⬇️ ${escapeHtml(subFilename)}</a>
           </div>
           <div style="font-size:0.72rem; color:var(--text-muted);">${sub.file_size || 0} bytes</div>
         </div>`;
@@ -653,7 +654,7 @@ async function fetchLiveTelemetry() {
       if (actionCell) {
         let actHtml = '<div style="display: flex; align-items: center; gap: 0.35rem;">';
         if (sub.submission_id && sub.receipt_token) {
-          actHtml += `<a href="/receipt/${sub.receipt_token}" target="_blank" class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding: 2px 7px;" title="View Digital Receipt">Receipt</a>`;
+          actHtml += `<a href="${_p}/receipt/${sub.receipt_token}" target="_blank" class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding: 2px 7px;" title="View Digital Receipt">Receipt</a>`;
         }
         {% if is_teacher_or_admin %}
           actHtml += `<button type="button" class="btn btn-secondary btn-sm" onclick="openReplaceModal('${sub.student_id}', '${escapeHtml(sub.roll_number || '')}', '${escapeHtml(sub.display_name || '')}', '${escapeHtml(sub.original_filename || '')}', '${escapeHtml(sub.lab_name || '')}')" style="font-size:0.75rem; padding: 2px 7px; color: #0284c7; font-weight: 600;" title="Teacher Override: Replace or Upload solution for this student">🔄 Replace</button>`;
@@ -717,7 +718,7 @@ function escapeHtml(str) {
 function openReplaceModal(studentId, roll, name, currentFile, lab) {
   const form = document.getElementById("replaceSubmissionForm");
   if (form) {
-    form.action = `/courses/{{ course.id }}/coursework/{{ cw.id }}/submissions/${studentId}/teacher-replace`;
+    form.action = `${_p}/courses/{{ course.id }}/coursework/{{ cw.id }}/submissions/${studentId}/teacher-replace`;
   }
   const nameEl = document.getElementById("replaceModalStudentName");
   if (nameEl) nameEl.textContent = name || "Unknown";
@@ -738,7 +739,7 @@ function openReplaceModal(studentId, roll, name, currentFile, lab) {
 
 document.addEventListener("DOMContentLoaded", () => {
   fetchLiveTelemetry();
-  telemetryTimer = setInterval(fetchLiveTelemetry, 1000);
+  telemetryTimer = setInterval(fetchLiveTelemetry, 3000);
 });
 </script>
 {% endif %}

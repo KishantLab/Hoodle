@@ -4641,7 +4641,7 @@ def coursework_bulk_solution_upload(course_id, coursework_id):
     submitted_student_ids = {s["student_id"]: s for s in existing_subs}
     submitted_rolls = {s["roll_number"].strip().upper(): s for s in existing_subs}
 
-    roll_pattern = re.compile(r'([0-9]{8}|[a-zA-Z][0-9]{2}[a-zA-Z]{2}[0-9]{3})', re.IGNORECASE)
+    roll_pattern = re.compile(r'([a-zA-Z]\d{2}[a-zA-Z]{2}\d{3}|\d{4,8})', re.IGNORECASE)
 
     import tempfile
     matched_count = 0
