@@ -218,15 +218,21 @@ def filter_rich_text(s):
     if not s:
         return ""
     import html
+    import re
     from markupsafe import Markup
     try:
         import markdown
-        safe_escaped = html.escape(str(s))
+        raw_text = str(s)
+        # Normalize loose spaces inside bold/italic syntax e.g. **hello ** -> **hello**
+        raw_text = re.sub(r'\*\*(\s*)([^\*\n]+?)(\s*)\*\*', r'\1**\2**\3', raw_text)
+        raw_text = re.sub(r'(?<!\*)\*(\s*)([^\*\n]+?)(\s*)\*(?!\*)', r'\1*\2*\3', raw_text)
+        safe_escaped = html.escape(raw_text)
         rendered_html = markdown.markdown(safe_escaped, extensions=["extra", "nl2br"])
         return Markup(rendered_html)
     except Exception:
         from markupsafe import escape
         return Markup("<br>".join(escape(str(s)).splitlines()))
+
 
 
 # --- Database Connection & Schema Setup ---
@@ -8986,14 +8992,14 @@ def course_attendance(course_id):
             SELECT al.attendance_date, al.session_type, COUNT(al.id) as present_count,
                    SUM(CASE WHEN al.is_proxy_suspect = 1 THEN 1 ELSE 0 END) as proxy_suspect_count,
                    (SELECT 1 FROM attendance_excluded_sessions es 
-                    WHERE es.course_id = al.course_id 
+                    WHERE es.course_id = ? 
                       AND es.excluded_date = al.attendance_date 
-                      AND es.session_type = al.session_type) as is_excluded
+                      AND es.session_type = al.session_type LIMIT 1) as is_excluded
             FROM attendance_logs al
             WHERE al.course_id = ?
             GROUP BY al.attendance_date, al.session_type
             ORDER BY al.attendance_date DESC, al.session_type ASC
-        """, (course_id,)).fetchall()
+        """, (course_id, course_id)).fetchall()
 
         # Recent logs with proxy flags
         recent_logs = conn.execute("""

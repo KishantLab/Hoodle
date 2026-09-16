@@ -252,10 +252,22 @@ function applyFormat(textareaId, formatType) {
 
   switch (formatType) {
     case 'bold':
-      replacement = `**${selectedText || 'bold text'}**`;
+      if (selectedText.trim()) {
+        const leading = selectedText.match(/^\s*/)[0];
+        const trailing = selectedText.match(/\s*$/)[0];
+        replacement = `${leading}**${selectedText.trim()}**${trailing}`;
+      } else {
+        replacement = `**bold text**`;
+      }
       break;
     case 'italic':
-      replacement = `*${selectedText || 'italic text'}*`;
+      if (selectedText.trim()) {
+        const leading = selectedText.match(/^\s*/)[0];
+        const trailing = selectedText.match(/\s*$/)[0];
+        replacement = `${leading}*${selectedText.trim()}*${trailing}`;
+      } else {
+        replacement = `*italic text*`;
+      }
       break;
     case 'heading':
       replacement = `\n### ${selectedText || 'Heading'}\n`;
@@ -280,7 +292,7 @@ function applyFormat(textareaId, formatType) {
     case 'link':
       const url = prompt('Enter URL (e.g. https://example.com):', 'https://');
       if (!url) return;
-      replacement = `[${selectedText || 'Link Title'}](${url})`;
+      replacement = `[${selectedText || 'link'}](${url})`;
       break;
   }
 
