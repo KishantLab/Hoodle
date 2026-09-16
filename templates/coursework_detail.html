@@ -496,7 +496,7 @@ function toggleTelemetryPolling() {
       btn.style.background = "rgba(255,255,255,0.12)";
     }
     fetchLiveTelemetry();
-    telemetryTimer = setInterval(fetchLiveTelemetry, 3000);
+    telemetryTimer = setInterval(fetchLiveTelemetry, 1000);
   }
 }
 
@@ -739,7 +739,7 @@ function openReplaceModal(studentId, roll, name, currentFile, lab) {
 
 document.addEventListener("DOMContentLoaded", () => {
   fetchLiveTelemetry();
-  telemetryTimer = setInterval(fetchLiveTelemetry, 3000);
+  telemetryTimer = setInterval(fetchLiveTelemetry, 1000);
 });
 </script>
 {% endif %}
