@@ -226,6 +226,82 @@
       </div>
     </div>
 
+    <!-- Session-Wise Drilldown & Management Card -->
+    {% if distinct_sessions %}
+      <div class="card" style="padding: 1.5rem; margin-bottom: 2rem; border-left: 5px solid #2563eb;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem;">
+          <div>
+            <h3 style="font-size: 1.18rem; font-weight: 800; color: #1e3a8a; margin-bottom: 0.2rem;">
+              📅 Session-Wise Attendance Roster &amp; IP Inspector
+            </h3>
+            <p style="font-size: 0.84rem; color: var(--text-muted); margin: 0;">
+              Inspect individual class sessions to view who was present vs absent, detect duplicate IPs, or exclude/delete sessions.
+            </p>
+          </div>
+          <span class="badge" style="background: #eff6ff; color: #1e40af; font-weight: 700; border: 1px solid #bfdbfe; font-size: 0.8rem; padding: 4px 10px; border-radius: 9999px;">
+            {{ distinct_sessions|length }} Sessions Conducted
+          </span>
+        </div>
+
+        <div class="table-responsive" style="max-height: 280px; overflow-y: auto;">
+          <table class="table lms-table" style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--border); font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; position: sticky; top: 0; background: white; z-index: 2;">
+                <th style="padding: 0.6rem;">Date</th>
+                <th style="padding: 0.6rem;">Session Type</th>
+                <th style="padding: 0.6rem;">Present</th>
+                <th style="padding: 0.6rem;">Status / Excluded</th>
+                <th style="padding: 0.6rem;">Proxy Suspects</th>
+                <th style="padding: 0.6rem; text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for ds in distinct_sessions %}
+                <tr style="border-bottom: 1px solid var(--border); {% if ds.is_excluded %}background: #fefce8;{% endif %}">
+                  <td style="padding: 0.6rem; font-weight: 700; font-family: monospace;">
+                    {{ ds.attendance_date }}
+                  </td>
+                  <td style="padding: 0.6rem;">
+                    <span class="badge" style="background: var(--primary-light); color: var(--primary); font-size: 0.75rem;">
+                      {{ ds.session_type }}
+                    </span>
+                  </td>
+                  <td style="padding: 0.6rem; font-weight: 700; color: #16a34a;">
+                    {{ ds.present_count }} / {{ students|length }}
+                  </td>
+                  <td style="padding: 0.6rem;">
+                    {% if ds.is_excluded %}
+                      <span class="badge" style="background: #fef08a; color: #854d0e; font-size: 0.72rem; font-weight: 800;">
+                        🚫 Excluded from Totals
+                      </span>
+                    {% else %}
+                      <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 0.72rem; font-weight: 700;">
+                        ✓ Counted
+                      </span>
+                    {% endif %}
+                  </td>
+                  <td style="padding: 0.6rem;">
+                    {% if ds.proxy_suspect_count and ds.proxy_suspect_count > 0 %}
+                      <span class="badge" style="background: #fee2e2; color: #991b1b; font-size: 0.72rem; font-weight: 800;">
+                        ⚠️ {{ ds.proxy_suspect_count }} Suspect IP(s)
+                      </span>
+                    {% else %}
+                      <span style="color: var(--text-muted); font-size: 0.78rem;">None</span>
+                    {% endif %}
+                  </td>
+                  <td style="padding: 0.6rem; text-align: right;">
+                    <a href="{{ url_for('attendance_session_detail', course_id=course.id) }}?date={{ ds.attendance_date }}&type={{ ds.session_type }}" class="btn btn-primary btn-sm" style="font-size: 0.78rem; font-weight: 700; padding: 0.25rem 0.65rem; text-decoration: none;">
+                      🔍 Inspect Session Roster →
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+
     <!-- Student Attendance Roster Matrix with Interactive Filters -->
     <div class="card" style="padding: 1.5rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">

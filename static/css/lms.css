@@ -1143,6 +1143,55 @@ body.is-android-app .lms-footer {
   justify-content: center;
 }
 
+.zoom-preset-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.zoom-preset-btn:hover, .zoom-preset-btn.active {
+  background: #2563eb;
+  border-color: #60a5fa;
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.6);
+}
+
+.rich-format-toolbar {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 5px 8px;
+  flex-wrap: wrap;
+}
+
+.format-btn {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.35;
+}
+
+.format-btn:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
 .scanner-laser-line {
   position: absolute;
   top: 0;

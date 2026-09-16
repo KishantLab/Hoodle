@@ -133,7 +133,17 @@
 
       <form action="{{ url_for('post_announcement', course_id=course.id) }}" method="POST" enctype="multipart/form-data">
         <div class="form-group" style="margin-bottom: 0.85rem;">
-          <textarea name="content" rows="3" class="form-control stream-textarea" placeholder="Announce something to your class (type message, instructions, or exam reminders)..." required style="min-height: 90px; font-size: 0.92rem; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); line-height: 1.5;"></textarea>
+          <div class="rich-format-toolbar">
+            <button type="button" class="format-btn" onclick="applyFormat('announcementContent', 'bold')" title="Bold"><strong>B</strong></button>
+            <button type="button" class="format-btn" onclick="applyFormat('announcementContent', 'italic')" title="Italic"><em>I</em></button>
+            <button type="button" class="format-btn" onclick="applyFormat('announcementContent', 'heading')" title="Heading"><strong>H</strong></button>
+            <div style="width: 1px; height: 16px; background: var(--border); margin: 0 2px;"></div>
+            <button type="button" class="format-btn" onclick="applyFormat('announcementContent', 'ul')" title="Bullet List">• List</button>
+            <button type="button" class="format-btn" onclick="applyFormat('announcementContent', 'ol')" title="Numbered List">1. List</button>
+            <button type="button" class="format-btn" onclick="applyFormat('announcementContent', 'link')" title="Insert Link">🔗 Link</button>
+            <button type="button" class="format-btn" onclick="applyFormat('announcementContent', 'code')" title="Code">&lt;/&gt;</button>
+          </div>
+          <textarea id="announcementContent" name="content" rows="3" class="form-control stream-textarea" placeholder="Announce something to your class (supports **bold**, *italic*, headers, lists, links)..." required style="min-height: 90px; font-size: 0.92rem; padding: 0.75rem 1rem; border-radius: 0 0 8px 8px; border: 1px solid var(--border); border-top: none; line-height: 1.5;"></textarea>
         </div>
         <div class="composer-actions-row" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; border-top: 1px solid #f1f5f9; padding-top: 0.85rem;">
           <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
@@ -213,7 +223,7 @@
 
             <!-- Content -->
             <div class="announcement-body">
-              {{ ann.content | nl2br }}
+              {{ ann.content | rich_text }}
             </div>
 
             <!-- Attachment File Tile -->

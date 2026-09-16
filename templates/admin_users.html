@@ -20,18 +20,25 @@
     </div>
   </div>
 
-  <!-- Role Filter Tabs & Bulk Action Toolbar -->
+  <!-- Search & Role Filter Toolbar -->
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-      <button type="button" class="btn btn-sm user-filter-btn active-filter" onclick="filterUsers('all', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem;">
+    <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center;">
+      <!-- Instant Search Bar -->
+      <div style="position: relative; width: 260px;">
+        <span style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); font-size: 0.88rem; color: var(--text-muted); pointer-events: none;">🔍</span>
+        <input type="text" id="userDirectorySearch" placeholder="Search name, roll, email, @user..." onkeyup="filterUsersCombined()" style="padding: 0.45rem 0.75rem 0.45rem 2.1rem; border: 1px solid var(--border); border-radius: 9999px; font-size: 0.85rem; width: 100%; outline: none; background: white;">
+      </div>
+
+      <button type="button" class="btn btn-sm user-filter-btn active-filter" onclick="setRoleFilter('all', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem;">
         All Accounts ({{ users|length }})
       </button>
-      <button type="button" class="btn btn-sm user-filter-btn" onclick="filterUsers('teacher', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem; background: white; border: 1px solid var(--border);">
+      <button type="button" class="btn btn-sm user-filter-btn" onclick="setRoleFilter('teacher', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem; background: white; border: 1px solid var(--border);">
         Teachers &amp; Admins
       </button>
-      <button type="button" class="btn btn-sm user-filter-btn" onclick="filterUsers('student', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem; background: white; border: 1px solid var(--border);">
+      <button type="button" class="btn btn-sm user-filter-btn" onclick="setRoleFilter('student', this)" style="border-radius: 999px; font-weight: 600; padding: 0.35rem 0.85rem; background: white; border: 1px solid var(--border);">
         Students
       </button>
+      <span id="searchMatchBadge" style="display: none; font-size: 0.78rem; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 3px 8px; border-radius: 9999px;"></span>
     </div>
 
     <!-- Bulk Action Controls -->
@@ -66,7 +73,7 @@
           </thead>
           <tbody>
             {% for u in users %}
-              <tr class="user-row" data-role="{{ u.role }}">
+              <tr class="user-row" data-role="{{ u.role }}" data-search="{{ (u.display_name or '')|lower }} {{ (u.username or '')|lower }} {{ (u.roll_number or '')|lower }} {{ (u.email or '')|lower }}">
                 <td style="text-align: center;">
                   {% if u.id != current_user.id %}
                     <input type="checkbox" name="user_ids" value="{{ u.id }}" class="user-select-cb" onchange="updateBulkToolbar()">
@@ -251,7 +258,10 @@ function openEditUserModal(btn) {
   openModal('editUserModal');
 }
 
-function filterUsers(role, btn) {
+let currentRoleFilter = 'all';
+
+function setRoleFilter(role, btn) {
+  currentRoleFilter = role;
   document.querySelectorAll('.user-filter-btn').forEach(b => {
     b.style.background = 'white';
     b.style.border = '1px solid var(--border)';
@@ -260,18 +270,47 @@ function filterUsers(role, btn) {
   btn.style.background = 'var(--primary)';
   btn.style.borderColor = 'var(--primary)';
   btn.style.color = 'white';
+  filterUsersCombined();
+}
 
+function filterUsersCombined() {
+  const query = (document.getElementById('userDirectorySearch').value || '').toLowerCase().trim();
   const rows = document.querySelectorAll('.user-row');
+  let matchCount = 0;
+
   rows.forEach(r => {
     const rowRole = r.getAttribute('data-role');
-    if (role === 'all') {
-      r.style.display = '';
-    } else if (role === 'teacher') {
-      r.style.display = (rowRole === 'teacher' || rowRole === 'admin') ? '' : 'none';
+    const searchData = (r.getAttribute('data-search') || '').toLowerCase();
+
+    let roleMatch = false;
+    if (currentRoleFilter === 'all') {
+      roleMatch = true;
+    } else if (currentRoleFilter === 'teacher') {
+      roleMatch = (rowRole === 'teacher' || rowRole === 'admin');
     } else {
-      r.style.display = (rowRole === role) ? '' : 'none';
+      roleMatch = (rowRole === currentRoleFilter);
+    }
+
+    const queryMatch = !query || searchData.includes(query);
+
+    if (roleMatch && queryMatch) {
+      r.style.display = '';
+      matchCount++;
+    } else {
+      r.style.display = 'none';
     }
   });
+
+  const countBadge = document.getElementById('searchMatchBadge');
+  if (countBadge) {
+    if (query) {
+      countBadge.style.display = 'inline-block';
+      countBadge.textContent = `Showing ${matchCount} match${matchCount === 1 ? '' : 'es'}`;
+    } else {
+      countBadge.style.display = 'none';
+    }
+  }
+
   updateBulkToolbar();
 }
 

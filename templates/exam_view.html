@@ -37,6 +37,19 @@
     </div>
   </div>
 
+  {% if allocated_room %}
+    <div style="background: #eff6ff; border: 1.5px solid #3b82f6; border-radius: var(--radius-md); padding: 0.85rem 1.15rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+      <div style="display: flex; align-items: center; gap: 0.65rem;">
+        <span style="font-size: 1.5rem;">📍</span>
+        <div>
+          <div style="font-size: 0.72rem; font-weight: 800; text-transform: uppercase; color: #1e40af; letter-spacing: 0.04em;">Your Allocated Exam Venue / Lab</div>
+          <div style="font-size: 1.25rem; font-weight: 800; color: #1e3a8a;">{{ allocated_room }}</div>
+        </div>
+      </div>
+      <span class="badge" style="background: #2563eb; color: white; font-weight: 700; padding: 4px 10px; border-radius: 9999px;">Roll: {{ current_user.roll_number or current_user.username }}</span>
+    </div>
+  {% endif %}
+
   {% if current_user.role in ('teacher', 'admin') %}
     <div style="background: #eff6ff; border: 1.5px solid #3b82f6; border-radius: var(--radius-md); padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
       <div style="display: flex; align-items: center; gap: 0.6rem; color: #1e40af; font-weight: 600; font-size: 0.92rem;">
@@ -48,6 +61,26 @@
       </a>
     </div>
   {% endif %}
+
+  {% if not is_started and current_user.role not in ('teacher', 'admin') %}
+    <!-- Scheduled Exam Countdown & Lockout Card -->
+    <div class="card" style="text-align: center; padding: 2.75rem 1.5rem; margin-bottom: 2rem; background: #fefce8; border: 2px dashed #facc15;">
+      <div style="font-size: 2.75rem; margin-bottom: 0.5rem;">⏳</div>
+      <h2 style="font-size: 1.4rem; font-weight: 800; color: #854d0e; margin-bottom: 0.35rem;">
+        Examination Questions &amp; Submissions Locked
+      </h2>
+      <p style="font-size: 0.92rem; color: #a16207; max-width: 540px; margin: 0 auto 1.5rem auto; line-height: 1.5;">
+        This examination is scheduled to commence at <strong>{{ exam.start_time | format_dt }}</strong>.
+        Exam questions, guidelines, and submission portals will automatically unlock when the countdown reaches zero.
+      </p>
+      <div id="startCountdownBox" data-start="{{ start_iso }}" style="display: inline-flex; align-items: center; gap: 0.75rem; background: #ffffff; border: 2px solid #eab308; padding: 0.85rem 2rem; border-radius: 14px; font-family: monospace; font-size: 1.65rem; font-weight: 900; color: #854d0e; box-shadow: 0 4px 15px rgba(234, 179, 8, 0.2);">
+        ⏱ Calculating start time...
+      </div>
+      <div style="margin-top: 1.25rem; font-size: 0.8rem; color: #a16207;">
+        Please stay on this page. The portal will automatically open when exam begins.
+      </div>
+    </div>
+  {% else %}
 
   <!-- Exam Instructions -->
   <div class="card" style="margin-bottom: 2rem;">
@@ -169,8 +202,11 @@
             <label class="form-label" for="lab_name">Select Your Current Lab Venue</label>
             <select id="lab_name" name="lab_name" class="form-control" style="font-size: 0.95rem; font-weight: 600;" required>
               {% for lab in labs %}
-                <option value="{{ lab }}">{{ lab }}</option>
+                <option value="{{ lab }}" {% if allocated_room == lab %}selected{% endif %}>{{ lab }}</option>
               {% endfor %}
+              {% if allocated_room and allocated_room not in labs %}
+                <option value="{{ allocated_room }}" selected>{{ allocated_room }} (Allocated)</option>
+              {% endif %}
             </select>
           </div>
 
@@ -190,5 +226,6 @@
       </div>
     {% endif %}
   </div>
+  {% endif %}
 </div>
 {% endblock %}

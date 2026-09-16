@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course.code }} - {{ target_date }} ({{ session_type }}) Attendance - Hoodle{% endblock %}
+
+{% block content %}
+<div class="container-responsive" style="max-width: 1100px; margin: 0 auto; padding-bottom: 3rem;">
+
+  <!-- Back to Attendance Overview -->
+  <div style="margin-bottom: 1.25rem;">
+    <a href="{{ url_for('course_attendance', course_id=course.id) }}" style="text-decoration: none; color: var(--primary); font-weight: 600; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.35rem;">
+      <span>←</span>
+      <span>Back to Course Attendance Roster</span>
+    </a>
+  </div>
+
+  <!-- Session Header Card -->
+  <div class="card" style="padding: 1.75rem; margin-bottom: 1.5rem; background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: white; border: none;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;">
+          <span class="badge" style="background: rgba(255,255,255,0.25); color: white; font-weight: 800; font-size: 0.8rem; border-radius: 9999px; padding: 2px 10px;">
+            {{ session_type | upper }}
+          </span>
+          {% if is_excluded %}
+            <span class="badge" style="background: #fef08a; color: #854d0e; font-weight: 800; font-size: 0.78rem; border-radius: 9999px; padding: 2px 10px;">
+              🚫 EXCLUDED FROM TOTALS
+            </span>
+          {% endif %}
+        </div>
+        <h1 style="font-size: 1.85rem; font-weight: 800; margin: 0; color: white;">
+          Session Attendance: {{ target_date }}
+        </h1>
+        <div style="font-size: 0.95rem; opacity: 0.92; margin-top: 0.3rem;">
+          {{ course.code }}: {{ course.title }} • {{ course.section or 'Section A' }}
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+        {% if is_excluded %}
+          <form action="{{ url_for('attendance_unskip_day', course_id=course.id) }}" method="POST" style="margin:0;" onsubmit="return confirm('Re-include this session in attendance counting?');">
+            <input type="hidden" name="custom_date" value="{{ target_date }}">
+            <input type="hidden" name="session_type" value="{{ session_type }}">
+            <button type="submit" class="btn btn-sm" style="background: white; color: #15803d; font-weight: 700; border: none; cursor: pointer;">
+              ↩️ Re-include in Totals
+            </button>
+          </form>
+        {% else %}
+          <form action="{{ url_for('attendance_skip_day', course_id=course.id) }}" method="POST" style="margin:0;" onsubmit="return confirm('Exclude this session from all attendance calculations?');">
+            <input type="hidden" name="custom_date" value="{{ target_date }}">
+            <input type="hidden" name="session_type" value="{{ session_type }}">
+            <input type="hidden" name="reason" value="Manual session exclusion">
+            <button type="submit" class="btn btn-sm" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); font-weight: 700; cursor: pointer;">
+              🚫 Exclude from Totals
+            </button>
+          </form>
+        {% endif %}
+
+        <form action="{{ url_for('attendance_delete_session', course_id=course.id) }}" method="POST" style="margin:0;" onsubmit="return confirm('⚠️ DANGER: This will permanently wipe all attendance records for {{ target_date }} ({{ session_type }}). This cannot be undone! Are you sure?');">
+          <input type="hidden" name="custom_date" value="{{ target_date }}">
+          <input type="hidden" name="session_type" value="{{ session_type }}">
+          <button type="submit" class="btn btn-sm" style="background: #ef4444; color: white; border: none; font-weight: 700; cursor: pointer;">
+            🗑️ Delete Session Records
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Quick Stats Bar -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.85rem; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid rgba(255,255,255,0.2);">
+      <div>
+        <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; opacity: 0.85;">Total Enrolled</div>
+        <div style="font-size: 1.6rem; font-weight: 900; font-family: monospace;">{{ total_enrolled }}</div>
+      </div>
+      <div>
+        <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; opacity: 0.85;">Present</div>
+        <div style="font-size: 1.6rem; font-weight: 900; font-family: monospace; color: #86efac;">{{ present_count }}</div>
+      </div>
+      <div>
+        <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; opacity: 0.85;">Absent</div>
+        <div style="font-size: 1.6rem; font-weight: 900; font-family: monospace; color: #fca5a5;">{{ absent_count }}</div>
+      </div>
+      <div>
+        <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; opacity: 0.85;">Attendance %</div>
+        <div style="font-size: 1.6rem; font-weight: 900; font-family: monospace;">{{ attendance_pct }}%</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search & View Tabs Filter -->
+  <div class="card" style="padding: 1rem 1.25rem; margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+      <div style="display: flex; gap: 0.5rem;">
+        <button type="button" class="btn btn-sm view-filter-btn" onclick="switchRosterTab('all', this)" style="border-radius: 9999px; padding: 0.35rem 0.85rem; font-weight: 700; background: var(--primary); color: white;">
+          All Students ({{ total_enrolled }})
+        </button>
+        <button type="button" class="btn btn-sm view-filter-btn" onclick="switchRosterTab('present', this)" style="border-radius: 9999px; padding: 0.35rem 0.85rem; font-weight: 600; background: #ecfdf5; color: #166534; border: 1px solid #bbf7d0;">
+          Present ({{ present_count }})
+        </button>
+        <button type="button" class="btn btn-sm view-filter-btn" onclick="switchRosterTab('absent', this)" style="border-radius: 9999px; padding: 0.35rem 0.85rem; font-weight: 600; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca;">
+          Absent ({{ absent_count }})
+        </button>
+      </div>
+
+      <input type="text" id="sessionRosterSearch" placeholder="🔍 Search roll or name..." onkeyup="filterSessionRoster()" style="padding: 0.45rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; width: 220px;">
+    </div>
+  </div>
+
+  <!-- Present Students Section -->
+  <div class="card roster-section" id="presentSection" style="padding: 1.5rem; margin-bottom: 1.75rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h3 style="font-size: 1.15rem; font-weight: 800; color: #166534; margin: 0; display: flex; align-items: center; gap: 0.4rem;">
+        <span>✅</span>
+        <span>Present Students ({{ present_count }})</span>
+      </h3>
+    </div>
+
+    {% if present_list %}
+      <div class="table-responsive">
+        <table class="table lms-table" style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border); font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">
+              <th style="padding: 0.65rem;">Roll Number</th>
+              <th style="padding: 0.65rem;">Student Name</th>
+              <th style="padding: 0.65rem;">Marked Time</th>
+              <th style="padding: 0.65rem;">Method</th>
+              <th style="padding: 0.65rem;">IP Address</th>
+              <th style="padding: 0.65rem;">Anti-Proxy Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in present_list %}
+              <tr class="student-session-row" data-status="present" data-name="{{ p.student_name | lower }}" data-roll="{{ p.roll_number | lower }}" style="border-bottom: 1px solid var(--border); font-size: 0.88rem; {% if p.is_proxy_suspect %}background: #fff1f2;{% endif %}">
+                <td style="padding: 0.65rem; font-family: monospace; font-weight: 700; color: var(--primary);">
+                  {{ p.roll_number }}
+                </td>
+                <td style="padding: 0.65rem; font-weight: 600;">
+                  {{ p.student_name }}
+                </td>
+                <td style="padding: 0.65rem; font-family: monospace; font-size: 0.82rem; color: var(--text-muted);">
+                  {{ p.marked_at }}
+                </td>
+                <td style="padding: 0.65rem;">
+                  <span class="badge" style="background: #f1f5f9; color: #1e293b; font-size: 0.75rem;">
+                    {{ p.method }}
+                  </span>
+                </td>
+                <td style="padding: 0.65rem; font-family: monospace; font-size: 0.82rem; color: #475569;">
+                  {{ p.ip_address or '—' }}
+                </td>
+                <td style="padding: 0.65rem;">
+                  {% if p.is_proxy_suspect %}
+                    <span class="badge" style="background: #fee2e2; color: #991b1b; font-weight: 800; font-size: 0.72rem; border: 1px solid #f87171;" title="{{ p.proxy_remark }}">
+                      ⚠️ Proxy Suspect
+                    </span>
+                    <div style="font-size: 0.72rem; color: #b91c1c; margin-top: 2px; max-width: 250px; line-height: 1.3;">
+                      {{ p.proxy_remark }}
+                    </div>
+                  {% else %}
+                    <span class="badge" style="background: #ecfdf5; color: #065f46; font-size: 0.72rem; font-weight: 700;">
+                      ✓ Verified
+                    </span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
+        No students recorded as present for this session.
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Absent Students Section -->
+  <div class="card roster-section" id="absentSection" style="padding: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+      <h3 style="font-size: 1.15rem; font-weight: 800; color: #991b1b; margin: 0; display: flex; align-items: center; gap: 0.4rem;">
+        <span>❌</span>
+        <span>Absent Students ({{ absent_count }})</span>
+      </h3>
+
+      {% if absent_list %}
+        <form action="{{ url_for('attendance_manual_bulk', course_id=course.id) }}" method="POST" style="margin:0;" onsubmit="return confirm('Mark ALL {{ absent_count }} absent students as PRESENT for this session?');">
+          <input type="hidden" name="custom_date" value="{{ target_date }}">
+          <input type="hidden" name="session_type" value="{{ session_type }}">
+          <input type="hidden" name="manual_identifiers" value="{% for a in absent_list %}{{ a.roll_number or a.username }}{% if not loop.last %}, {% endif %}{% endfor %}">
+          <button type="submit" class="btn btn-secondary btn-sm" style="color: #15803d; border-color: #86efac; font-weight: 700; cursor: pointer;">
+            ✅ Mark All Absent as Present
+          </button>
+        </form>
+      {% endif %}
+    </div>
+
+    {% if absent_list %}
+      <div class="table-responsive">
+        <table class="table lms-table" style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border); font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">
+              <th style="padding: 0.65rem;">Roll Number</th>
+              <th style="padding: 0.65rem;">Student Name</th>
+              <th style="padding: 0.65rem;">Email</th>
+              <th style="padding: 0.65rem; text-align: right;">Quick Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in absent_list %}
+              <tr class="student-session-row" data-status="absent" data-name="{{ a.display_name | lower }}" data-roll="{{ (a.roll_number or a.username) | lower }}" style="border-bottom: 1px solid var(--border); font-size: 0.88rem;">
+                <td style="padding: 0.65rem; font-family: monospace; font-weight: 700; color: var(--text-muted);">
+                  {{ a.roll_number or a.username }}
+                </td>
+                <td style="padding: 0.65rem; font-weight: 600;">
+                  {{ a.display_name }}
+                </td>
+                <td style="padding: 0.65rem; color: var(--text-muted); font-size: 0.82rem;">
+                  {{ a.email or '—' }}
+                </td>
+                <td style="padding: 0.65rem; text-align: right;">
+                  <form action="{{ url_for('attendance_manual_bulk', course_id=course.id) }}" method="POST" style="display:inline;" onsubmit="return confirm('Mark {{ a.display_name }} as PRESENT for this session?');">
+                    <input type="hidden" name="custom_date" value="{{ target_date }}">
+                    <input type="hidden" name="session_type" value="{{ session_type }}">
+                    <input type="hidden" name="manual_identifiers" value="{{ a.roll_number or a.username }}">
+                    <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 0.75rem; color: #16a34a; font-weight: 700; cursor: pointer;">
+                      + Mark Present
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div style="text-align: center; padding: 2rem; color: #15803d; font-weight: 700;">
+        🎉 100% Full Attendance! No absent students for this session.
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<script>
+  let currentTab = 'all';
+
+  function switchRosterTab(tab, btn) {
+    currentTab = tab;
+    document.querySelectorAll('.view-filter-btn').forEach(b => {
+      b.style.background = 'white';
+      b.style.color = 'var(--text-main)';
+      b.style.borderColor = 'var(--border)';
+    });
+
+    if (btn) {
+      btn.style.background = 'var(--primary)';
+      btn.style.color = 'white';
+    }
+
+    const presentSec = document.getElementById('presentSection');
+    const absentSec = document.getElementById('absentSection');
+
+    if (tab === 'present') {
+      presentSec.style.display = 'block';
+      absentSec.style.display = 'none';
+    } else if (tab === 'absent') {
+      presentSec.style.display = 'none';
+      absentSec.style.display = 'block';
+    } else {
+      presentSec.style.display = 'block';
+      absentSec.style.display = 'block';
+    }
+  }
+
+  function filterSessionRoster() {
+    const q = (document.getElementById('sessionRosterSearch').value || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('.student-session-row');
+
+    rows.forEach(r => {
+      const name = r.getAttribute('data-name') || '';
+      const roll = r.getAttribute('data-roll') || '';
+      const match = !q || name.includes(q) || roll.includes(q);
+      r.style.display = match ? '' : 'none';
+    });
+  }
+</script>
+{% endblock %}

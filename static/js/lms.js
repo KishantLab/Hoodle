@@ -169,6 +169,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (distance < 0) {
           timerContainer.innerHTML = "<span style='color:#dc2626; font-weight:700;'>EXAM TIME EXPIRED</span>";
+          const submitBtn = document.querySelector("#examSubmitForm button[type='submit']");
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = "🔒 Exam Concluded - Submissions Closed";
+            submitBtn.style.background = "#64748b";
+            submitBtn.style.cursor = "not-allowed";
+          }
           return;
         }
 
@@ -181,6 +188,38 @@ document.addEventListener("DOMContentLoaded", () => {
 
       updateTimer();
       setInterval(updateTimer, 1000);
+    }
+  }
+
+  // Scheduled Exam Countdown & Auto-Unlock
+  const startBox = document.getElementById("startCountdownBox");
+  if (startBox) {
+    const startIso = startBox.getAttribute("data-start");
+    if (startIso) {
+      const startTime = new Date(startIso.replace(" ", "T")).getTime();
+      let hasReloaded = false;
+      const updateStartTimer = () => {
+        const now = new Date().getTime();
+        const distance = startTime - now;
+
+        if (distance <= 0) {
+          startBox.innerHTML = "🔓 <strong style='color:#16a34a;'>EXAM IS LIVE! Unlocking...</strong>";
+          if (!hasReloaded) {
+            hasReloaded = true;
+            setTimeout(() => { window.location.reload(); }, 800);
+          }
+          return;
+        }
+
+        const hours = Math.floor(distance / (1000 * 60 * 60));
+        const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+        startBox.innerHTML = `⏳ Unlocks in: <strong>${hours}h ${minutes}m ${seconds}s</strong>`;
+      };
+
+      updateStartTimer();
+      setInterval(updateStartTimer, 1000);
     }
   }
 
@@ -200,3 +239,51 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 });
+
+// Reusable Markdown & Rich Text Formatting Toolbar Helper
+function applyFormat(textareaId, formatType) {
+  const textarea = document.getElementById(textareaId);
+  if (!textarea) return;
+
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selectedText = textarea.value.substring(start, end);
+  let replacement = "";
+
+  switch (formatType) {
+    case 'bold':
+      replacement = `**${selectedText || 'bold text'}**`;
+      break;
+    case 'italic':
+      replacement = `*${selectedText || 'italic text'}*`;
+      break;
+    case 'heading':
+      replacement = `\n### ${selectedText || 'Heading'}\n`;
+      break;
+    case 'ul':
+      replacement = selectedText
+        ? selectedText.split('\n').map(l => `- ${l}`).join('\n')
+        : `\n- Item 1\n- Item 2\n`;
+      break;
+    case 'ol':
+      replacement = selectedText
+        ? selectedText.split('\n').map((l, i) => `${i + 1}. ${l}`).join('\n')
+        : `\n1. First item\n2. Second item\n`;
+      break;
+    case 'code':
+      if (selectedText.includes('\n')) {
+        replacement = `\n\`\`\`\n${selectedText || '// code here'}\n\`\`\`\n`;
+      } else {
+        replacement = `\`${selectedText || 'code'}\``;
+      }
+      break;
+    case 'link':
+      const url = prompt('Enter URL (e.g. https://example.com):', 'https://');
+      if (!url) return;
+      replacement = `[${selectedText || 'Link Title'}](${url})`;
+      break;
+  }
+
+  textarea.setRangeText(replacement, start, end, 'end');
+  textarea.focus();
+}

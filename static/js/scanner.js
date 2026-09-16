@@ -69,7 +69,118 @@ function closeAttendanceScanner() {
   if (httpNotice) httpNotice.style.display = "none";
 }
 
+let currentZoom = 1.0;
+let activeVideoTrack = null;
+let touchStartDistance = 0;
+let touchStartZoom = 1.0;
+
+function setupCameraZoom() {
+  currentZoom = 1.0;
+  activeVideoTrack = null;
+  const videoEl = document.querySelector("#qrReader video");
+  if (videoEl && videoEl.srcObject) {
+    const tracks = videoEl.srcObject.getVideoTracks();
+    if (tracks && tracks.length > 0) {
+      activeVideoTrack = tracks[0];
+    }
+  }
+
+  const zoomBar = document.getElementById("scannerZoomBar");
+  if (zoomBar) zoomBar.style.display = "flex";
+  updateZoomUI(1.0);
+
+  // Setup pinch-to-zoom on the reader container
+  const readerDiv = document.getElementById("qrReader");
+  if (readerDiv && !readerDiv._pinchAttached) {
+    readerDiv._pinchAttached = true;
+    readerDiv.addEventListener("touchstart", (e) => {
+      if (e.touches.length === 2) {
+        touchStartDistance = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        touchStartZoom = currentZoom;
+      }
+    }, { passive: true });
+
+    readerDiv.addEventListener("touchmove", (e) => {
+      if (e.touches.length === 2 && touchStartDistance > 0) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const factor = dist / touchStartDistance;
+        const newZoom = Math.min(Math.max(touchStartZoom * factor, 1.0), 4.0);
+        setScannerZoom(newZoom);
+      }
+    }, { passive: true });
+
+    readerDiv.addEventListener("touchend", (e) => {
+      if (e.touches.length < 2) {
+        touchStartDistance = 0;
+      }
+    }, { passive: true });
+  }
+}
+
+function setScannerZoom(level) {
+  const zoom = Math.min(Math.max(parseFloat(level) || 1.0, 1.0), 4.0);
+  currentZoom = zoom;
+
+  // 1. Hardware Optical Zoom if supported by browser/camera track
+  if (activeVideoTrack && typeof activeVideoTrack.getCapabilities === "function") {
+    try {
+      const caps = activeVideoTrack.getCapabilities();
+      if (caps && caps.zoom) {
+        const minZ = caps.zoom.min || 1.0;
+        const maxZ = caps.zoom.max || 1.0;
+        const hwZoom = Math.min(Math.max(zoom, minZ), maxZ);
+        activeVideoTrack.applyConstraints({
+          advanced: [{ zoom: hwZoom }]
+        }).catch(() => {});
+      }
+    } catch (e) {}
+  }
+
+  // 2. Digital CSS Zoom on video preview element (works universally)
+  const videoEl = document.querySelector("#qrReader video");
+  if (videoEl) {
+    videoEl.style.transformOrigin = "center center";
+    videoEl.style.transform = `scale(${zoom})`;
+    videoEl.style.transition = "transform 0.15s ease";
+  }
+
+  updateZoomUI(zoom);
+}
+
+function adjustScannerZoom(delta) {
+  setScannerZoom(currentZoom + delta);
+}
+
+function updateZoomUI(zoom) {
+  const rounded = Math.round(zoom);
+  for (let i = 1; i <= 4; i++) {
+    const btn = document.getElementById("zoomBtn" + i);
+    if (btn) {
+      if (rounded === i) {
+        btn.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+      }
+    }
+  }
+}
+
 function stopCameraScanner() {
+  const zoomBar = document.getElementById("scannerZoomBar");
+  if (zoomBar) zoomBar.style.display = "none";
+  activeVideoTrack = null;
+  currentZoom = 1.0;
+  const videoEl = document.querySelector("#qrReader video");
+  if (videoEl) {
+    videoEl.style.transform = "none";
+  }
+
   if (html5QrCode && isScanning) {
     html5QrCode.stop().then(() => {
       isScanning = false;
@@ -131,6 +242,7 @@ function initCameraScanner() {
       onQrCodeProgress
     ).then(() => {
       isScanning = true;
+      setTimeout(setupCameraZoom, 400);
       const statusEl = document.getElementById("scannerStatus");
       if (statusEl) {
         statusEl.innerHTML = '🟢 <strong>Camera active:</strong> Point at the projector screen QR code';
@@ -144,6 +256,7 @@ function initCameraScanner() {
         onQrCodeProgress
       ).then(() => {
         isScanning = true;
+        setTimeout(setupCameraZoom, 400);
       }).catch(fallbackErr => {
         console.error("Camera permission denied or unavailable:", fallbackErr);
         showCameraPermissionGuide("Camera permission was not granted by your mobile browser.");
@@ -158,6 +271,7 @@ function initCameraScanner() {
       onQrCodeProgress
     ).then(() => {
       isScanning = true;
+      setTimeout(setupCameraZoom, 400);
     }).catch(permErr => {
       console.error("Camera permission blocked:", permErr);
       showCameraPermissionGuide("Camera permission was blocked or is not supported over HTTP.");

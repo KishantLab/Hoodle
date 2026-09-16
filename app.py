@@ -213,6 +213,22 @@ def filter_nl2br(s):
     return Markup("<br>".join(escape(s).splitlines()))
 
 
+@app.template_filter("rich_text")
+def filter_rich_text(s):
+    if not s:
+        return ""
+    import html
+    from markupsafe import Markup
+    try:
+        import markdown
+        safe_escaped = html.escape(str(s))
+        rendered_html = markdown.markdown(safe_escaped, extensions=["extra", "nl2br"])
+        return Markup(rendered_html)
+    except Exception:
+        from markupsafe import escape
+        return Markup("<br>".join(escape(str(s)).splitlines()))
+
+
 # --- Database Connection & Schema Setup ---
 try:
     import db_adapter
@@ -625,6 +641,28 @@ def init_db():
                 "ALTER TABLE courses ADD CONSTRAINT courses_join_code_key UNIQUE (join_code)",
                 "ALTER TABLE submissions ADD CONSTRAINT submissions_receipt_token_key UNIQUE (receipt_token)",
                 "ALTER TABLE course_invitations ADD CONSTRAINT course_invitations_token_key UNIQUE (token)",
+                "ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS is_proxy_suspect INTEGER DEFAULT 0",
+                "ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS proxy_remark TEXT DEFAULT ''",
+                """CREATE TABLE IF NOT EXISTS password_reset_otps (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    otp_code VARCHAR(10) NOT NULL,
+                    expires_at TIMESTAMP NOT NULL,
+                    is_used INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_otp_user ON password_reset_otps (user_id, otp_code, is_used)",
+                """CREATE TABLE IF NOT EXISTS coursework_lab_allocations (
+                    id SERIAL PRIMARY KEY,
+                    coursework_id INTEGER NOT NULL,
+                    room_name VARCHAR(50) NOT NULL,
+                    student_roll VARCHAR(50) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(coursework_id, student_roll),
+                    FOREIGN KEY (coursework_id) REFERENCES coursework(id) ON DELETE CASCADE
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_lab_alloc_cw ON coursework_lab_allocations (coursework_id, student_roll)",
             ):
                 try:
                     c.execute(constr_sql)
@@ -632,6 +670,17 @@ def init_db():
                     pass
     except Exception as e:
         logger.warning(f"PostgreSQL courses column migration notice: {e}")
+
+    # SQLite migration for Version 2 columns
+    try:
+        c.execute("PRAGMA table_info(attendance_logs)")
+        att_cols = [row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in c.fetchall()]
+        if "is_proxy_suspect" not in att_cols:
+            c.execute("ALTER TABLE attendance_logs ADD COLUMN is_proxy_suspect INTEGER DEFAULT 0")
+        if "proxy_remark" not in att_cols:
+            c.execute("ALTER TABLE attendance_logs ADD COLUMN proxy_remark TEXT DEFAULT ''")
+    except Exception:
+        pass
 
     # Migration for coursework table
     try:
@@ -753,6 +802,34 @@ def init_db():
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications (user_id, is_read, created_at)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_pushed ON notifications (user_id, is_pushed, created_at)")
+
+    # 19. Password Reset OTPs Table
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS password_reset_otps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            otp_code TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            is_used INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_otp_user ON password_reset_otps (user_id, otp_code, is_used)")
+
+    # 20. Coursework Lab Allocations Table
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS coursework_lab_allocations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            coursework_id INTEGER NOT NULL,
+            room_name TEXT NOT NULL,
+            student_roll TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(coursework_id, student_roll),
+            FOREIGN KEY (coursework_id) REFERENCES coursework(id) ON DELETE CASCADE
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_lab_alloc_cw ON coursework_lab_allocations (coursework_id, student_roll)")
 
     # High-Performance Concurrency & Lookups Indices
     c.execute("CREATE INDEX IF NOT EXISTS idx_att_course_session_date ON attendance_logs (course_id, session_type, attendance_date)")
@@ -2187,6 +2264,9 @@ def login():
                 conn.close()
 
             flash(f"Welcome back, {user['display_name']}!", "success")
+            if user["must_change_password"]:
+                flash("Default or temporary password in use. Please set a new personal password.", "warning")
+                return redirect(url_for("set_password"))
             next_url = request.args.get("next")
             if next_url and next_url.startswith("/"):
                 return redirect(next_url)
@@ -2327,6 +2407,181 @@ def logout():
     session.clear()
     flash("You have been signed out.", "info")
     return redirect(url_for("login"))
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    """
+    OTP & Email-based password recovery.
+    Supports either sending a 6-digit verification OTP or a temporary auto-generated password.
+    """
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        identifier = request.form.get("identifier", "").strip()
+        send_temp_pwd = request.form.get("send_temp_password") == "1"
+
+        if not identifier:
+            flash("Please provide your roll number, username, or email address.", "warning")
+            return render_template("forgot_password.html")
+
+        conn = get_db()
+        user = conn.execute("""
+            SELECT * FROM users
+            WHERE LOWER(username) = LOWER(?)
+               OR LOWER(roll_number) = LOWER(?)
+               OR LOWER(email) = LOWER(?)
+        """, (identifier, identifier, identifier)).fetchone()
+
+        if not user:
+            conn.close()
+            flash("If an account matches that identifier with an email address, instructions have been dispatched.", "info")
+            return redirect(url_for("reset_password", identifier=identifier))
+
+        user_email = (user["email"] or "").strip().lower()
+        if not user_email or "@" not in user_email:
+            conn.close()
+            flash("No verified email address is linked to this account. Please contact your instructor or administrator to reset your credentials.", "danger")
+            return render_template("forgot_password.html", identifier=identifier)
+
+        now_dt = datetime.now()
+        now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        if send_temp_pwd:
+            temp_pwd = "Hdl-" + secrets.token_hex(4).upper()
+            temp_hash = hash_password(temp_pwd)
+            conn.execute("""
+                UPDATE users
+                SET password_hash = ?, must_change_password = 1
+                WHERE id = ?
+            """, (temp_hash, user["id"]))
+            conn.commit()
+            conn.close()
+
+            with _pwd_verify_lock:
+                _pwd_verify_cache.clear()
+
+            subj = f"Hoodle LMS Temporary Password for {user['display_name']}"
+            heading = "Temporary Password Issued"
+            body = f"A temporary password has been generated for your Hoodle LMS account: {temp_pwd}. Upon signing in, you will be required to choose a new personal password."
+            html = f"""
+            <div style="font-family: sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+                <h2 style="color: #1e3a8a; margin-top: 0;">🔑 Temporary Password Issued</h2>
+                <p style="color: #475569; font-size: 14px;">Hello <strong>{user['display_name']}</strong> ({user['roll_number'] or user['username']}),</p>
+                <p style="color: #475569; font-size: 14px;">A temporary password was requested for your Hoodle LMS account:</p>
+                <div style="background: #f8fafc; border: 2px dashed #3b82f6; border-radius: 8px; padding: 16px; text-align: center; margin: 20px 0;">
+                    <span style="font-family: monospace; font-size: 22px; font-weight: 800; color: #1e3a8a; letter-spacing: 0.1em;">{temp_pwd}</span>
+                </div>
+                <p style="color: #475569; font-size: 13px;">Please sign in with this temporary password. You will be prompted to set a new personal password immediately.</p>
+                <div style="text-align: center; margin-top: 24px;">
+                    <a href="{resolve_portal_url('/login')}" style="background: #2563eb; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 14px; display: inline-block;">Sign In to Hoodle &rarr;</a>
+                </div>
+            </div>
+            """
+            enqueue_email(user_email, subj, heading, body, html, body)
+            flash(f"A temporary password has been dispatched to {user_email}. Please check your inbox and sign in.", "success")
+            return redirect(url_for("login"))
+        else:
+            otp = f"{secrets.randbelow(900000) + 100000}"
+            expires_at = (now_dt + timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
+
+            conn.execute("UPDATE password_reset_otps SET is_used = 1 WHERE user_id = ?", (user["id"],))
+            conn.execute("""
+                INSERT INTO password_reset_otps (user_id, otp_code, expires_at, is_used, created_at)
+                VALUES (?, ?, ?, 0, ?)
+            """, (user["id"], otp, expires_at, now_str))
+            conn.commit()
+            conn.close()
+
+            user_ident = user["roll_number"] or user["username"]
+            reset_url = resolve_portal_url(f"/reset-password?identifier={user_ident}")
+            subj = f"Hoodle Password Reset Verification Code: {otp}"
+            heading = "Password Reset OTP"
+            body = f"Your Hoodle LMS 6-digit password reset verification code is: {otp}. It expires in 15 minutes."
+            html = f"""
+            <div style="font-family: sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+                <h2 style="color: #1e3a8a; margin-top: 0;">🛡️ Password Reset Verification</h2>
+                <p style="color: #475569; font-size: 14px;">Hello <strong>{user['display_name']}</strong> ({user_ident}),</p>
+                <p style="color: #475569; font-size: 14px;">Use the following 6-digit OTP code to verify your identity and set a new password for Hoodle LMS:</p>
+                <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 18px; text-align: center; margin: 20px 0;">
+                    <span style="font-family: monospace; font-size: 32px; font-weight: 900; color: #1e40af; letter-spacing: 0.25em;">{otp}</span>
+                </div>
+                <p style="color: #64748b; font-size: 13px;">This verification code will expire in <strong>15 minutes</strong>. If you did not request this, you can safely ignore this email.</p>
+                <div style="text-align: center; margin-top: 24px;">
+                    <a href="{reset_url}" style="background: #2563eb; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 14px; display: inline-block;">Enter OTP &amp; Reset Password &rarr;</a>
+                </div>
+            </div>
+            """
+            enqueue_email(user_email, subj, heading, body, html, body)
+            flash(f"A 6-digit verification code has been dispatched to {user_email}. Please enter it below.", "success")
+            return redirect(url_for("reset_password", identifier=user_ident))
+
+    return render_template("forgot_password.html")
+
+
+@app.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    """Validates submitted OTP code and securely updates user password."""
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        identifier = request.form.get("identifier", "").strip()
+        otp_code = request.form.get("otp_code", "").strip()
+        new_password = request.form.get("new_password", "").strip()
+        confirm_password = request.form.get("confirm_password", "").strip()
+
+        if not identifier or not otp_code or not new_password:
+            flash("All fields are required.", "danger")
+            return render_template("reset_password.html", identifier=identifier)
+
+        if len(new_password) < 6:
+            flash("Password must be at least 6 characters long.", "danger")
+            return render_template("reset_password.html", identifier=identifier)
+
+        if new_password != confirm_password:
+            flash("Passwords do not match.", "danger")
+            return render_template("reset_password.html", identifier=identifier)
+
+        conn = get_db()
+        user = conn.execute("""
+            SELECT * FROM users
+            WHERE LOWER(username) = LOWER(?)
+               OR LOWER(roll_number) = LOWER(?)
+               OR LOWER(email) = LOWER(?)
+        """, (identifier, identifier, identifier)).fetchone()
+
+        if not user:
+            conn.close()
+            flash("User account not found. Please check your roll number or username.", "danger")
+            return render_template("reset_password.html")
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        valid_otp = conn.execute("""
+            SELECT * FROM password_reset_otps
+            WHERE user_id = ? AND otp_code = ? AND is_used = 0 AND expires_at >= ?
+            ORDER BY id DESC LIMIT 1
+        """, (user["id"], otp_code, now_str)).fetchone()
+
+        if not valid_otp:
+            conn.close()
+            flash("Invalid or expired OTP verification code. Please request a fresh code.", "danger")
+            return render_template("reset_password.html", identifier=identifier)
+
+        new_hash = hash_password(new_password)
+        conn.execute("UPDATE password_reset_otps SET is_used = 1 WHERE id = ?", (valid_otp["id"],))
+        conn.execute("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", (new_hash, user["id"]))
+        conn.commit()
+        conn.close()
+
+        with _pwd_verify_lock:
+            _pwd_verify_cache.clear()
+
+        flash("✅ Password has been successfully updated! You can now sign in.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("reset_password.html")
 
 
 @app.route("/change-password", methods=["GET", "POST"])
@@ -3989,6 +4244,31 @@ def coursework_detail(course_id, coursework_id):
         if cutoff and now > cutoff:
             is_exam_ended = True
 
+    # Room / Venue allocations for this coursework
+    alloc_rows = conn.execute("""
+        SELECT room_name, student_roll FROM coursework_lab_allocations
+        WHERE coursework_id = ?
+        ORDER BY student_roll ASC
+    """, (coursework_id,)).fetchall()
+
+    room_alloc_map = {}
+    my_allocated_room = None
+    user_roll_upper = (curr_user["roll_number"] or curr_user["username"] or "").upper() if curr_user else ""
+
+    for ar in alloc_rows:
+        r_name = ar["room_name"]
+        s_roll = ar["student_roll"]
+        if r_name not in room_alloc_map:
+            room_alloc_map[r_name] = []
+        room_alloc_map[r_name].append(s_roll)
+        if s_roll.upper() == user_roll_upper:
+            my_allocated_room = r_name
+
+    room_allocations = [
+        {"room_name": k, "count": len(v), "rolls": ", ".join(v)}
+        for k, v in sorted(room_alloc_map.items())
+    ]
+
     conn.close()
     return render_template(
         "coursework_detail.html",
@@ -4006,6 +4286,8 @@ def coursework_detail(course_id, coursework_id):
         stats=stats,
         lab_counts=lab_counts,
         is_teacher_or_admin=is_teacher_or_admin,
+        room_allocations=room_allocations,
+        my_allocated_room=my_allocated_room,
         active_tab="classwork"
     )
 
@@ -4299,6 +4581,218 @@ def unsubmit_coursework(course_id, coursework_id):
     return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
 
 
+@app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/bulk-solution-upload", methods=["POST"])
+@teacher_required
+def coursework_bulk_solution_upload(course_id, coursework_id):
+    """
+    Teacher & TA Offline Solution Batch Ingestion:
+    Accepts a single .zip archive containing student solutions collected via pendrive or offline exam.
+    Auto-detects each student's roll number from filename or directory, validates enrolled students,
+    writes files to their submission lockers, and generates official submission records.
+    """
+    course = get_course_or_404(course_id)
+    conn = get_db()
+    cw = conn.execute("SELECT * FROM coursework WHERE id = ? AND course_id = ?", (coursework_id, course_id)).fetchone()
+    if not cw:
+        conn.close()
+        abort(404, "Coursework not found")
+
+    zip_file = request.files.get("solution_zip")
+    if not zip_file or not zip_file.filename:
+        conn.close()
+        flash("No ZIP archive was uploaded. Please select a valid .zip file containing student solutions.", "warning")
+        return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
+    if not zipfile.is_zipfile(zip_file):
+        conn.close()
+        flash("The uploaded file is not a valid ZIP archive format.", "danger")
+        return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
+    zip_file.seek(0)
+
+    # Fetch all enrolled students
+    enrolled = conn.execute("""
+        SELECT u.id, u.roll_number, u.username, u.display_name
+        FROM course_enrollments ce
+        JOIN users u ON ce.user_id = u.id
+        WHERE ce.course_id = ? AND ce.role = 'student'
+    """, (course_id,)).fetchall()
+
+    roll_map = {}
+    for st in enrolled:
+        if st["roll_number"]:
+            roll_map[st["roll_number"].strip().upper()] = st
+        if st["username"]:
+            roll_map[st["username"].strip().upper()] = st
+
+    matched_count = 0
+    unmatched_files = []
+    matched_rolls = []
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        with zipfile.ZipFile(zip_file, "r") as zf:
+            for info in zf.infolist():
+                if info.is_dir() or "__MACOSX" in info.filename or os.path.basename(info.filename).startswith("."):
+                    continue
+
+                raw_name = info.filename.replace("\\", "/")
+                base_name = os.path.basename(raw_name)
+
+                matched_student = None
+                tokens = re.split(r"[_\-/\s\.]+", raw_name.upper())
+                for t in tokens:
+                    if t in roll_map:
+                        matched_student = roll_map[t]
+                        break
+
+                if not matched_student:
+                    unmatched_files.append(base_name)
+                    continue
+
+                file_bytes = zf.read(info)
+                file_size = len(file_bytes)
+                sha256_hash = hashlib.sha256(file_bytes).hexdigest()
+
+                student_sub_dir = SUBMISSIONS_DIR / str(coursework_id) / str(matched_student["id"])
+                student_sub_dir.mkdir(parents=True, exist_ok=True)
+
+                safe_name = secure_filename(base_name) or f"{matched_student['roll_number']}_solution.bin"
+                stored_filename = f"{int(time.time())}_{safe_name}"
+                target_path = student_sub_dir / stored_filename
+                target_path.write_bytes(file_bytes)
+
+                receipt_token = f"HDL-OFFLINE-{uuid.uuid4().hex[:10].upper()}"
+
+                existing = conn.execute("""
+                    SELECT id, version FROM submissions
+                    WHERE coursework_id = ? AND student_id = ?
+                """, (coursework_id, matched_student["id"])).fetchone()
+
+                version = (existing["version"] + 1) if existing else 1
+                if existing:
+                    conn.execute("""
+                        UPDATE submissions SET
+                            original_filename = ?, stored_filename = ?, file_path = ?, file_size = ?,
+                            sha256 = ?, ip_address = 'OFFLINE_UPLOAD', submitted_at = ?, version = ?,
+                            status = 'turned_in', receipt_token = ?
+                        WHERE id = ?
+                    """, (
+                        safe_name, stored_filename, str(target_path), file_size,
+                        sha256_hash, now_str, version, receipt_token, existing["id"]
+                    ))
+                else:
+                    conn.execute("""
+                        INSERT INTO submissions (
+                            coursework_id, student_id, roll_number, student_name, lab_name,
+                            status, original_filename, stored_filename, file_path, file_size,
+                            sha256, ip_address, submitted_at, version, is_late, late_minutes, receipt_token
+                        ) VALUES (?, ?, ?, ?, 'Offline Exam / Pendrive', 'turned_in', ?, ?, ?, ?, ?, 'OFFLINE_UPLOAD', ?, ?, 0, 0, ?)
+                    """, (
+                        coursework_id, matched_student["id"], matched_student["roll_number"] or matched_student["username"].upper(),
+                        matched_student["display_name"], safe_name, stored_filename, str(target_path), file_size,
+                        sha256_hash, now_str, version, receipt_token
+                    ))
+
+                matched_count += 1
+                matched_rolls.append(matched_student["roll_number"] or matched_student["username"])
+
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        app.logger.error("Bulk solution upload failed: %s", e)
+        flash(f"Error processing ZIP archive: {e}", "danger")
+        return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
+    conn.close()
+
+    roll_preview = ", ".join(sorted(list(set(matched_rolls)))[:8])
+    if len(set(matched_rolls)) > 8:
+        roll_preview += f" and {len(set(matched_rolls)) - 8} more"
+
+    flash_msg = f"✅ Bulk Solution Import: Successfully processed {matched_count} solution file(s) for enrolled students ({roll_preview})."
+    if unmatched_files:
+        flash_msg += f" ⚠️ {len(unmatched_files)} file(s) could not be matched to any enrolled student roll number."
+    flash(flash_msg, "success" if matched_count > 0 else "warning")
+    return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
+
+@app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/room-allocations", methods=["POST"])
+@teacher_required
+def coursework_save_room_allocations(course_id, coursework_id):
+    """
+    Teacher & TA Room / Lab Venue Allocation:
+    Maps roll numbers to physical exam halls or laboratory venues (e.g. ED1, ED2, Lab 2).
+    Accepts comma, newline, or whitespace-separated roll numbers.
+    """
+    course = get_course_or_404(course_id)
+    room_name = request.form.get("room_name", "").strip()
+    raw_rolls = request.form.get("roll_numbers", "").strip()
+
+    if not room_name or not raw_rolls:
+        flash("Please provide both a Venue/Room Name and at least one student roll number.", "warning")
+        return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
+    rolls = [r.strip().upper() for r in re.split(r"[\s,;\n\r]+", raw_rolls) if r.strip()]
+    if not rolls:
+        flash("No valid roll numbers detected in the input.", "warning")
+        return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
+    conn = get_db()
+    assigned_count = 0
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    for roll in rolls:
+        exists = conn.execute("""
+            SELECT id FROM coursework_lab_allocations
+            WHERE coursework_id = ? AND UPPER(student_roll) = ?
+        """, (coursework_id, roll)).fetchone()
+
+        if exists:
+            conn.execute("""
+                UPDATE coursework_lab_allocations
+                SET room_name = ?
+                WHERE id = ?
+            """, (room_name, exists["id"]))
+        else:
+            conn.execute("""
+                INSERT INTO coursework_lab_allocations (coursework_id, room_name, student_roll, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (coursework_id, room_name, roll, now_str))
+        assigned_count += 1
+
+    conn.commit()
+    conn.close()
+
+    flash(f"📍 Successfully allocated {assigned_count} student(s) to room/venue: {room_name}.", "success")
+    return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
+
+@app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/room-allocations/clear", methods=["POST"])
+@teacher_required
+def coursework_clear_room_allocations(course_id, coursework_id):
+    """Teacher & TA: Clears room allocations for this coursework."""
+    course = get_course_or_404(course_id)
+    room_name = request.form.get("room_name", "").strip()
+
+    conn = get_db()
+    if room_name:
+        del_count = conn.execute("""
+            DELETE FROM coursework_lab_allocations
+            WHERE coursework_id = ? AND room_name = ?
+        """, (coursework_id, room_name)).rowcount
+        flash(f"Cleared {del_count} allocation(s) for room {room_name}.", "info")
+    else:
+        del_count = conn.execute("""
+            DELETE FROM coursework_lab_allocations
+            WHERE coursework_id = ?
+        """, (coursework_id,)).rowcount
+        flash(f"Cleared all {del_count} room allocations for this coursework.", "info")
+
+    conn.commit()
+    conn.close()
+    return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
+
 
 # --- Strict Exam Mode Lockdown Interface & Submission ---
 
@@ -4325,6 +4819,13 @@ def exam_view(course_id, coursework_id):
     is_started = True if not st or now >= st else False
     is_ended = True if et and now > et else False
 
+    # Check room / venue allocation for this student
+    alloc_row = conn.execute("""
+        SELECT room_name FROM coursework_lab_allocations
+        WHERE coursework_id = ? AND UPPER(student_roll) = ?
+    """, (coursework_id, (user["roll_number"] or user["username"]).upper())).fetchone()
+    allocated_room = alloc_row["room_name"] if alloc_row else None
+
     conn.close()
     return render_template(
         "exam_view.html",
@@ -4335,7 +4836,8 @@ def exam_view(course_id, coursework_id):
         is_started=is_started,
         is_ended=is_ended,
         start_iso=cw["start_time"],
-        end_iso=cw["end_time"] or cw["due_date"]
+        end_iso=cw["end_time"] or cw["due_date"],
+        allocated_room=allocated_room
     )
 
 
@@ -4351,6 +4853,14 @@ def exam_submit(course_id, coursework_id):
     user = get_current_user()
     user_id = user["id"]
     roll_number = user["roll_number"] or user["username"].upper()
+
+    # Strict Scheduled Start Lock: Submissions rejected before start_time
+    now = datetime.now()
+    st = parse_iso_datetime(cw["start_time"])
+    if st and now < st and user["role"] not in ("teacher", "admin"):
+        conn.close()
+        flash("The exam has not officially started yet. Submissions are strictly locked until scheduled start time.", "danger")
+        return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
 
     # Enrollment check
     enr = conn.execute("SELECT 1 FROM course_enrollments WHERE course_id = ? AND user_id = ?", (course_id, user_id)).fetchone()
@@ -4381,7 +4891,6 @@ def exam_submit(course_id, coursework_id):
         flash("Invalid archive format: The file uploaded is not a valid ZIP archive.", "danger")
         return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
 
-    now = datetime.now()
     now_str = now.strftime("%Y-%m-%d %H:%M:%S")
 
     # Strict Exam Cutoff Check: Once exam time is over, everything is permanently locked
@@ -7960,12 +8469,23 @@ def get_attendance_seconds_remaining(course_id=None):
     return int(rot_sec - (time.time() % rot_sec))
 
 
+_qr_cache = {}
+_qr_cache_lock = threading.Lock()
+
+
 def generate_qr_svg(data_url):
     """
-    Generate high-quality, high-contrast vector SVG QR code.
+    Generate high-quality, high-contrast vector SVG QR code with in-memory caching.
     Configured with ERROR_CORRECT_M and 4-module quiet zone border for optimal
     optical contrast and long-distance scanning by smartphone cameras in auditoriums.
+    Never degrades to text link.
     """
+    with _qr_cache_lock:
+        if data_url in _qr_cache:
+            return _qr_cache[data_url]
+        if len(_qr_cache) > 200:
+            _qr_cache.clear()
+
     try:
         import qrcode
         import qrcode.image.svg
@@ -7985,31 +8505,22 @@ def generate_qr_svg(data_url):
         if "<svg" in raw_svg and "</svg>" in raw_svg:
             if '<rect width="100%" height="100%" fill="#ffffff"/>' not in raw_svg:
                 raw_svg = re.sub(r'(<svg[^>]*>)', r'\1<rect width="100%" height="100%" fill="#ffffff"/>', raw_svg, count=1)
-        return raw_svg.encode("utf-8")
+        svg_bytes = raw_svg.encode("utf-8")
+        with _qr_cache_lock:
+            _qr_cache[data_url] = svg_bytes
+        return svg_bytes
     except Exception:
-        # Secondary fallback using standard make
-        try:
-            import qrcode
-            import qrcode.image.svg
-            factory = qrcode.image.svg.SvgPathImage
-            img = qrcode.make(data_url, image_factory=factory)
-            buf = io.BytesIO()
-            img.save(buf)
-            raw_svg = buf.getvalue().decode("utf-8")
-            if "<svg" in raw_svg and "</svg>" in raw_svg:
-                if '<rect width="100%" height="100%" fill="#ffffff"/>' not in raw_svg:
-                    raw_svg = re.sub(r'(<svg[^>]*>)', r'\1<rect width="100%" height="100%" fill="#ffffff"/>', raw_svg, count=1)
-            return raw_svg.encode("utf-8")
-        except Exception:
-            # Standalone vector SVG fallback
-            escaped_url = data_url.replace("&", "&amp;")
-            return f"""<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
-                <rect width="300" height="300" fill="#ffffff" rx="12"/>
-                <rect x="20" y="20" width="260" height="260" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2" rx="8"/>
-                <text x="150" y="110" font-family="sans-serif" font-size="28" text-anchor="middle" fill="#0f172a">📱</text>
-                <text x="150" y="150" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="#0f172a">Scan with Phone Camera</text>
-                <text x="150" y="180" font-family="monospace" font-size="11" text-anchor="middle" fill="#2563eb">{escaped_url[:35]}...</text>
-            </svg>""".encode("utf-8")
+        # Resilient fallback using basic SvgPathImage
+        import qrcode
+        import qrcode.image.svg
+        img = qrcode.make(data_url, image_factory=qrcode.image.svg.SvgPathImage)
+        buf = io.BytesIO()
+        img.save(buf)
+        raw_svg = buf.getvalue().decode("utf-8")
+        svg_bytes = raw_svg.encode("utf-8")
+        with _qr_cache_lock:
+            _qr_cache[data_url] = svg_bytes
+        return svg_bytes
 
 
 @app.route("/api/attendance/qr/<int:course_id>")
@@ -8290,6 +8801,32 @@ def attend_submit(course_id):
             flash("You are not enrolled in this course.", "danger")
             return redirect(url_for("dashboard"))
 
+    # Check if this IP address was already used by another student in this session today
+    proxy_suspect = 0
+    proxy_remark = ""
+    proxy_warning_user = None
+
+    if client_ip:
+        ro_conn = get_db(read_only=True)
+        prev_ip_holder = ro_conn.execute("""
+            SELECT id, student_name, roll_number, marked_at
+            FROM attendance_logs
+            WHERE course_id = ? AND attendance_date = ? AND session_type = ? AND ip_address = ? AND student_id != ?
+            ORDER BY id ASC LIMIT 1
+        """, (course_id, today_str, session_type, client_ip, user["id"])).fetchone()
+        ro_conn.close()
+
+        if prev_ip_holder:
+            proxy_suspect = 1
+            prev_name = prev_ip_holder["student_name"]
+            prev_roll = prev_ip_holder["roll_number"]
+            proxy_remark = f"Duplicate device/IP used previously by {prev_roll} ({prev_name}) at {prev_ip_holder['marked_at']}"
+            proxy_warning_user = {
+                "name": prev_name,
+                "roll_number": prev_roll,
+                "marked_at": prev_ip_holder["marked_at"]
+            }
+
     def _do_submit(conn):
         conn.execute("BEGIN IMMEDIATE")
         exists = conn.execute("SELECT id FROM attendance_logs WHERE attendance_key = ?", (target_key,)).fetchone()
@@ -8298,13 +8835,30 @@ def attend_submit(course_id):
         conn.execute("""
             INSERT INTO attendance_logs (
                 course_id, session_id, student_id, roll_number, student_name,
-                section, session_type, attendance_date, status, method, ip_address, marked_at, attendance_key
-            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'PRESENT', 'QR_SCAN', ?, ?, ?)
+                section, session_type, attendance_date, status, method, ip_address, marked_at, attendance_key,
+                is_proxy_suspect, proxy_remark
+            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'PRESENT', 'QR_SCAN', ?, ?, ?, ?, ?)
         """, (
             course_id, user["id"], roll_number, user["display_name"],
             course["section"] or "Section A", session_type, today_str,
-            client_ip, now_str, target_key
+            client_ip, now_str, target_key,
+            proxy_suspect, proxy_remark
         ))
+        if proxy_suspect:
+            # Also flag the earlier student log from this same IP so teacher sees both
+            conn.execute("""
+                UPDATE attendance_logs
+                SET is_proxy_suspect = 1,
+                    proxy_remark = CASE 
+                        WHEN proxy_remark IS NULL OR proxy_remark = '' THEN ?
+                        ELSE proxy_remark || ' | ' || ?
+                    END
+                WHERE course_id = ? AND attendance_date = ? AND session_type = ? AND ip_address = ? AND student_id != ?
+            """, (
+                f"Duplicate device/IP shared with {roll_number} ({user['display_name']})",
+                f"Duplicate device/IP shared with {roll_number} ({user['display_name']})",
+                course_id, today_str, session_type, client_ip, user["id"]
+            ))
         conn.commit()
         return "ok"
 
@@ -8324,7 +8878,8 @@ def attend_submit(course_id):
         session_type=session_type,
         today_str=today_str,
         now_str=now_str,
-        user=user
+        user=user,
+        proxy_warning=proxy_warning_user
     )
 
 
@@ -8354,7 +8909,7 @@ def course_attendance(course_id):
             is_course_teacher = True
 
     if not is_course_teacher:
-        # Student view: personal attendance summary & logs
+        # Student view: personal attendance summary & logs (latest dates first)
         my_logs = conn.execute("""
             SELECT * FROM attendance_logs
             WHERE course_id = ? AND student_id = ?
@@ -8364,7 +8919,7 @@ def course_attendance(course_id):
                 AND es.excluded_date = attendance_logs.attendance_date
                 AND es.session_type = attendance_logs.session_type
             )
-            ORDER BY marked_at DESC
+            ORDER BY attendance_date DESC, marked_at DESC
         """, (course_id, user["id"])).fetchall()
         
         # Total unique course sessions conducted
@@ -8426,11 +8981,25 @@ def course_attendance(course_id):
         """, (course_id,)).fetchone()
         total_sessions = (sessions_row["total_sessions"] if sessions_row else 0) or 0
         
-        # Recent logs
+        # Query distinct past sessions for session-wise drilldown view
+        distinct_sessions = conn.execute("""
+            SELECT al.attendance_date, al.session_type, COUNT(al.id) as present_count,
+                   SUM(CASE WHEN al.is_proxy_suspect = 1 THEN 1 ELSE 0 END) as proxy_suspect_count,
+                   (SELECT 1 FROM attendance_excluded_sessions es 
+                    WHERE es.course_id = al.course_id 
+                      AND es.excluded_date = al.attendance_date 
+                      AND es.session_type = al.session_type) as is_excluded
+            FROM attendance_logs al
+            WHERE al.course_id = ?
+            GROUP BY al.attendance_date, al.session_type
+            ORDER BY al.attendance_date DESC, al.session_type ASC
+        """, (course_id,)).fetchall()
+
+        # Recent logs with proxy flags
         recent_logs = conn.execute("""
             SELECT * FROM attendance_logs
             WHERE course_id = ?
-            ORDER BY marked_at DESC LIMIT 50
+            ORDER BY attendance_date DESC, marked_at DESC LIMIT 50
         """, (course_id,)).fetchall()
         
         today_row = conn.execute("""
@@ -8467,6 +9036,7 @@ def course_attendance(course_id):
             today_str=today_str,
             attendance_pct=0.0,
             active_tab="attendance",
+            distinct_sessions=distinct_sessions,
             google_sheet_feed_url=google_sheet_feed_url,
             google_sheet_formula=google_sheet_formula,
             attendance_sheet_feed_ip_url=attendance_sheet_feed_ip_url,
@@ -8664,6 +9234,108 @@ def attendance_unskip_day(course_id):
     execute_db_write_with_retry(_do_unskip)
     
     flash(f"✅ Session re-included: {custom_date} ({session_type}) now counts in attendance again.", "success")
+    return redirect(url_for("course_attendance", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/attendance/session-detail")
+@teacher_required
+def attendance_session_detail(course_id):
+    """
+    Teacher & TA Session Breakdown View:
+    Displays the exact list of PRESENT students and ABSENT students for a chosen session date and type.
+    Includes timestamps, IP addresses, proxy duplicate warnings, and instant actions.
+    """
+    course = get_course_or_404(course_id)
+    session_type = request.args.get("type", "Lecture").strip()
+    target_date = request.args.get("date", "").strip()
+    if not target_date:
+        target_date = datetime.now().strftime("%Y-%m-%d")
+
+    conn = get_db(read_only=True)
+
+    # 1. Fetch all enrolled students
+    enrolled = conn.execute("""
+        SELECT u.id, u.roll_number, u.username, u.display_name, u.email
+        FROM course_enrollments ce
+        JOIN users u ON ce.user_id = u.id
+        WHERE ce.course_id = ? AND ce.role = 'student'
+        ORDER BY u.roll_number ASC
+    """, (course_id,)).fetchall()
+
+    # 2. Fetch all present logs for this session
+    logs = conn.execute("""
+        SELECT *
+        FROM attendance_logs
+        WHERE course_id = ? AND attendance_date = ? AND session_type = ?
+        ORDER BY marked_at ASC
+    """, (course_id, target_date, session_type)).fetchall()
+
+    # 3. Check if this session is currently excluded
+    excluded_row = conn.execute("""
+        SELECT * FROM attendance_excluded_sessions
+        WHERE course_id = ? AND excluded_date = ? AND session_type = ?
+    """, (course_id, target_date, session_type)).fetchone()
+
+    conn.close()
+
+    present_student_ids = {l["student_id"] for l in logs}
+    present_list = list(logs)
+    absent_list = [s for s in enrolled if s["id"] not in present_student_ids]
+
+    total_enrolled = len(enrolled)
+    present_count = len(present_list)
+    absent_count = len(absent_list)
+    pct = round((present_count / total_enrolled * 100), 1) if total_enrolled > 0 else 0.0
+
+    return render_template(
+        "attendance_session_detail.html",
+        course=course,
+        target_date=target_date,
+        session_type=session_type,
+        present_list=present_list,
+        absent_list=absent_list,
+        total_enrolled=total_enrolled,
+        present_count=present_count,
+        absent_count=absent_count,
+        attendance_pct=pct,
+        is_excluded=bool(excluded_row),
+        excluded_info=excluded_row
+    )
+
+
+@app.route("/courses/<int:course_id>/attendance/session/delete", methods=["POST"])
+@teacher_required
+def attendance_delete_session(course_id):
+    """
+    Teacher & TA Permanent Session Deletion:
+    Completely purges attendance logs for a specific date and session type after explicit confirmation.
+    Also removes any exclusion record for this date to keep state clean.
+    """
+    course = get_course_or_404(course_id)
+    session_type = request.form.get("session_type", "Lecture").strip()
+    custom_date = request.form.get("custom_date", "").strip()
+
+    if not custom_date:
+        flash("Invalid session date specified for deletion.", "danger")
+        return redirect(url_for("course_attendance", course_id=course_id))
+
+    def _do_delete_session(conn):
+        conn.execute("BEGIN IMMEDIATE")
+        del_count = conn.execute("""
+            DELETE FROM attendance_logs
+            WHERE course_id = ? AND attendance_date = ? AND session_type = ?
+        """, (course_id, custom_date, session_type)).rowcount
+
+        conn.execute("""
+            DELETE FROM attendance_excluded_sessions
+            WHERE course_id = ? AND excluded_date = ? AND session_type = ?
+        """, (course_id, custom_date, session_type))
+        conn.commit()
+        return del_count
+
+    deleted_rows = execute_db_write_with_retry(_do_delete_session)
+
+    flash(f"🗑️ Session Deleted: {custom_date} ({session_type}) and all {deleted_rows} student attendance records have been permanently removed.", "info")
     return redirect(url_for("course_attendance", course_id=course_id))
 
 

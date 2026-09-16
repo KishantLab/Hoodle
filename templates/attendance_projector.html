@@ -588,13 +588,23 @@
               }
             }
             secondsLeft = (data.seconds_remaining !== undefined) ? data.seconds_remaining : ROTATION_SECONDS;
-            const img = document.getElementById("qrImage");
-            img.src = "{{ url_for('attendance_qr_svg', course_id=course.id) }}?type=" + encodeURIComponent(currentSessionType) + "&token=" + data.token + "&_ts=" + Date.now();
-            
-            // Visual refresh indicator pulse
-            const frame = document.getElementById("qrFrame");
-            frame.classList.add("refresh-pulse");
-            setTimeout(() => { frame.classList.remove("refresh-pulse"); }, 400);
+            const targetUrl = "{{ url_for('attendance_qr_svg', course_id=course.id) }}?type=" + encodeURIComponent(currentSessionType) + "&token=" + encodeURIComponent(data.token) + "&_ts=" + Date.now();
+            const preloader = new Image();
+            preloader.onload = function() {
+              const img = document.getElementById("qrImage");
+              if (img) {
+                img.src = targetUrl;
+              }
+              const frame = document.getElementById("qrFrame");
+              if (frame) {
+                frame.classList.add("refresh-pulse");
+                setTimeout(() => { frame.classList.remove("refresh-pulse"); }, 400);
+              }
+            };
+            preloader.onerror = function() {
+              console.warn("QR pre-load failed, keeping previous QR image active");
+            };
+            preloader.src = targetUrl;
           }
           isFetchingToken = false;
         })

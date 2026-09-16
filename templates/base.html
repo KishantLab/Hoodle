@@ -41,8 +41,9 @@
           <!-- User Account Menu Wrapper with Mobile Dropdown -->
           <div class="user-menu-wrapper" id="userMenuWrapper">
             <button type="button" class="user-chip-btn" id="userChipBtn" onclick="toggleUserDropdown(event)" aria-haspopup="true" aria-expanded="false" title="User Menu &amp; Account Options">
-              <div class="user-avatar-circle">
+              <div class="user-avatar-circle" style="position: relative;">
                 {{ current_user.display_name[0]|upper }}
+                <span style="position: absolute; bottom: -2px; right: -4px; background: #2563eb; color: white; font-size: 0.55rem; font-weight: 800; padding: 0 4px; border-radius: 9999px; border: 1.5px solid white; line-height: 1.2;">v2</span>
               </div>
               <div class="user-meta">
                 <span class="user-name">{{ current_user.display_name }} ▾</span>
@@ -432,9 +433,21 @@
       </div>
 
       <!-- Camera Viewfinder with Scanner Frame -->
-      <div class="scanner-viewfinder-wrap">
+      <div class="scanner-viewfinder-wrap" style="position: relative;">
         <div id="qrReader" style="width: 100%; border-radius: 12px; overflow: hidden; background: #000;"></div>
         <div class="scanner-laser-line"></div>
+
+        <!-- Camera Zoom Overlay Controls -->
+        <div id="scannerZoomBar" style="display: none; align-items: center; justify-content: center; gap: 0.4rem; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px); padding: 0.35rem 0.75rem; border-radius: 9999px; position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 20; color: white; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 4px 15px rgba(0,0,0,0.4);">
+          <button type="button" onclick="adjustScannerZoom(-0.5)" style="background: none; border: none; color: white; font-size: 1.1rem; font-weight: 800; cursor: pointer; padding: 0 6px; line-height: 1;" title="Zoom Out">−</button>
+          <div style="display: flex; gap: 0.3rem;">
+            <button type="button" class="zoom-preset-btn active" id="zoomBtn1" onclick="setScannerZoom(1)">1x</button>
+            <button type="button" class="zoom-preset-btn" id="zoomBtn2" onclick="setScannerZoom(2)">2x</button>
+            <button type="button" class="zoom-preset-btn" id="zoomBtn3" onclick="setScannerZoom(3)">3x</button>
+            <button type="button" class="zoom-preset-btn" id="zoomBtn4" onclick="setScannerZoom(4)">4x</button>
+          </div>
+          <button type="button" onclick="adjustScannerZoom(0.5)" style="background: none; border: none; color: white; font-size: 1.1rem; font-weight: 800; cursor: pointer; padding: 0 6px; line-height: 1;" title="Zoom In">+</button>
+        </div>
 
         <!-- Insecure HTTP Restriction Notice (When opened via plain http://) -->
         <div id="scannerHttpNotice" class="perm-guide-card" style="display: none; padding: 1.25rem 1rem; text-align: center;">
@@ -537,11 +550,17 @@
       <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 1.5rem 1.5rem; color: white; position: relative;">
         <button type="button" class="modal-close" onclick="closeUserProfileModal()" style="position: absolute; top: 1rem; right: 1rem; color: white; background: rgba(255,255,255,0.2); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: none; font-size: 1.25rem; cursor: pointer;">&times;</button>
         <div style="display: flex; align-items: center; gap: 1rem;">
-          <div style="width: 56px; height: 56px; border-radius: 50%; background: white; color: #1e3a8a; font-size: 1.7rem; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
-            {{ current_user.display_name[0]|upper }}
+          <div style="position: relative;">
+            <div style="width: 56px; height: 56px; border-radius: 50%; background: white; color: #1e3a8a; font-size: 1.7rem; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+              {{ current_user.display_name[0]|upper }}
+            </div>
+            <span style="position: absolute; bottom: -4px; right: -6px; background: #22c55e; color: #ffffff; font-size: 0.65rem; font-weight: 800; padding: 1px 6px; border-radius: 9999px; border: 2px solid white; letter-spacing: 0.02em; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">v2</span>
           </div>
           <div>
-            <h3 style="margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em;">{{ current_user.display_name }}</h3>
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <h3 style="margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em;">{{ current_user.display_name }}</h3>
+              <span class="badge" style="background: rgba(255,255,255,0.25); color: white; font-size: 0.68rem; font-weight: 800; padding: 1px 6px; border-radius: 9999px; border: 1px solid rgba(255,255,255,0.35);">Version 2.0</span>
+            </div>
             <div style="font-size: 0.82rem; opacity: 0.92; margin-top: 0.2rem;">
               @{{ current_user.username }}
               <span style="margin: 0 0.35rem;">•</span>
@@ -692,6 +711,7 @@
       <!-- Left: Hoodle branding -->
       <div class="footer-branding">
         <strong class="footer-brand-name">Hoodle</strong>
+        <span class="badge" style="background: #2563eb; color: #ffffff; font-size: 0.72rem; font-weight: 800; border-radius: 9999px; padding: 2px 8px; margin-left: 0.4rem; letter-spacing: 0.03em;">v2.0</span>
         <span class="footer-sep">•</span>
         <span class="footer-tagline">Accelerated Classroom &amp; Lab Learning</span>
       </div>
