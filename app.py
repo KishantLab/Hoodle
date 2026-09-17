@@ -755,10 +755,21 @@ def init_db():
             last_error TEXT DEFAULT '',
             created_at TEXT NOT NULL,
             next_retry_at TEXT NOT NULL,
-            sent_at TEXT
+            sent_at TEXT,
+            priority INTEGER NOT NULL DEFAULT 10,
+            expires_at TEXT
         )
     """)
+    try:
+        c.execute("ALTER TABLE email_queue ADD COLUMN priority INTEGER NOT NULL DEFAULT 10")
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE email_queue ADD COLUMN expires_at TEXT")
+    except Exception:
+        pass
     c.execute("CREATE INDEX IF NOT EXISTS idx_email_queue_status_retry ON email_queue (status, next_retry_at)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_email_queue_priority ON email_queue (status, priority DESC, next_retry_at)")
 
     # 16. Global System Broadcast Announcements Table
     c.execute("""
@@ -1156,11 +1167,19 @@ def resolve_portal_url(path_or_url):
 _email_queue_lock = threading.Lock()
 
 
-def enqueue_email(recipient_email, subject, heading, body_text, html_content, plain_content):
+def enqueue_email(recipient_email, subject, heading, body_text, html_content, plain_content, priority=None, expires_in_minutes=None):
     """
     Inserts an outgoing email into the persistent outbox queue and triggers immediate dispatch.
     Zero dropped messages: Guaranteed persistence before network transmission.
-    Deduplication: Prevents enqueuing duplicate identical emails to the same recipient within a 10-minute window.
+    Priority Levels:
+      - 100: Critical / OTP / Password Reset / Temporary Password (Dispatched first ahead of all normal emails)
+      - 50: High / Course Invitations
+      - 10: Normal / Course Notifications / Announcements / Assignments
+    TTL / Expiration:
+      - Non-critical notification emails automatically expire after 10 minutes (prevents stale queue backlog/spam).
+      - OTP / Password reset emails expire after 15 minutes.
+    Strict Deduplication:
+      - Prevents enqueuing duplicate identical notifications to the same recipient within a 15-minute window.
     """
     if not recipient_email or "@" not in recipient_email:
         return None
@@ -1169,17 +1188,37 @@ def enqueue_email(recipient_email, subject, heading, body_text, html_content, pl
     clean_subj = subject.strip()
     now_dt = datetime.now()
     now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
-    dedup_cutoff_str = (now_dt - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+
+    # Auto-detect priority if not explicitly specified
+    is_otp_or_auth = any(k in clean_subj.lower() or k in (heading or "").lower() for k in [
+        "otp", "password", "verification", "security code", "reset password", "temporary password"
+    ])
+    if priority is None:
+        priority = 100 if is_otp_or_auth else 10
+
+    # Determine TTL expiration:
+    # Critical OTP/password resets expire in 15 minutes.
+    # Non-critical notifications expire in 10 minutes (per user instruction: 10 or 5 min).
+    if expires_in_minutes is None:
+        expires_in_minutes = 15 if is_otp_or_auth else 10
+
+    expires_at = (now_dt + timedelta(minutes=expires_in_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+
+    # Canonical base subject for deduplication (strip dynamic timestamp suffixes like ' • 16 Sep 11:51' or '[HDL-...]')
+    base_subj = re.sub(r'\s+[•#].*$', '', clean_subj).strip()
+    base_subj = re.sub(r'\[HDL-[A-Z0-9]+\]', '', base_subj).strip()
+    dedup_cutoff_str = (now_dt - timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
 
     def _do_enqueue(conn):
         conn.execute("BEGIN IMMEDIATE")
-        # Check if identical email is already queued or was recently sent
+        # Check if identical email is already queued or was recently sent to this recipient
         existing = conn.execute("""
             SELECT id FROM email_queue
-            WHERE LOWER(recipient_email) = ? AND subject = ?
+            WHERE LOWER(recipient_email) = ?
+              AND (subject = ? OR subject LIKE ?)
               AND (status IN ('pending', 'processing') OR (status = 'sent' AND created_at >= ?))
             LIMIT 1
-        """, (clean_email, clean_subj, dedup_cutoff_str)).fetchone()
+        """, (clean_email, clean_subj, f"{base_subj}%", dedup_cutoff_str)).fetchone()
 
         if existing:
             conn.rollback()
@@ -1190,9 +1229,9 @@ def enqueue_email(recipient_email, subject, heading, body_text, html_content, pl
             INSERT INTO email_queue (
                 recipient_email, subject, heading, body_text,
                 html_content, plain_content, status, attempts, max_attempts,
-                last_error, created_at, next_retry_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, 5, '', ?, ?)
-        """, (clean_email, clean_subj, heading or "", body_text or "", html_content, plain_content, now_str, now_str))
+                last_error, created_at, next_retry_at, priority, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, 5, '', ?, ?, ?, ?)
+        """, (clean_email, clean_subj, heading or "", body_text or "", html_content, plain_content, now_str, now_str, priority, expires_at))
         conn.commit()
         return cursor.lastrowid
 
@@ -1209,6 +1248,8 @@ def enqueue_email(recipient_email, subject, heading, body_text, html_content, pl
 def process_email_queue(limit=25):
     """
     Processes pending emails in email_queue whose next_retry_at <= now.
+    Prioritizes critical emails (OTP, password reset) over bulk notification emails (ORDER BY priority DESC, id ASC).
+    Purges any stale/expired pending emails older than their TTL (e.g. 10 minutes for non-critical alerts).
     Atomically claims items into 'processing' status using PostgreSQL FOR UPDATE SKIP LOCKED
     (or SQLite BEGIN IMMEDIATE) to guarantee ZERO duplicate deliveries across multi-worker
     Gunicorn and multi-node clusters.
@@ -1230,7 +1271,17 @@ def process_email_queue(limit=25):
         conn = get_db()
         items = []
 
-        # Reclaim any stale 'processing' jobs older than 5 minutes (in case a worker died)
+        # 1. Purge any pending emails that exceeded their TTL / expiration time
+        try:
+            conn.execute("""
+                DELETE FROM email_queue
+                WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at <= ?
+            """, (now_str,))
+            conn.commit()
+        except Exception:
+            pass
+
+        # 2. Reclaim any stale 'processing' jobs older than 5 minutes (in case a worker died)
         try:
             conn.execute("""
                 UPDATE email_queue
@@ -1245,7 +1296,7 @@ def process_email_queue(limit=25):
 
         if is_postgres and hasattr(conn, "_conn"):
             # PostgreSQL atomic reservation using row-level locking (FOR UPDATE SKIP LOCKED)
-            # This ensures that out of 48 cluster workers, exactly ONE worker claims any given email.
+            # Ordered by priority DESC so OTP and password reset emails are claimed FIRST
             try:
                 pg_conn = conn._conn
                 with pg_conn.cursor() as cur:
@@ -1256,11 +1307,11 @@ def process_email_queue(limit=25):
                         WHERE id IN (
                             SELECT id FROM email_queue
                             WHERE status = 'pending' AND next_retry_at <= %s
-                            ORDER BY id ASC
+                            ORDER BY priority DESC, id ASC
                             LIMIT %s
                             FOR UPDATE SKIP LOCKED
                         )
-                        RETURNING id, recipient_email, subject, heading, body_text, html_content, plain_content, attempts, max_attempts
+                        RETURNING id, recipient_email, subject, heading, body_text, html_content, plain_content, attempts, max_attempts, priority, expires_at
                     """, (now_str, limit))
                     cols = [d[0] for d in cur.description]
                     for row in cur.fetchall():
@@ -1274,12 +1325,13 @@ def process_email_queue(limit=25):
                     pass
         else:
             # SQLite atomic reservation: BEGIN IMMEDIATE locks file and claims batch
+            # Ordered by priority DESC so OTP and password reset emails are claimed FIRST
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 pending_rows = conn.execute("""
                     SELECT id FROM email_queue
                     WHERE status = 'pending' AND next_retry_at <= ?
-                    ORDER BY id ASC
+                    ORDER BY priority DESC, id ASC
                     LIMIT ?
                 """, (now_str, limit)).fetchall()
                 if pending_rows:
@@ -1293,7 +1345,7 @@ def process_email_queue(limit=25):
                     """, [next_timeout] + p_ids)
                     conn.commit()
                     items = conn.execute(f"""
-                        SELECT id, recipient_email, subject, heading, body_text, html_content, plain_content, attempts, max_attempts
+                        SELECT id, recipient_email, subject, heading, body_text, html_content, plain_content, attempts, max_attempts, priority, expires_at
                         FROM email_queue
                         WHERE id IN ({placeholders})
                     """, p_ids).fetchall()
@@ -1534,7 +1586,7 @@ Ref: HDL-{evt_token} | Sent: {now_readable}
 </body>
 </html>
 """
-    enqueue_email(recipient_email, subject, "Course Invitation", plain_text, html_text, plain_text)
+    enqueue_email(recipient_email, subject, "Course Invitation", plain_text, html_text, plain_text, priority=50, expires_in_minutes=1440)
 
 
 def send_event_notification_email(recipient_emails, subject, heading, body_text, action_url=None, action_text="View in Hoodle", actor_name=None, actor_role=None):
@@ -1554,8 +1606,8 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
     if isinstance(recipient_emails, str):
         recipient_emails = [recipient_emails]
 
-    # Filter unique valid emails
-    clean_emails = list({e.strip() for e in recipient_emails if e and "@" in e})
+    # Filter unique valid emails (case-insensitive deduplication)
+    clean_emails = list({e.strip().lower() for e in recipient_emails if e and "@" in e})
     if not clean_emails:
         return
 
@@ -1623,12 +1675,12 @@ def send_event_notification_email(recipient_emails, subject, heading, body_text,
       <span style="font-size: 10px; color: #94a3b8; font-family: monospace;">Ref: HDL-{evt_token} &bull; {now_readable}</span>
     </div>
   </div>
-</body>
+ </body>
 </html>"""
     plain_text = f"{heading}\n\n{attribution_plain}{body_text}\n\n{full_action_url if full_action_url else ''}\n\n---\nRef: HDL-{evt_token} | Sent: {now_readable}"
 
     for rec_email in clean_emails:
-        enqueue_email(rec_email, effective_subject, heading, body_text, html_text, plain_text)
+        enqueue_email(rec_email, effective_subject, heading, body_text, html_text, plain_text, priority=10, expires_in_minutes=10)
 
 
 # --- Authentication & Authorization Helpers ---
@@ -2485,7 +2537,7 @@ def forgot_password():
                 </div>
             </div>
             """
-            enqueue_email(user_email, subj, heading, body, html, body)
+            enqueue_email(user_email, subj, heading, body, html, body, priority=100, expires_in_minutes=30)
             flash(f"A temporary password has been dispatched to {user_email}. Please check your inbox and sign in.", "success")
             return redirect(url_for("login"))
         else:
@@ -2519,7 +2571,7 @@ def forgot_password():
                 </div>
             </div>
             """
-            enqueue_email(user_email, subj, heading, body, html, body)
+            enqueue_email(user_email, subj, heading, body, html, body, priority=100, expires_in_minutes=15)
             flash(f"A 6-digit verification code has been dispatched to {user_email}. Please enter it below.", "success")
             return redirect(url_for("reset_password", identifier=user_ident))
 
@@ -7853,10 +7905,10 @@ def admin_email_settings():
     total_queue = q_stats["total_count"] or 0
 
     recent_queue_emails = conn.execute("""
-        SELECT id, recipient_email, subject, heading, status, attempts, max_attempts, last_error, created_at, sent_at, next_retry_at
+        SELECT id, recipient_email, subject, heading, status, attempts, max_attempts, last_error, created_at, sent_at, next_retry_at, priority, expires_at
         FROM email_queue
         ORDER BY id DESC
-        LIMIT 25
+        LIMIT 50
     """).fetchall()
 
     conn.close()
@@ -8058,6 +8110,35 @@ def admin_clear_sent_email_queue():
     conn.commit()
     conn.close()
     flash(f"🗑️ Cleared {deleted_count} delivered email log(s).", "info")
+    return redirect(url_for("admin_email_settings"))
+
+
+@app.route("/admin/email/queue/clear-pending", methods=["POST"])
+@admin_required
+def admin_clear_pending_email_queue():
+    """Purges all pending, processing, and failed emails from the queue."""
+    conn = get_db()
+    cursor = conn.execute("DELETE FROM email_queue WHERE status IN ('pending', 'processing', 'failed')")
+    deleted_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    flash(f"🗑️ Successfully deleted {deleted_count} queued / pending email(s) from outbox.", "info")
+    return redirect(url_for("admin_email_settings"))
+
+
+@app.route("/admin/email/queue/delete/<int:item_id>", methods=["POST"])
+@admin_required
+def admin_delete_email_queue_item(item_id):
+    """Deletes a single email from the queue."""
+    conn = get_db()
+    cursor = conn.execute("DELETE FROM email_queue WHERE id = ?", (item_id,))
+    deleted_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    if deleted_count > 0:
+        flash(f"🗑️ Deleted email #{item_id} from outbox queue.", "info")
+    else:
+        flash(f"Email #{item_id} not found or already deleted.", "warning")
     return redirect(url_for("admin_email_settings"))
 
 

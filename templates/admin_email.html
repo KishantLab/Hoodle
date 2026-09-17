@@ -266,6 +266,14 @@
             <span>Retry Failed &amp; Pending Emails</span>
           </button>
         </form>
+        {% if pending_count > 0 or failed_count > 0 %}
+        <form action="{{ url_for('admin_clear_pending_email_queue') }}" method="POST" style="margin: 0;" onsubmit="return confirm('Are you sure you want to delete all pending/queued emails from outbox?');">
+          <button type="submit" class="btn btn-secondary btn-sm" style="color: #dc2626; border-color: #fca5a5; background: #fff5f5; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem;">
+            <span>🗑️</span>
+            <span>Delete All Pending ({{ pending_count }})</span>
+          </button>
+        </form>
+        {% endif %}
         {% if sent_count > 0 %}
         <form action="{{ url_for('admin_clear_sent_email_queue') }}" method="POST" style="margin: 0;">
           <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--text-muted); display: inline-flex; align-items: center; gap: 0.35rem;">
@@ -303,24 +311,37 @@
       <table class="table lms-table" style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
         <thead>
           <tr style="border-bottom: 2px solid var(--border); font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; text-align: left;">
+            <th style="padding: 0.6rem 0.75rem;">Priority</th>
             <th style="padding: 0.6rem 0.75rem;">Status</th>
             <th style="padding: 0.6rem 0.75rem;">Recipient</th>
             <th style="padding: 0.6rem 0.75rem;">Subject</th>
             <th style="padding: 0.6rem 0.75rem;">Attempts</th>
             <th style="padding: 0.6rem 0.75rem;">Created</th>
             <th style="padding: 0.6rem 0.75rem;">Status Detail</th>
+            <th style="padding: 0.6rem 0.75rem; text-align: right;">Action</th>
           </tr>
         </thead>
         <tbody>
           {% for item in recent_queue_emails %}
           <tr style="border-bottom: 1px solid var(--border);">
             <td style="padding: 0.6rem 0.75rem; white-space: nowrap;">
+              {% if item.priority and item.priority >= 100 %}
+                <span class="badge" style="background: #fef2f2; color: #b91c1c; font-weight: 800; font-size: 0.72rem; padding: 3px 8px; border-radius: 9999px; border: 1px solid #fecaca;">⚡ Urgent (OTP)</span>
+              {% elif item.priority and item.priority >= 50 %}
+                <span class="badge" style="background: #eff6ff; color: #1d4ed8; font-weight: 700; font-size: 0.72rem; padding: 3px 8px; border-radius: 9999px; border: 1px solid #bfdbfe;">📬 High</span>
+              {% else %}
+                <span class="badge" style="background: #f1f5f9; color: #475569; font-weight: 600; font-size: 0.72rem; padding: 3px 8px; border-radius: 9999px; border: 1px solid #cbd5e1;">Normal</span>
+              {% endif %}
+            </td>
+            <td style="padding: 0.6rem 0.75rem; white-space: nowrap;">
               {% if item.status == 'sent' %}
                 <span class="badge" style="background: #dcfce7; color: #166534; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 9999px;">&check; Delivered</span>
               {% elif item.status == 'pending' %}
-                <span class="badge" style="background: #fef3c7; color: #92400e; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 9999px;">⏳ Pending Retry</span>
+                <span class="badge" style="background: #fef3c7; color: #92400e; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 9999px;">⏳ Pending</span>
+              {% elif item.status == 'processing' %}
+                <span class="badge" style="background: #e0f2fe; color: #0369a1; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 9999px;">🔄 Sending...</span>
               {% else %}
-                <span class="badge" style="background: #fee2e2; color: #991b1b; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 9999px;">&times; Delivery Failed</span>
+                <span class="badge" style="background: #fee2e2; color: #991b1b; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 9999px;">&times; Failed</span>
               {% endif %}
             </td>
             <td style="padding: 0.6rem 0.75rem; font-weight: 600; color: #0f172a;">
@@ -341,8 +362,18 @@
               {% elif item.last_error %}
                 <span style="color: #dc2626;" title="{{ item.last_error }}">Error: {{ item.last_error }}</span>
               {% else %}
-                <span style="color: var(--text-muted);">Scheduled next: {{ item.next_retry_at }}</span>
+                <span style="color: var(--text-muted);">Retry: {{ item.next_retry_at }}</span>
+                {% if item.expires_at %}
+                  <span style="color: #b45309; margin-left: 4px;">(Expires: {{ item.expires_at.split(' ')[1] if ' ' in item.expires_at else item.expires_at }})</span>
+                {% endif %}
               {% endif %}
+            </td>
+            <td style="padding: 0.6rem 0.75rem; text-align: right; white-space: nowrap;">
+              <form action="{{ url_for('admin_delete_email_queue_item', item_id=item.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete email #{{ item.id }} from outbox?');">
+                <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 0.75rem; padding: 2px 7px; color: #dc2626;" title="Delete this email">
+                  🗑️
+                </button>
+              </form>
             </td>
           </tr>
           {% endfor %}
