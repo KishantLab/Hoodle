@@ -8566,7 +8566,8 @@ def api_admin_system_status():
             "id": "master",
             "name": "Master Gateway",
             "ip": "192.168.99.2",
-            "url": "http://127.0.0.1:8096/api/heartbeat",
+            "url": "http://192.168.99.2:8096/api/heartbeat",
+            "fallback_url": "http://127.0.0.1:8096/api/heartbeat",
             "role": "Gateway Proxy & Web App",
             "workers": 8
         },
@@ -8590,41 +8591,49 @@ def api_admin_system_status():
 
     def _probe_node(n):
         t0 = time.time()
-        try:
-            r = requests.get(n["url"], timeout=3.0, headers={"User-Agent": "HoodleMonitor/1.0"})
-            lat = round((time.time() - t0) * 1000, 1)
-            if r.status_code in (200, 302):
-                return {
-                    **n,
-                    "status": "healthy",
-                    "http_code": r.status_code,
-                    "latency_ms": lat,
-                    "error": None
-                }
-            else:
-                return {
-                    **n,
-                    "status": "error",
-                    "http_code": r.status_code,
-                    "latency_ms": lat,
-                    "error": f"HTTP {r.status_code} returned by service"
-                }
-        except Exception as e:
-            err_str = str(e)
-            if "Connection refused" in err_str:
-                short_err = f"Connection refused on port 8095. Service 'accl-lms' may be stopped on {n['ip']}."
-            elif "timed out" in err_str or "ConnectTimeout" in err_str:
-                short_err = f"Connection timed out (3.0s). Node {n['name']} ({n['ip']}) unreachable over cluster network."
-            else:
-                short_err = err_str
-            return {
-                **n,
-                "status": "error",
-                "http_code": None,
-                "latency_ms": None,
-                "error": short_err,
-                "raw_error": err_str
-            }
+        urls_to_try = [n["url"]]
+        if n.get("fallback_url"):
+            urls_to_try.append(n["fallback_url"])
+
+        last_err = None
+        for test_url in urls_to_try:
+            try:
+                r = requests.get(test_url, timeout=3.0, headers={"User-Agent": "HoodleMonitor/1.0"})
+                lat = round((time.time() - t0) * 1000, 1)
+                if r.status_code in (200, 302):
+                    return {
+                        **n,
+                        "status": "healthy",
+                        "http_code": r.status_code,
+                        "latency_ms": lat,
+                        "error": None
+                    }
+                else:
+                    return {
+                        **n,
+                        "status": "error",
+                        "http_code": r.status_code,
+                        "latency_ms": lat,
+                        "error": f"HTTP {r.status_code} returned by service"
+                    }
+            except Exception as e:
+                last_err = e
+
+        err_str = str(last_err)
+        if "Connection refused" in err_str:
+            short_err = f"Connection refused on port 8095/8096. Service 'accl-lms' may be stopped on {n['ip']}."
+        elif "timed out" in err_str or "ConnectTimeout" in err_str:
+            short_err = f"Connection timed out (3.0s). Node {n['name']} ({n['ip']}) unreachable over cluster network."
+        else:
+            short_err = err_str
+        return {
+            **n,
+            "status": "error",
+            "http_code": None,
+            "latency_ms": None,
+            "error": short_err,
+            "raw_error": err_str
+        }
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         probed_nodes = list(pool.map(_probe_node, cluster_nodes_def))
