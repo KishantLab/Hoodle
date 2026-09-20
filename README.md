@@ -25,13 +25,16 @@
 
 Combining the simplicity and clarity of **Google Classroom** with the rigorous grading and evaluation capabilities of **Canvas LMS**, Hoodle provides modern, fast, and privacy-preserving education technology tailored for on-premise campus intranets and secure cloud/VPN networks:
 - **Comprehensive Course Lifecycle Management**: Creator & Admin exclusive archiving, restoration, and complete 1-click full `.zip` offline course export with student submissions, attendance records, and materials.
+- **Multi-Venue Geofencing Anti-Proxy System**: Configurable GPS geofences and radii tailored separately for **Lecture (e.g. LHC)**, **Lab (e.g. ED Building)**, and **Tutorial** venues with covert silent proxy detection.
 - **In-Portal Live Camera QR Code Attendance Scanner** with dynamically rotating anti-proxy cryptographic tokens.
 - **Flexible Attendance Controls**: 1-click "Mark All Present" for compensatory classes, "Skip / Exclude Session" for holidays/cancelled classes, session-by-session matrix CSV export, and Google Sheets live backup.
+- **Curriculum Organization & Topic Reordering**: Up/Down reordering controls (⬆️ / ⬇️) for coursework modules with ascending chronological assignment sequencing.
 - **Canvas-Style Weighted Grading Engine** out of 100 with category percentages, Excel/CSV bulk import, and customizable mathematical evaluation formulas.
 - **Strict Exam Lockdown Mode** with timed windows, ZIP validation, auto-expiration, live proctor telemetry, and cryptographic submission freezing.
 - **Cryptographic Digital Submission Receipts** with SHA-256 verification and scannable QR tokens.
 - **Integrated In-App PDF Opener / Reader** for instant zero-download document inspection across course materials, student submissions, and cloud lockers.
 - **Isolated Student Private Space ("My Cloud Locker")** with in-browser syntax highlighting and disk quota management.
+- **High-Availability Multi-Node Cluster Architecture**: Nginx load balancing across Master, GPU1, and GPU2 nodes over high-speed campus intranet and internet (Tailscale Funnel).
 - **Dual Network Access Architecture**: Default campus intranet priority with seamless remote access switching.
 - **Granular Multi-Tier Role Governance** (Admin, Primary Faculty, Co-Teacher/TA, Student).
 
@@ -42,9 +45,9 @@ Combining the simplicity and clarity of **Google Classroom** with the rigorous g
 ### 1. 📚 6-Tab Coursework Environment
 Every course in Hoodle provides a Google Classroom-style tab navigation:
 - **📢 Stream**: Real-time course announcements with rich text, file attachments (with in-app PDF preview), pinned notices, and threaded discussions.
-- **📝 Classwork**: Topic-organized curriculum units, assignment authoring with maximum points, deadlines, allowed file extensions, and reference material distribution.
+- **📝 Classwork**: Topic-organized curriculum units with 1-click **Move Up / Move Down (⬆️ / ⬇️)** topic reordering controls, ascending chronological assignment listings, assignment authoring with maximum points, deadlines, allowed file extensions, and reference material distribution.
 - **👥 People**: Complete course roster for instructors and co-teachers. Features inline role switching (`Student` $\leftrightarrow$ `Co-Teacher` $\leftrightarrow$ `Faculty`), student invitation via class code, and strict student privacy safeguards (students never see classmates' submission status or counts).
-- **📅 Attendance**: Real-time attendance dashboard featuring projector screen mode, student check-in telemetry, audit filter bar, CSV export, and bulk manual marking.
+- **📅 Attendance**: Real-time attendance dashboard featuring projector screen mode, multi-venue GPS geofence configuration, student check-in telemetry, audit filter bar, CSV export, and bulk manual marking.
 - **📊 Grades**: Gradebook matrix with weighted evaluation out of 100, itemized student scorecards, Excel/CSV grade import, pre-filled template generator, and category weighting controls.
 - **💬 Messages**: Course-wide threaded communication and student-teacher discussions.
 
@@ -94,7 +97,23 @@ Hoodle implements a strict, secure course lifecycle governed exclusively by the 
 
 ---
 
-### 4. 📅 Flexible Attendance Management Controls
+### 4. 📍 Multi-Venue Geofencing & Silent Anti-Proxy Telemetry
+Hoodle features multi-venue location validation tailored for university campuses where lectures, practical labs, and tutorials occur in distinct buildings:
+- **Multi-Venue GPS Geofencing**:
+  - Configure distinct latitude, longitude, and allowed radiuses (default 100m) for **🏛️ Lecture Hall (e.g. LHC)**, **🔬 Practical Lab (e.g. ED Building)**, and **📖 Tutorial Rooms**.
+  - **Auto-Detect GPS ("📡 Use My Location")**: Instantly captures high-accuracy browser coordinates when sitting in the respective classroom or lab.
+  - Independent enable toggles per session type.
+- **Covert Silent Anti-Proxy Detection**:
+  - When students submit attendance, their GPS coordinates are mathematically validated against the active session's venue using the Haversine spherical distance formula.
+  - Off-site submissions are **silently flagged** (`is_proxy_suspect = 1`) with an audit remark (e.g., `Outside Lab (ED Building Lab 320) Geofence: 452m away (Allowed: 100m)`).
+  - **Zero Student Alert**: Students see a standard check-in confirmation to prevent them from discovering geofence boundaries or circumventing checks.
+  - Instructors and TAs see prominent **⚠️ Proxy Suspect** badges highlighted in bold red across recent logs and student history.
+- **Dual Device / IP Sharing Detection**:
+  - If multiple student accounts submit attendance from the identical IP/device within the same class session, both records are automatically cross-flagged on teacher rosters.
+
+---
+
+### 5. 📅 Flexible Attendance Management Controls
 - **✅ Mark All Students Present**:
   - Instructors can grant full attendance (marking all enrolled students as PRESENT) for any selected date and session type (`Lecture`, `Lab`, `Tutorial`).
   - Ideal for holidays, college events, compensatory lectures, or guest seminars.
@@ -204,40 +223,45 @@ Hoodle is engineered with a dual network architecture supporting simultaneous ca
 
 ---
 
-## 🏗️ Architecture & Technology Stack
+## 🏗️ Multi-Node Cluster Architecture & Technology Stack
 
 ```
-                     [ Client Browser / Mobile App ]
-                                    │
-               ┌────────────────────┴────────────────────┐
-               ▼                                         ▼
-      [ Campus Intranet ]                       [ Internet / VPN ]
-       10.10.14.104:8095                      tail77fd8b.ts.net/lms
-               │                                         │
-               └────────────────────┬────────────────────┘
-                                    │
-                         HTTPS / Port 443 / 8443
-                                    ▼
-                         [ Nginx Reverse Proxy ]
-                                    │ (Proxy pass to 127.0.0.1:8095)
-                                    ▼
-                    [ Gunicorn WSGI Application Server ]
-                       (16 Workers • 64 Threads)
-                                    │
-                             [ Flask App ]
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-          [ SQLite3 Database ] [ Storage Dir ] [ Static & Templates ]
-          • WAL Journal Mode    • lockers/      • HTML5 / Jinja2
-          • Busy Timeout 60s    • submissions/  • Vanilla JS / CSS3
-          • Foreign Keys ON     • attachments/  • HTML5-QRCode Scanner
-                                • exports/
+                             [ Client Browser / Mobile App ]
+                                            │
+                     ┌──────────────────────┴──────────────────────┐
+                     ▼                                             ▼
+          [ Campus Intranet (LAN) ]                     [ Internet / Remote ]
+            10.10.14.104:443 / 8095                      accllogin.tail77fd8b.ts.net
+                     │                                             │
+                     └──────────────────────┬──────────────────────┘
+                                            │
+                                HTTPS / Port 443 / 8095
+                                            ▼
+                           [ Nginx Reverse Proxy & Load Balancer ]
+                                            │ (least_conn upstream)
+                     ┌──────────────────────┼──────────────────────┐
+                     ▼                      ▼                      ▼
+           [ Master Node:8096 ]       [ GPU1 Node:8095 ]     [ GPU2 Node:8095 ]
+           (Gunicorn 8w • 32t)        (Gunicorn 8w • 32t)    (Gunicorn 8w • 32t)
+                     │                      │                      │
+                     └──────────────────────┼──────────────────────┘
+                                            ▼
+                              [ Distributed Services Layer ]
+                     ┌──────────────────────┼──────────────────────┐
+                     ▼                      ▼                      ▼
+        [ Central PostgreSQL DB ]     [ Shared NFS Cluster ]  [ HPC Module Environment ]
+        • accl_lms Database           • /data/admin/ACCLLMS/  • /apps/modules/
+        • Connection Pooling          • storage/lockers/      • module load gcc
+        • SQLite3 Engine Fallback     • storage/submissions/  • master, gpu1-2, skylus1-4
 ```
 
-- **Backend**: Python 3.10+, Flask 3.0, Werkzeug 3.0, Gunicorn 21.2 (`gthread` worker class).
-- **Database**: SQLite3 configured with Write-Ahead Logging (`WAL`), 60s busy timeout, foreign key cascades, and optimized indexes.
+- **Clustered Backend**: Distributed Gunicorn 21.2 (`gthread` worker class) running across 3 physical/GPU cluster nodes with automatic health monitoring and dynamic failover (`proxy_next_upstream`).
+- **Load Balancer**: Nginx with `least_conn` distribution, SSL termination (TLS 1.2/1.3), static file caching, and streaming reverse-proxying.
+- **Database Layer**: Production PostgreSQL backend (`accl_lms`) supporting high-concurrency attendance bursts with atomic transactions and serialization retries, with full embedded SQLite3 support.
+- **Shared Storage**: Clustered NFS storage mount (`/data/admin/ACCLLMS`) ensuring instantaneous synchronization of uploads, submissions, attachments, and logs across nodes.
+- **HPC Environment Integration**: Integrated Environment Modules across all compute nodes (`module load gcc` available on master, gpu1, gpu2, skylus1, skylus2, skylus3, skylus4).
 - **Frontend**: Responsive HTML5, CSS Variables, Flexbox/Grid, Vanilla JavaScript (zero heavy client-side frameworks).
-- **Barcode & QR Engine**: `html5-qrcode` (client-side video stream), `qrcode[pil]` (server-side SVG/PNG generation).
+- **Barcode & QR Engine**: `html5-qrcode` (client-side video stream), `qrcode[pil]` (server-side dynamic HMAC token generation).
 - **Spreadsheet Processing**: `openpyxl` (Excel `.xlsx`), standard Python `csv` engine.
 
 ---
