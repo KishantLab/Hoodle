@@ -167,13 +167,13 @@
       </div>
 
       <div class="attendance-action-btns" style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
-        <button type="button" class="btn btn-secondary" onclick="openModal('geofenceModal')" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 600;" title="Configure venue GPS coordinates and radius for silent anti-proxy tracking">
+        <button type="button" class="btn btn-secondary" onclick="openModal('geofenceModal')" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 600;" title="Configure venue GPS coordinates and radius for Lecture, Lab, and Tutorial">
           <span>📍</span>
-          <span>Classroom Geofence</span>
-          {% if course.classroom_lat is not none and course.classroom_lng is not none and course.geofence_enabled %}
-            <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 0.72rem; padding: 2px 6px;">Active ({{ course.geofence_radius_meters or 100 }}m)</span>
-          {% elif course.classroom_lat is not none and course.classroom_lng is not none %}
-            <span class="badge" style="background: #fef08a; color: #854d0e; font-size: 0.72rem; padding: 2px 6px;">Disabled</span>
+          <span>Venue Geofences</span>
+          {% if active_geofences_count and active_geofences_count > 0 %}
+            <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 0.72rem; padding: 2px 6px;">{{ active_geofences_count }} Active</span>
+          {% elif course.classroom_lat is not none and course.classroom_lng is not none and course.geofence_enabled %}
+            <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 0.72rem; padding: 2px 6px;">Active</span>
           {% else %}
             <span class="badge" style="background: #f1f5f9; color: #64748b; font-size: 0.72rem; padding: 2px 6px;">Not Set</span>
           {% endif %}
@@ -594,15 +594,20 @@
             </thead>
             <tbody>
               {% for l in recent_logs %}
-                <tr style="border-bottom: 1px solid var(--border); font-size: 0.88rem;">
+                <tr style="border-bottom: 1px solid var(--border); font-size: 0.88rem; {% if l.is_proxy_suspect %}background: #fff1f2; border-left: 3px solid #dc2626;{% endif %}">
                   <td style="padding: 0.65rem; font-family: monospace; font-size: 0.8rem; color: var(--text-muted);">
                     {{ l.marked_at }}
                   </td>
                   <td style="padding: 0.65rem; font-weight: 600;">{{ l.attendance_date }}</td>
-                  <td style="padding: 0.65rem; font-family: monospace; font-weight: 700; color: var(--primary);">
+                  <td style="padding: 0.65rem; font-family: monospace; font-weight: 700; color: {% if l.is_proxy_suspect %}#b91c1c{% else %}var(--primary){% endif %};">
                     {{ l.roll_number }}
                   </td>
-                  <td style="padding: 0.65rem;">{{ l.student_name }}</td>
+                  <td style="padding: 0.65rem;">
+                    {{ l.student_name }}
+                    {% if l.is_proxy_suspect %}
+                      <span class="badge" style="background: #fee2e2; color: #b91c1c; font-size: 0.68rem; font-weight: 800; margin-left: 4px;" title="{{ l.proxy_remark }}">⚠️ Proxy Suspect</span>
+                    {% endif %}
+                  </td>
                   <td style="padding: 0.65rem;">
                     <span class="badge" style="background: var(--primary-light); color: var(--primary); font-size: 0.75rem;">{{ l.session_type }}</span>
                   </td>
@@ -615,6 +620,9 @@
                   </td>
                   <td style="padding: 0.65rem; font-family: monospace; font-size: 0.78rem; color: var(--text-light);">
                     {{ l.ip_address or '—' }}
+                    {% if l.distance_meters is not none %}
+                      <span style="font-size: 0.72rem; color: {% if l.is_proxy_suspect %}#b91c1c; font-weight: 700;{% else %}#15803d;{% endif %}">({{ l.distance_meters|round(0)|int }}m)</span>
+                    {% endif %}
                   </td>
                 </tr>
               {% endfor %}
@@ -632,67 +640,193 @@
 
 </div>
 
-<!-- Classroom Geofence & Anti-Proxy Modal -->
+<!-- Multi-Venue Geofence & Anti-Proxy Modal -->
 <div id="geofenceModal" class="modal-backdrop">
-  <div class="modal-content" style="max-width: 540px;">
+  <div class="modal-content" style="max-width: 580px;">
     <div class="modal-header">
       <div>
         <h3 style="font-size: 1.2rem; font-weight: 800; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 0.5rem;">
           <span>📍</span>
-          <span>Classroom Geofence (Anti-Proxy)</span>
+          <span>Multi-Venue Geofences (Anti-Proxy)</span>
         </h3>
-        <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">Define venue GPS location to silently detect off-site attendance.</div>
+        <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">
+          Set separate GPS locations for Lecture (LHC), Lab (ED), and Tutorial venues.
+        </div>
       </div>
       <button class="modal-close" onclick="closeModal('geofenceModal')">&times;</button>
     </div>
 
-    <p style="font-size: 0.84rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.25rem;">
-      When geofencing is enabled, students submitting attendance from outside the allowed radius will have their record <strong>silently flagged</strong> in <strong style="color: #dc2626;">bold red</strong> on teacher &amp; TA rosters. The student will <strong>never be notified</strong> or shown an error, preventing them from circumventing the check.
+    <p style="font-size: 0.84rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;">
+      Each class format can take place in a different building (e.g. Lecture in LHC, Lab in ED Building). When students confirm attendance, their GPS is validated against the active session's venue. Off-site attempts are <strong>silently flagged</strong> in <strong style="color: #dc2626;">bold red</strong> on teacher rosters with <strong>zero alerts shown to students</strong>.
     </p>
 
+    <!-- Venue Navigation Tabs -->
+    <div style="display: flex; gap: 0.35rem; border-bottom: 2px solid var(--border); margin-bottom: 1.25rem; padding-bottom: 0;">
+      <button type="button" class="venue-tab-btn active" id="tabBtn_lecture" onclick="switchVenueTab('lecture')" style="padding: 0.55rem 0.9rem; border: none; background: none; font-weight: 700; font-size: 0.88rem; cursor: pointer; border-bottom: 3px solid var(--primary); color: var(--primary); display: flex; align-items: center; gap: 0.35rem;">
+        <span>🏛️ Lecture</span>
+        {% if venue_geofences and venue_geofences.lecture.is_enabled and venue_geofences.lecture.latitude %}
+          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a;" title="Active"></span>
+        {% endif %}
+      </button>
+      <button type="button" class="venue-tab-btn" id="tabBtn_lab" onclick="switchVenueTab('lab')" style="padding: 0.55rem 0.9rem; border: none; background: none; font-weight: 700; font-size: 0.88rem; cursor: pointer; border-bottom: 3px solid transparent; color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem;">
+        <span>🔬 Lab</span>
+        {% if venue_geofences and venue_geofences.lab.is_enabled and venue_geofences.lab.latitude %}
+          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a;" title="Active"></span>
+        {% endif %}
+      </button>
+      <button type="button" class="venue-tab-btn" id="tabBtn_tutorial" onclick="switchVenueTab('tutorial')" style="padding: 0.55rem 0.9rem; border: none; background: none; font-weight: 700; font-size: 0.88rem; cursor: pointer; border-bottom: 3px solid transparent; color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem;">
+        <span>📖 Tutorial</span>
+        {% if venue_geofences and venue_geofences.tutorial.is_enabled and venue_geofences.tutorial.latitude %}
+          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a;" title="Active"></span>
+        {% endif %}
+      </button>
+    </div>
+
     <form action="{{ url_for('course_attendance_geofence', course_id=course.id) }}" method="POST">
-      <div style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1.25rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
-          <span style="font-size: 0.85rem; font-weight: 700;">📍 Auto-Detect Venue GPS</span>
-          <button type="button" id="btnDetectLocation" onclick="detectTeacherLocation()" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--primary);">
-            <span>📡</span>
-            <span>Use My Location</span>
-          </button>
+      <!-- LECTURE PANEL -->
+      <div id="venuePanel_lecture" class="venue-tab-panel">
+        <div style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 0.85rem; font-weight: 700;">📍 Auto-Detect Lecture GPS</span>
+            <button type="button" id="btnDetectLocation_lecture" onclick="detectVenueLocation('lecture')" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--primary);">
+              <span>📡</span>
+              <span>Use My Location</span>
+            </button>
+          </div>
+          <div id="geoDetectStatus_lecture" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem;">
+            Click while in the lecture hall (e.g. LHC) to capture current GPS coordinates.
+          </div>
         </div>
-        <div id="geoDetectStatus" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem;">
-          Click "Use My Location" while sitting in the classroom/lab to fill your exact GPS coordinates.
+
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label class="form-label" for="venue_name_lecture" style="font-size: 0.82rem; font-weight: 700;">Venue Name / Room</label>
+          <input type="text" id="venue_name_lecture" name="venue_name_lecture" class="form-control" placeholder="e.g. Lecture Hall Complex (LHC-101)" value="{{ venue_geofences.lecture.venue_name if venue_geofences else '' }}">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.85rem;">
+          <div class="form-group">
+            <label class="form-label" for="classroom_lat_lecture" style="font-size: 0.82rem; font-weight: 700;">Latitude (°N)</label>
+            <input type="number" step="any" id="classroom_lat_lecture" name="classroom_lat_lecture" class="form-control" placeholder="e.g. 21.251412" value="{{ venue_geofences.lecture.latitude if venue_geofences else (course.classroom_lat or '') }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="classroom_lng_lecture" style="font-size: 0.82rem; font-weight: 700;">Longitude (°E)</label>
+            <input type="number" step="any" id="classroom_lng_lecture" name="classroom_lng_lecture" class="form-control" placeholder="e.g. 81.629631" value="{{ venue_geofences.lecture.longitude if venue_geofences else (course.classroom_lng or '') }}">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label" for="geofence_radius_lecture" style="font-size: 0.82rem; font-weight: 700;">Allowed Radius (Meters)</label>
+          <input type="number" min="10" max="5000" id="geofence_radius_lecture" name="geofence_radius_lecture" class="form-control" value="{{ (venue_geofences.lecture.radius_meters if venue_geofences else course.geofence_radius_meters) or 100 }}">
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+            Default: 100m (accommodates indoor mobile GPS drift in large lecture halls).
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 700; cursor: pointer;">
+            <input type="checkbox" name="geofence_enabled_lecture" value="1" {% if (venue_geofences and venue_geofences.lecture.is_enabled) or (not venue_geofences and course.geofence_enabled != 0) %}checked{% endif %}>
+            <span>Enable Geofencing for Lectures</span>
+          </label>
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
-        <div class="form-group">
-          <label class="form-label" for="classroom_lat" style="font-size: 0.82rem; font-weight: 700;">Latitude (°N)</label>
-          <input type="number" step="any" id="classroom_lat" name="classroom_lat" class="form-control" placeholder="e.g. 21.251412" value="{{ course.classroom_lat or '' }}">
+      <!-- LAB PANEL -->
+      <div id="venuePanel_lab" class="venue-tab-panel" style="display: none;">
+        <div style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 0.85rem; font-weight: 700;">📍 Auto-Detect Lab GPS</span>
+            <button type="button" id="btnDetectLocation_lab" onclick="detectVenueLocation('lab')" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--primary);">
+              <span>📡</span>
+              <span>Use My Location</span>
+            </button>
+          </div>
+          <div id="geoDetectStatus_lab" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem;">
+            Click while in the lab building (e.g. ED Building) to capture current GPS coordinates.
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label" for="classroom_lng" style="font-size: 0.82rem; font-weight: 700;">Longitude (°E)</label>
-          <input type="number" step="any" id="classroom_lng" name="classroom_lng" class="form-control" placeholder="e.g. 81.629631" value="{{ course.classroom_lng or '' }}">
+
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label class="form-label" for="venue_name_lab" style="font-size: 0.82rem; font-weight: 700;">Venue Name / Room</label>
+          <input type="text" id="venue_name_lab" name="venue_name_lab" class="form-control" placeholder="e.g. ED Building - Computer Lab 320" value="{{ venue_geofences.lab.venue_name if venue_geofences else '' }}">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.85rem;">
+          <div class="form-group">
+            <label class="form-label" for="classroom_lat_lab" style="font-size: 0.82rem; font-weight: 700;">Latitude (°N)</label>
+            <input type="number" step="any" id="classroom_lat_lab" name="classroom_lat_lab" class="form-control" placeholder="e.g. 21.252310" value="{{ venue_geofences.lab.latitude if venue_geofences else '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="classroom_lng_lab" style="font-size: 0.82rem; font-weight: 700;">Longitude (°E)</label>
+            <input type="number" step="any" id="classroom_lng_lab" name="classroom_lng_lab" class="form-control" placeholder="e.g. 81.631240" value="{{ venue_geofences.lab.longitude if venue_geofences else '' }}">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label" for="geofence_radius_lab" style="font-size: 0.82rem; font-weight: 700;">Allowed Radius (Meters)</label>
+          <input type="number" min="10" max="5000" id="geofence_radius_lab" name="geofence_radius_lab" class="form-control" value="{{ (venue_geofences.lab.radius_meters if venue_geofences else 100) or 100 }}">
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+            Default: 100m (recommended for ED Building and departmental computer labs).
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 700; cursor: pointer;">
+            <input type="checkbox" name="geofence_enabled_lab" value="1" {% if venue_geofences and venue_geofences.lab.is_enabled %}checked{% endif %}>
+            <span>Enable Geofencing for Practical Labs</span>
+          </label>
         </div>
       </div>
 
-      <div class="form-group" style="margin-bottom: 1.25rem;">
-        <label class="form-label" for="geofence_radius_meters" style="font-size: 0.82rem; font-weight: 700;">Allowed Radius (Meters)</label>
-        <input type="number" min="10" max="5000" id="geofence_radius_meters" name="geofence_radius_meters" class="form-control" value="{{ course.geofence_radius_meters or 100 }}">
-        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
-          Default: 100 meters (recommended to accommodate standard mobile GPS drift inside buildings).
+      <!-- TUTORIAL PANEL -->
+      <div id="venuePanel_tutorial" class="venue-tab-panel" style="display: none;">
+        <div style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 0.85rem; font-weight: 700;">📍 Auto-Detect Tutorial GPS</span>
+            <button type="button" id="btnDetectLocation_tutorial" onclick="detectVenueLocation('tutorial')" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--primary);">
+              <span>📡</span>
+              <span>Use My Location</span>
+            </button>
+          </div>
+          <div id="geoDetectStatus_tutorial" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem;">
+            Click while in tutorial room to capture current GPS coordinates.
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label class="form-label" for="venue_name_tutorial" style="font-size: 0.82rem; font-weight: 700;">Venue Name / Room</label>
+          <input type="text" id="venue_name_tutorial" name="venue_name_tutorial" class="form-control" placeholder="e.g. Academic Block - Tutorial Room 204" value="{{ venue_geofences.tutorial.venue_name if venue_geofences else '' }}">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.85rem;">
+          <div class="form-group">
+            <label class="form-label" for="classroom_lat_tutorial" style="font-size: 0.82rem; font-weight: 700;">Latitude (°N)</label>
+            <input type="number" step="any" id="classroom_lat_tutorial" name="classroom_lat_tutorial" class="form-control" placeholder="e.g. 21.251800" value="{{ venue_geofences.tutorial.latitude if venue_geofences else '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="classroom_lng_tutorial" style="font-size: 0.82rem; font-weight: 700;">Longitude (°E)</label>
+            <input type="number" step="any" id="classroom_lng_tutorial" name="classroom_lng_tutorial" class="form-control" placeholder="e.g. 81.630500" value="{{ venue_geofences.tutorial.longitude if venue_geofences else '' }}">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label" for="geofence_radius_tutorial" style="font-size: 0.82rem; font-weight: 700;">Allowed Radius (Meters)</label>
+          <input type="number" min="10" max="5000" id="geofence_radius_tutorial" name="geofence_radius_tutorial" class="form-control" value="{{ (venue_geofences.tutorial.radius_meters if venue_geofences else 100) or 100 }}">
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+            Default: 100m (recommended for tutorial rooms).
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 700; cursor: pointer;">
+            <input type="checkbox" name="geofence_enabled_tutorial" value="1" {% if venue_geofences and venue_geofences.tutorial.is_enabled %}checked{% endif %}>
+            <span>Enable Geofencing for Tutorials</span>
+          </label>
         </div>
       </div>
 
-      <div class="form-group" style="margin-bottom: 1.5rem;">
-        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 700; cursor: pointer;">
-          <input type="checkbox" name="geofence_enabled" value="1" {% if course.geofence_enabled != 0 %}checked{% endif %}>
-          <span>Enable Geofencing Anti-Proxy for this Course</span>
-        </label>
-      </div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+      <div style="display: flex; justify-content: flex-end; gap: 0.75rem; border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.5rem;">
         <button type="button" onclick="closeModal('geofenceModal')" class="btn btn-secondary">Cancel</button>
-        <button type="submit" class="btn btn-primary" style="font-weight: 700;">💾 Save Geofence</button>
+        <button type="submit" class="btn btn-primary" style="font-weight: 700;">💾 Save Venue Geofences</button>
       </div>
     </form>
   </div>
@@ -1124,28 +1258,53 @@ Example:
       });
   }
 
-  function detectTeacherLocation() {
-    const statusEl = document.getElementById("geoDetectStatus");
-    const btn = document.getElementById("btnDetectLocation");
+  function switchVenueTab(sessionKey) {
+    const tabs = ['lecture', 'lab', 'tutorial'];
+    tabs.forEach(k => {
+      const panel = document.getElementById('venuePanel_' + k);
+      const btn = document.getElementById('tabBtn_' + k);
+      if (panel && btn) {
+        if (k === sessionKey) {
+          panel.style.display = 'block';
+          btn.style.borderBottom = '3px solid var(--primary)';
+          btn.style.color = 'var(--primary)';
+        } else {
+          panel.style.display = 'none';
+          btn.style.borderBottom = '3px solid transparent';
+          btn.style.color = 'var(--text-muted)';
+        }
+      }
+    });
+  }
+
+  function detectVenueLocation(sessionKey) {
+    const statusEl = document.getElementById("geoDetectStatus_" + sessionKey);
+    const btn = document.getElementById("btnDetectLocation_" + sessionKey);
     if (!("geolocation" in navigator)) {
-      statusEl.innerHTML = "<span style='color: #dc2626;'>Geolocation is not supported by your browser.</span>";
+      if (statusEl) statusEl.innerHTML = "<span style='color: #dc2626;'>Geolocation is not supported by your browser.</span>";
       return;
     }
-    statusEl.textContent = "Acquiring high-accuracy GPS coordinates...";
-    btn.disabled = true;
+    if (statusEl) statusEl.textContent = "Acquiring high-accuracy GPS coordinates...";
+    if (btn) btn.disabled = true;
     navigator.geolocation.getCurrentPosition(
       function(pos) {
-        btn.disabled = false;
-        document.getElementById("classroom_lat").value = pos.coords.latitude.toFixed(6);
-        document.getElementById("classroom_lng").value = pos.coords.longitude.toFixed(6);
-        statusEl.innerHTML = `<span style='color: #16a34a; font-weight: 700;'>✅ Acquired: ${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)} (Accuracy: ±${pos.coords.accuracy.toFixed(1)}m)</span>`;
+        if (btn) btn.disabled = false;
+        const latEl = document.getElementById("classroom_lat_" + sessionKey);
+        const lngEl = document.getElementById("classroom_lng_" + sessionKey);
+        if (latEl) latEl.value = pos.coords.latitude.toFixed(6);
+        if (lngEl) lngEl.value = pos.coords.longitude.toFixed(6);
+        if (statusEl) statusEl.innerHTML = `<span style='color: #16a34a; font-weight: 700;'>✅ Acquired: ${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)} (±${pos.coords.accuracy.toFixed(1)}m)</span>`;
       },
       function(err) {
-        btn.disabled = false;
-        statusEl.innerHTML = `<span style='color: #dc2626;'>Could not acquire GPS: ${err.message}</span>`;
+        if (btn) btn.disabled = false;
+        if (statusEl) statusEl.innerHTML = `<span style='color: #dc2626;'>Could not acquire GPS: ${err.message}</span>`;
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+  }
+
+  function detectTeacherLocation() {
+    detectVenueLocation('lecture');
   }
 </script>
 {% endblock %}

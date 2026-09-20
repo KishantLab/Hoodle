@@ -739,6 +739,21 @@ def init_db():
                     FOREIGN KEY (coursework_id) REFERENCES coursework(id) ON DELETE CASCADE
                 )""",
                 "CREATE INDEX IF NOT EXISTS idx_lab_alloc_cw ON coursework_lab_allocations (coursework_id, student_roll)",
+                """CREATE TABLE IF NOT EXISTS course_venue_geofences (
+                    id SERIAL PRIMARY KEY,
+                    course_id INTEGER NOT NULL,
+                    session_type VARCHAR(50) NOT NULL,
+                    venue_name VARCHAR(100) DEFAULT '',
+                    latitude REAL DEFAULT NULL,
+                    longitude REAL DEFAULT NULL,
+                    radius_meters INTEGER DEFAULT 100,
+                    is_enabled INTEGER DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(course_id, session_type),
+                    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_venue_geo_course ON course_venue_geofences (course_id, session_type)",
             ):
                 try:
                     c.execute(constr_sql)
@@ -819,6 +834,26 @@ def init_db():
             FOREIGN KEY (excluded_by) REFERENCES users(id)
         )
     """)
+
+    # Multi-Venue Geofencing for Lecture, Lab, and Tutorial
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS course_venue_geofences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course_id INTEGER NOT NULL,
+            session_type TEXT NOT NULL,
+            venue_name TEXT DEFAULT '',
+            latitude REAL DEFAULT NULL,
+            longitude REAL DEFAULT NULL,
+            radius_meters INTEGER DEFAULT 100,
+            is_enabled INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(course_id, session_type),
+            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_venue_geo_course ON course_venue_geofences (course_id, session_type)")
+
     # 15. Persistent Email Outbox Queue for Reliable Notification Delivery
     c.execute("""
         CREATE TABLE IF NOT EXISTS email_queue (
@@ -3408,6 +3443,7 @@ def delete_course(course_id):
     conn.execute("DELETE FROM attendance_logs WHERE course_id = ?", (course_id,))
     conn.execute("DELETE FROM attendance_sessions WHERE course_id = ?", (course_id,))
     conn.execute("DELETE FROM attendance_excluded_sessions WHERE course_id = ?", (course_id,))
+    conn.execute("DELETE FROM course_venue_geofences WHERE course_id = ?", (course_id,))
     conn.execute("DELETE FROM course_invitations WHERE course_id = ?", (course_id,))
     conn.execute("DELETE FROM course_enrollments WHERE course_id = ?", (course_id,))
 
@@ -9206,23 +9242,53 @@ def attend_submit(course_id):
     except (ValueError, TypeError):
         pass
 
-    geofence_enabled = course.get("geofence_enabled", 1) if isinstance(course, dict) else (course["geofence_enabled"] if "geofence_enabled" in course.keys() else 1)
-    classroom_lat = course.get("classroom_lat") if isinstance(course, dict) else (course["classroom_lat"] if "classroom_lat" in course.keys() else None)
-    classroom_lng = course.get("classroom_lng") if isinstance(course, dict) else (course["classroom_lng"] if "classroom_lng" in course.keys() else None)
-    radius = (course.get("geofence_radius_meters") if isinstance(course, dict) else (course["geofence_radius_meters"] if "geofence_radius_meters" in course.keys() else 100)) or 100
+    # Multi-Venue Geolocation Anti-Proxy Check (Lecture, Lab, Tutorial)
+    ro_conn = get_db(read_only=True)
+    venue_row = ro_conn.execute("""
+        SELECT session_type, venue_name, latitude, longitude, radius_meters, is_enabled
+        FROM course_venue_geofences
+        WHERE course_id = ? AND LOWER(session_type) = LOWER(?)
+    """, (course_id, session_type)).fetchone()
+    ro_conn.close()
 
-    if geofence_enabled and classroom_lat is not None and classroom_lng is not None:
+    target_lat = None
+    target_lng = None
+    radius = 100
+    venue_enabled = False
+    vname = ""
+
+    if venue_row and venue_row["latitude"] is not None and venue_row["longitude"] is not None:
+        target_lat = venue_row["latitude"]
+        target_lng = venue_row["longitude"]
+        radius = venue_row["radius_meters"] or 100
+        venue_enabled = bool(venue_row["is_enabled"])
+        vname = (venue_row["venue_name"] or "").strip()
+    else:
+        # Fallback to course default geofence (courses.classroom_lat)
+        geofence_enabled = course.get("geofence_enabled", 1) if isinstance(course, dict) else (course["geofence_enabled"] if "geofence_enabled" in course.keys() else 1)
+        classroom_lat = course.get("classroom_lat") if isinstance(course, dict) else (course["classroom_lat"] if "classroom_lat" in course.keys() else None)
+        classroom_lng = course.get("classroom_lng") if isinstance(course, dict) else (course["classroom_lng"] if "classroom_lng" in course.keys() else None)
+        course_radius = (course.get("geofence_radius_meters") if isinstance(course, dict) else (course["geofence_radius_meters"] if "geofence_radius_meters" in course.keys() else 100)) or 100
+        if geofence_enabled and classroom_lat is not None and classroom_lng is not None:
+            target_lat = classroom_lat
+            target_lng = classroom_lng
+            radius = course_radius
+            venue_enabled = True
+
+    venue_display = f"{session_type} ({vname})" if vname else session_type
+
+    if venue_enabled and target_lat is not None and target_lng is not None:
         if student_lat is not None and student_lng is not None:
-            distance_meters = haversine_distance_meters(student_lat, student_lng, classroom_lat, classroom_lng)
+            distance_meters = haversine_distance_meters(student_lat, student_lng, target_lat, target_lng)
             if distance_meters > radius:
                 proxy_suspect = 1
                 dist_str = f"{int(distance_meters)}m" if distance_meters < 1000 else f"{distance_meters/1000:.2f}km"
-                geo_msg = f"Outside Geofence: {dist_str} away (Allowed: {radius}m)"
+                geo_msg = f"Outside {venue_display} Geofence: {dist_str} away (Allowed: {radius}m)"
                 proxy_remark = f"{proxy_remark} | {geo_msg}" if proxy_remark else geo_msg
         else:
-            # Geofencing enabled for course, but student did not supply coordinates
+            # Geofencing enabled for this venue, but student did not supply coordinates
             proxy_suspect = 1
-            geo_msg = "Location Denied / Unavailable (Geofence Active)"
+            geo_msg = f"Location Denied / Unavailable ({venue_display} Geofence Active)"
             proxy_remark = f"{proxy_remark} | {geo_msg}" if proxy_remark else geo_msg
 
     def _do_submit(conn):
@@ -9289,53 +9355,128 @@ def attend_submit(course_id):
 @teacher_required
 def course_attendance_geofence(course_id):
     """
-    Teacher & TA Classroom Geolocation & Geofencing Configuration:
-    Sets venue latitude, longitude, and allowed radius in meters.
+    Teacher & TA Classroom Geolocation & Multi-Venue Geofencing Configuration:
+    Sets distinct venues for Lecture, Lab, and Tutorial (e.g. LHC for Lecture, ED for Lab, Room for Tutorial).
     """
     course = get_course_or_404(course_id)
-    enabled = 1 if request.form.get("geofence_enabled") in ("1", "true", "on", "yes") else 0
-    lat_raw = request.form.get("classroom_lat", "").strip()
-    lng_raw = request.form.get("classroom_lng", "").strip()
-    radius_raw = request.form.get("geofence_radius_meters", "100").strip()
+    session_types = ["Lecture", "Lab", "Tutorial"]
 
-    lat = None
-    lng = None
-    radius = 100
-
-    if lat_raw and lng_raw:
-        try:
-            lat = float(lat_raw)
-            lng = float(lng_raw)
-            if not (-90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
-                flash("Latitude must be between -90 and 90, Longitude between -180 and 180.", "danger")
-                return redirect(url_for("course_attendance", course_id=course_id))
-        except (ValueError, TypeError):
-            flash("Latitude and Longitude must be valid numbers.", "danger")
-            return redirect(url_for("course_attendance", course_id=course_id))
-
-    if radius_raw:
-        try:
-            radius = max(10, min(5000, int(radius_raw)))
-        except (ValueError, TypeError):
-            radius = 100
+    is_multi = any(f"classroom_lat_{st.lower()}" in request.form or f"venue_name_{st.lower()}" in request.form for st in session_types)
+    saved_venues = []
 
     def _do_update(conn):
-        conn.execute("""
-            UPDATE courses
-            SET classroom_lat = ?, classroom_lng = ?, geofence_radius_meters = ?, geofence_enabled = ?
-            WHERE id = ?
-        """, (lat, lng, radius, enabled, course_id))
+        now_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if is_multi:
+            for st in session_types:
+                st_lower = st.lower()
+                vname = request.form.get(f"venue_name_{st_lower}", "").strip()
+                lat_raw = request.form.get(f"classroom_lat_{st_lower}", "").strip()
+                lng_raw = request.form.get(f"classroom_lng_{st_lower}", "").strip()
+                radius_raw = request.form.get(f"geofence_radius_{st_lower}", "100").strip()
+                enabled = 1 if request.form.get(f"geofence_enabled_{st_lower}") in ("1", "true", "on", "yes") else 0
+
+                lat, lng = None, None
+                if lat_raw and lng_raw:
+                    try:
+                        lat_val = float(lat_raw)
+                        lng_val = float(lng_raw)
+                        if -90.0 <= lat_val <= 90.0 and -180.0 <= lng_val <= 180.0:
+                            lat, lng = lat_val, lng_val
+                    except (ValueError, TypeError):
+                        pass
+
+                try:
+                    radius = max(10, min(5000, int(radius_raw)))
+                except (ValueError, TypeError):
+                    radius = 100
+
+                existing = conn.execute("""
+                    SELECT id FROM course_venue_geofences WHERE course_id = ? AND LOWER(session_type) = LOWER(?)
+                """, (course_id, st)).fetchone()
+
+                if existing:
+                    existing_id = existing["id"] if isinstance(existing, dict) or hasattr(existing, "__getitem__") else existing[0]
+                    conn.execute("""
+                        UPDATE course_venue_geofences
+                        SET venue_name = ?, latitude = ?, longitude = ?, radius_meters = ?, is_enabled = ?, updated_at = ?
+                        WHERE id = ?
+                    """, (vname, lat, lng, radius, enabled, now_dt, existing_id))
+                else:
+                    conn.execute("""
+                        INSERT INTO course_venue_geofences (course_id, session_type, venue_name, latitude, longitude, radius_meters, is_enabled, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (course_id, st, vname, lat, lng, radius, enabled, now_dt, now_dt))
+
+                if lat is not None and lng is not None and enabled:
+                    v_title = f" ({vname})" if vname else ""
+                    saved_venues.append(f"{st}{v_title} [{radius}m]")
+
+            # Keep Lecture settings mirrored in courses table for legacy compatibility
+            lec = conn.execute("""
+                SELECT latitude, longitude, radius_meters, is_enabled FROM course_venue_geofences
+                WHERE course_id = ? AND LOWER(session_type) = 'lecture'
+            """, (course_id,)).fetchone()
+            if lec:
+                conn.execute("""
+                    UPDATE courses
+                    SET classroom_lat = ?, classroom_lng = ?, geofence_radius_meters = ?, geofence_enabled = ?
+                    WHERE id = ?
+                """, (lec["latitude"], lec["longitude"], lec["radius_meters"], lec["is_enabled"], course_id))
+        else:
+            # Single venue fallback handler (legacy support)
+            enabled = 1 if request.form.get("geofence_enabled") in ("1", "true", "on", "yes") else 0
+            lat_raw = request.form.get("classroom_lat", "").strip()
+            lng_raw = request.form.get("classroom_lng", "").strip()
+            radius_raw = request.form.get("geofence_radius_meters", "100").strip()
+
+            lat, lng = None, None
+            if lat_raw and lng_raw:
+                try:
+                    lat_val = float(lat_raw)
+                    lng_val = float(lng_raw)
+                    if -90.0 <= lat_val <= 90.0 and -180.0 <= lng_val <= 180.0:
+                        lat, lng = lat_val, lng_val
+                except (ValueError, TypeError):
+                    pass
+
+            try:
+                radius = max(10, min(5000, int(radius_raw)))
+            except (ValueError, TypeError):
+                radius = 100
+
+            conn.execute("""
+                UPDATE courses
+                SET classroom_lat = ?, classroom_lng = ?, geofence_radius_meters = ?, geofence_enabled = ?
+                WHERE id = ?
+            """, (lat, lng, radius, enabled, course_id))
+
+            existing = conn.execute("""
+                SELECT id FROM course_venue_geofences WHERE course_id = ? AND LOWER(session_type) = 'lecture'
+            """, (course_id,)).fetchone()
+            if existing:
+                existing_id = existing["id"] if isinstance(existing, dict) or hasattr(existing, "__getitem__") else existing[0]
+                conn.execute("""
+                    UPDATE course_venue_geofences
+                    SET latitude = ?, longitude = ?, radius_meters = ?, is_enabled = ?, updated_at = ?
+                    WHERE id = ?
+                """, (lat, lng, radius, enabled, now_dt, existing_id))
+            else:
+                conn.execute("""
+                    INSERT INTO course_venue_geofences (course_id, session_type, venue_name, latitude, longitude, radius_meters, is_enabled, created_at, updated_at)
+                    VALUES (?, 'Lecture', 'Classroom', ?, ?, ?, ?, ?, ?)
+                """, (course_id, lat, lng, radius, enabled, now_dt, now_dt))
+
+            if lat is not None and lng is not None and enabled:
+                saved_venues.append(f"Lecture ({lat:.4f}, {lng:.4f}, {radius}m)")
+
         conn.commit()
 
     execute_db_write_with_retry(_do_update)
 
-    if lat is not None and lng is not None:
-        status_txt = f"Venue set to ({lat:.6f}, {lng:.6f}) with {radius}m radius."
-        if not enabled:
-            status_txt += " (Geofencing is currently DISABLED)"
-        flash(f"📍 {status_txt}", "success")
+    if saved_venues:
+        flash(f"📍 Geofence venues configured: {', '.join(saved_venues)}.", "success")
     else:
-        flash("📍 Classroom geolocation cleared. Geofencing is inactive.", "info")
+        flash("📍 Venue geofences updated (No active coordinates set).", "info")
 
     return redirect(url_for("course_attendance", course_id=course_id))
 
@@ -9473,6 +9614,42 @@ def course_attendance(course_id):
             ORDER BY es.excluded_date DESC
         """, (course_id,)).fetchall()
         
+        # Multi-venue geofences lookup (Lecture, Lab, Tutorial)
+        venues_rows = conn.execute("""
+            SELECT session_type, venue_name, latitude, longitude, radius_meters, is_enabled
+            FROM course_venue_geofences
+            WHERE course_id = ?
+        """, (course_id,)).fetchall()
+
+        venue_geofences = {
+            "lecture": {"venue_name": "", "latitude": "", "longitude": "", "radius_meters": 100, "is_enabled": 1},
+            "lab": {"venue_name": "", "latitude": "", "longitude": "", "radius_meters": 100, "is_enabled": 1},
+            "tutorial": {"venue_name": "", "latitude": "", "longitude": "", "radius_meters": 100, "is_enabled": 1},
+        }
+
+        # Seed lecture fallback from courses table if present
+        if course.get("classroom_lat") is not None and course.get("classroom_lng") is not None:
+            venue_geofences["lecture"]["latitude"] = course["classroom_lat"]
+            venue_geofences["lecture"]["longitude"] = course["classroom_lng"]
+            venue_geofences["lecture"]["radius_meters"] = course.get("geofence_radius_meters") or 100
+            venue_geofences["lecture"]["is_enabled"] = course.get("geofence_enabled", 1)
+
+        for vr in venues_rows:
+            stype = (vr["session_type"] if isinstance(vr, dict) or hasattr(vr, "__getitem__") else vr[0]).lower()
+            if stype in venue_geofences:
+                venue_geofences[stype] = {
+                    "venue_name": vr["venue_name"] or "",
+                    "latitude": vr["latitude"] if vr["latitude"] is not None else "",
+                    "longitude": vr["longitude"] if vr["longitude"] is not None else "",
+                    "radius_meters": vr["radius_meters"] or 100,
+                    "is_enabled": 1 if vr["is_enabled"] else 0
+                }
+
+        active_geofences_count = sum(
+            1 for v in venue_geofences.values()
+            if v.get("is_enabled") and v.get("latitude") not in (None, "") and v.get("longitude") not in (None, "")
+        )
+        
         conn.close()
 
         token = course["attendance_feed_token"] or ""
@@ -9494,6 +9671,8 @@ def course_attendance(course_id):
             attendance_pct=0.0,
             active_tab="attendance",
             distinct_sessions=distinct_sessions,
+            venue_geofences=venue_geofences,
+            active_geofences_count=active_geofences_count,
             google_sheet_feed_url=google_sheet_feed_url,
             google_sheet_formula=google_sheet_formula,
             attendance_sheet_feed_ip_url=attendance_sheet_feed_ip_url,
