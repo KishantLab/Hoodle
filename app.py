@@ -8565,33 +8565,33 @@ def api_admin_system_status():
         {
             "id": "master",
             "name": "Master Gateway",
-            "ip": "10.10.99.2",
-            "url": "http://127.0.0.1:8095/login",
+            "ip": "192.168.99.2",
+            "url": "http://127.0.0.1:8096/api/heartbeat",
             "role": "Gateway Proxy & Web App",
             "workers": 8
         },
         {
             "id": "gpu1",
             "name": "Worker Node 1",
-            "ip": "10.10.99.1",
-            "url": "http://10.10.99.1:8095/login",
+            "ip": "192.168.99.3",
+            "url": "http://192.168.99.3:8095/api/heartbeat",
             "role": "CPU Application Worker",
-            "workers": 12
+            "workers": 8
         },
         {
             "id": "gpu2",
             "name": "Worker Node 2",
-            "ip": "10.10.99.3",
-            "url": "http://10.10.99.3:8095/login",
+            "ip": "192.168.99.4",
+            "url": "http://192.168.99.4:8095/api/heartbeat",
             "role": "CPU Application Worker",
-            "workers": 12
+            "workers": 8
         }
     ]
 
     def _probe_node(n):
         t0 = time.time()
         try:
-            r = requests.get(n["url"], timeout=1.4, headers={"User-Agent": "HoodleMonitor/1.0"})
+            r = requests.get(n["url"], timeout=3.0, headers={"User-Agent": "HoodleMonitor/1.0"})
             lat = round((time.time() - t0) * 1000, 1)
             if r.status_code in (200, 302):
                 return {
@@ -8614,7 +8614,7 @@ def api_admin_system_status():
             if "Connection refused" in err_str:
                 short_err = f"Connection refused on port 8095. Service 'accl-lms' may be stopped on {n['ip']}."
             elif "timed out" in err_str or "ConnectTimeout" in err_str:
-                short_err = f"Connection timed out (1.4s). Node {n['name']} ({n['ip']}) unreachable over cluster network."
+                short_err = f"Connection timed out (3.0s). Node {n['name']} ({n['ip']}) unreachable over cluster network."
             else:
                 short_err = err_str
             return {
@@ -8741,9 +8741,9 @@ def api_admin_system_status():
         "failover_policy": "max_fails=2, fail_timeout=5s",
         "total_active_workers": 32,
         "nodes": [
-            {"target": "127.0.0.1:8095", "node": "Master Gateway", "weight": 2, "workers": 8},
-            {"target": "10.10.99.1:8095", "node": "Worker 1 (gpu1)", "weight": 3, "workers": 12},
-            {"target": "10.10.99.3:8095", "node": "Worker 2 (gpu2)", "weight": 3, "workers": 12}
+            {"target": "127.0.0.1:8096", "node": "Master Gateway", "weight": 2, "workers": 8},
+            {"target": "192.168.99.3:8095", "node": "Worker 1 (gpu1)", "weight": 3, "workers": 8},
+            {"target": "192.168.99.4:8095", "node": "Worker 2 (gpu2)", "weight": 3, "workers": 8}
         ],
         "error": None
     }

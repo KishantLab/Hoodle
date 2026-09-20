@@ -111,7 +111,7 @@
         <span>🌐</span>
         <span>Cluster Node Endpoints (Traffic &amp; Latency)</span>
       </h2>
-      <span style="font-size: 0.8rem; color: var(--text-muted);">Monitored via internal private network (10.10.99.*)</span>
+      <span style="font-size: 0.8rem; color: var(--text-muted);">Monitored via internal private network (192.168.99.*)</span>
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem;" id="nodesGrid">
@@ -120,7 +120,7 @@
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
           <div>
             <div style="font-weight: 800; font-size: 1.1rem; color: #1e3a8a;">Master Gateway</div>
-            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">10.10.99.2:8095 (10.10.14.104)</div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">192.168.99.2:8095 (10.10.14.104)</div>
           </div>
           <span class="badge" id="node-badge-master" style="background: #e2e8f0; color: #475569; font-size: 0.78rem; padding: 4px 10px; border-radius: 9999px;">
             Checking...
@@ -141,14 +141,14 @@
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
           <div>
             <div style="font-weight: 800; font-size: 1.1rem; color: #1e3a8a;">Worker Node 1 (gpu1)</div>
-            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">10.10.99.1:8095</div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">192.168.99.3:8095</div>
           </div>
           <span class="badge" id="node-badge-gpu1" style="background: #e2e8f0; color: #475569; font-size: 0.78rem; padding: 4px 10px; border-radius: 9999px;">
             Checking...
           </span>
         </div>
         <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-          Role: <strong>CPU Application Worker (12 Gunicorn Workers)</strong>
+          Role: <strong>CPU Application Worker (8 Gunicorn Workers)</strong>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 0.6rem;">
           <span>HTTP Response: <strong id="node-code-gpu1">--</strong></span>
@@ -162,14 +162,14 @@
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
           <div>
             <div style="font-weight: 800; font-size: 1.1rem; color: #1e3a8a;">Worker Node 2 (gpu2)</div>
-            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">10.10.99.3:8095</div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">192.168.99.4:8095</div>
           </div>
           <span class="badge" id="node-badge-gpu2" style="background: #e2e8f0; color: #475569; font-size: 0.78rem; padding: 4px 10px; border-radius: 9999px;">
             Checking...
           </span>
         </div>
         <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-          Role: <strong>CPU Application Worker (12 Gunicorn Workers)</strong>
+          Role: <strong>CPU Application Worker (8 Gunicorn Workers)</strong>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 0.6rem;">
           <span>HTTP Response: <strong id="node-code-gpu2">--</strong></span>
@@ -347,7 +347,7 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>127.0.0.1:8095</code></td>
+            <td><code>127.0.0.1:8096</code></td>
             <td><strong>Master Gateway (master)</strong></td>
             <td>Weight = 2 (25%)</td>
             <td>8 Workers</td>
@@ -355,18 +355,18 @@
             <td><span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 700;">● Active</span></td>
           </tr>
           <tr>
-            <td><code>10.10.99.1:8095</code></td>
+            <td><code>192.168.99.3:8095</code></td>
             <td><strong>Worker Node 1 (gpu1)</strong></td>
             <td>Weight = 3 (37.5%)</td>
-            <td>12 Workers</td>
+            <td>8 Workers</td>
             <td><code>max_fails=2 fail_timeout=5s</code></td>
             <td><span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 700;">● Active</span></td>
           </tr>
           <tr>
-            <td><code>10.10.99.3:8095</code></td>
+            <td><code>192.168.99.4:8095</code></td>
             <td><strong>Worker Node 2 (gpu2)</strong></td>
             <td>Weight = 3 (37.5%)</td>
-            <td>12 Workers</td>
+            <td>8 Workers</td>
             <td><code>max_fails=2 fail_timeout=5s</code></td>
             <td><span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 700;">● Active</span></td>
           </tr>

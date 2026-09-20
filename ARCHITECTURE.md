@@ -8,7 +8,7 @@ This document details the multi-node distributed cluster topology, load balancin
 
 ## 1. High-Level Architecture Overview
 
-Hoodle LMS utilizes a decoupled, three-tier distributed architecture spanning three physical servers connected via a dedicated gigabit private network (`10.10.99.0/24`) and campus intranet (`10.10.14.0/24`):
+Hoodle LMS utilizes a decoupled, three-tier distributed architecture spanning three physical servers connected via a dedicated gigabit private network (`192.168.99.0/24`) and campus intranet (`10.10.14.0/24`):
 
 ```
                                   [ Students & Faculty ]
@@ -18,7 +18,7 @@ Hoodle LMS utilizes a decoupled, three-tier distributed architecture spanning th
                                     /              \
                                    v                v
          ========================================================================
-         [ Master Gateway Server: 10.10.14.104 / 10.10.99.2 ]
+         [ Master Gateway Server: 10.10.14.104 / 192.168.99.2 ]
          ------------------------------------------------------------------------
          • NGINX Reverse Proxy & Layer 7 Load Balancer
          • SSL/TLS Termination + Dynamic Static Asset Cache
@@ -26,14 +26,14 @@ Hoodle LMS utilizes a decoupled, three-tier distributed architecture spanning th
          • Master Web Application (8 Gunicorn Workers on CPU)
          ========================================================================
                          |                         |
-            (Private 1Gbps / 10.10.99.1)   (Private 1Gbps / 10.10.99.3)
+            (Private 1Gbps / 192.168.99.3) (Private 1Gbps / 192.168.99.4)
                          |                         |
                          v                         v
          +-----------------------------+   +-----------------------------+
          | Worker Node 1: gpu1         |   | Worker Node 2: gpu2         |
-         | (10.10.99.1:8095)           |   | (10.10.99.3:8095)           |
+         | (192.168.99.3:8095)         |   | (192.168.99.4:8095)         |
          | --------------------------- |   | --------------------------- |
-         | • 12 Gunicorn CPU Workers   |   | • 12 Gunicorn CPU Workers   |
+         | • 8 Gunicorn CPU Workers    |   | • 8 Gunicorn CPU Workers    |
          | • Sub-5ms Internal Latency  |   | • Sub-5ms Internal Latency  |
          | • 100% Slurm GPU Isolation  |   | • 100% Slurm GPU Isolation  |
          +-----------------------------+   +-----------------------------+
@@ -60,10 +60,10 @@ Hoodle LMS utilizes a decoupled, three-tier distributed architecture spanning th
 
 | Node ID | Hostname | Internal IP | Role | Process Model | Worker Capacity |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Node 0** | `master` | `10.10.99.2` | Master Gateway, Reverse Proxy, PostgreSQL, App Worker | NGINX + Gunicorn + PG16 | 8 CPU Workers |
-| **Node 1** | `gpu1` | `10.10.99.1` | Application Worker Node 1 | Gunicorn Systemd Service | 12 CPU Workers |
-| **Node 2** | `gpu2` | `10.10.99.3` | Application Worker Node 2 | Gunicorn Systemd Service | 12 CPU Workers |
-| **Cluster Total** | — | — | **Distributed Web App Tier** | **3 Nodes in Parallel** | **32 CPU Workers** |
+| **Node 0** | `master` | `192.168.99.2` | Master Gateway, Reverse Proxy, PostgreSQL, App Worker | NGINX + Gunicorn + PG16 | 8 CPU Workers |
+| **Node 1** | `gpu1` | `192.168.99.3` | Application Worker Node 1 | Gunicorn Systemd Service | 8 CPU Workers |
+| **Node 2** | `gpu2` | `192.168.99.4` | Application Worker Node 2 | Gunicorn Systemd Service | 8 CPU Workers |
+| **Cluster Total** | — | — | **Distributed Web App Tier** | **3 Nodes in Parallel** | **24+ CPU Workers** |
 
 ---
 
@@ -74,13 +74,13 @@ Traffic arriving at `https://10.10.14.104/lms/` or direct cluster endpoints is h
 ```nginx
 upstream accl_lms_upstream {
     # Master Gateway Node
-    server 127.0.0.1:8095 weight=2 max_fails=2 fail_timeout=5s;
+    server 127.0.0.1:8096 weight=2 max_fails=2 fail_timeout=5s;
 
     # Worker Node 1 (gpu1)
-    server 10.10.99.1:8095 weight=3 max_fails=2 fail_timeout=5s;
+    server 192.168.99.3:8095 weight=3 max_fails=2 fail_timeout=5s;
 
     # Worker Node 2 (gpu2)
-    server 10.10.99.3:8095 weight=3 max_fails=2 fail_timeout=5s;
+    server 192.168.99.4:8095 weight=3 max_fails=2 fail_timeout=5s;
 
     keepalive 64;
 }
@@ -197,9 +197,9 @@ sudo systemctl restart accl-lms
 In `/etc/nginx/conf.d/accl-cluster.conf`, mark the target node as `down`:
 ```nginx
 upstream accl_lms_upstream {
-    server 127.0.0.1:8095 weight=2;
-    server 10.10.99.1:8095 down;  # Under maintenance
-    server 10.10.99.3:8095 weight=3;
+    server 127.0.0.1:8096 weight=2;
+    server 192.168.99.3:8095 down;  # Under maintenance
+    server 192.168.99.4:8095 weight=3;
 }
 ```
 Reload NGINX without dropping connections:
