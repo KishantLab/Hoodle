@@ -130,11 +130,11 @@
           </thead>
           <tbody>
             {% for p in present_list %}
-              <tr class="student-session-row" data-status="present" data-name="{{ p.student_name | lower }}" data-roll="{{ p.roll_number | lower }}" style="border-bottom: 1px solid var(--border); font-size: 0.88rem; {% if p.is_proxy_suspect %}background: #fff1f2;{% endif %}">
-                <td style="padding: 0.65rem; font-family: monospace; font-weight: 700; color: var(--primary);">
+              <tr class="student-session-row" data-status="present" data-name="{{ p.student_name | lower }}" data-roll="{{ p.roll_number | lower }}" style="border-bottom: 1px solid var(--border); font-size: 0.88rem; {% if p.is_proxy_suspect %}background: #fff1f2; border-left: 4px solid #dc2626;{% endif %}">
+                <td style="padding: 0.65rem; font-family: monospace; font-weight: 700; color: {% if p.is_proxy_suspect %}#b91c1c{% else %}var(--primary){% endif %};">
                   {{ p.roll_number }}
                 </td>
-                <td style="padding: 0.65rem; font-weight: 600;">
+                <td style="padding: 0.65rem; font-weight: 600; color: {% if p.is_proxy_suspect %}#991b1b{% else %}inherit{% endif %};">
                   {{ p.student_name }}
                 </td>
                 <td style="padding: 0.65rem; font-family: monospace; font-size: 0.82rem; color: var(--text-muted);">
@@ -150,16 +150,26 @@
                 </td>
                 <td style="padding: 0.65rem;">
                   {% if p.is_proxy_suspect %}
-                    <span class="badge" style="background: #fee2e2; color: #991b1b; font-weight: 800; font-size: 0.72rem; border: 1px solid #f87171;" title="{{ p.proxy_remark }}">
-                      ⚠️ Proxy Suspect
+                    <span class="badge" style="background: #dc2626; color: #ffffff; font-weight: 800; font-size: 0.74rem; padding: 2px 8px; border-radius: 4px;" title="{{ p.proxy_remark }}">
+                      ⚠️ Suspicious Location / Proxy
                     </span>
-                    <div style="font-size: 0.72rem; color: #b91c1c; margin-top: 2px; max-width: 250px; line-height: 1.3;">
+                    <div style="font-size: 0.78rem; color: #b91c1c; font-weight: 700; margin-top: 3px; max-width: 280px; line-height: 1.35;">
                       {{ p.proxy_remark }}
                     </div>
+                    {% if p.distance_meters is not none %}
+                      <div style="font-size: 0.72rem; color: #7f1d1d; font-family: monospace; font-weight: 600; margin-top: 2px;">
+                        📍 Distance: {{ (p.distance_meters|round(1)) }}m {% if p.accuracy_meters %}(±{{ p.accuracy_meters|round(1) }}m){% endif %}
+                      </div>
+                    {% endif %}
                   {% else %}
                     <span class="badge" style="background: #ecfdf5; color: #065f46; font-size: 0.72rem; font-weight: 700;">
                       ✓ Verified
                     </span>
+                    {% if p.distance_meters is not none %}
+                      <div style="font-size: 0.7rem; color: #166534; font-family: monospace; margin-top: 2px;">
+                        📍 In Room ({{ p.distance_meters|round(1) }}m)
+                      </div>
+                    {% endif %}
                   {% endif %}
                 </td>
               </tr>

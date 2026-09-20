@@ -95,23 +95,6 @@
         Your attendance has been verified and registered.
       </p>
 
-      {% if proxy_warning %}
-        <div style="background: #fef2f2; border: 1.5px solid #f87171; border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem; text-align: left; color: #991b1b;">
-          <div style="display: flex; align-items: flex-start; gap: 0.6rem;">
-            <span style="font-size: 1.4rem; line-height: 1;">⚠️</span>
-            <div>
-              <strong style="font-size: 0.92rem; display: block; margin-bottom: 0.25rem;">Duplicate Device / IP Alert: Suspect Proxy Flagged</strong>
-              <div style="font-size: 0.82rem; line-height: 1.45;">
-                This phone or network was already used by <strong>{{ proxy_warning.roll_number }} ({{ proxy_warning.name }})</strong> at {{ proxy_warning.marked_at }} for this session.
-              </div>
-              <div style="font-size: 0.78rem; margin-top: 0.35rem; color: #b91c1c; font-weight: 600;">
-                Your attendance has been recorded under <em>Review Flag</em> for the course instructor.
-              </div>
-            </div>
-          </div>
-        </div>
-      {% endif %}
-
       <div style="background: var(--success-bg); border: 1px solid rgba(22, 163, 74, 0.2); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.5rem; text-align: left;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem; font-size: 0.88rem;">
           <span style="color: var(--text-muted);">Roll Number:</span>
@@ -164,11 +147,14 @@
         </div>
       </div>
 
-      <form action="{{ url_for('attend_submit', course_id=course.id) }}" method="POST">
+      <form id="attendanceConfirmForm" action="{{ url_for('attend_submit', course_id=course.id) }}" method="POST">
         <input type="hidden" name="token" value="{{ token }}">
         <input type="hidden" name="session_type" value="{{ session_type }}">
+        <input type="hidden" name="latitude" id="student_lat" value="">
+        <input type="hidden" name="longitude" id="student_lng" value="">
+        <input type="hidden" name="accuracy" id="student_acc" value="">
         
-        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.85rem; font-size: 1.05rem; font-weight: 700; display: flex; justify-content: center; align-items: center; gap: 0.5rem;">
+        <button type="submit" id="submitAttendanceBtn" class="btn btn-primary" style="width: 100%; padding: 0.85rem; font-size: 1.05rem; font-weight: 700; display: flex; justify-content: center; align-items: center; gap: 0.5rem;">
           <span>✅</span>
           <span>Confirm Attendance Now</span>
         </button>
@@ -176,10 +162,31 @@
 
       <div style="margin-top: 1rem; text-align: center;">
         <span style="font-size: 0.76rem; color: var(--text-light);">
-          🔒 Anti-Proxy Verification Active • IP & Session Verified
+          🔒 Anti-Proxy Verification Active • Device & Session Verified
         </span>
       </div>
     </div>
+
+    <script>
+      (function() {
+        if ("geolocation" in navigator) {
+          navigator.geolocation.getCurrentPosition(
+            function(position) {
+              var latInput = document.getElementById("student_lat");
+              var lngInput = document.getElementById("student_lng");
+              var accInput = document.getElementById("student_acc");
+              if (latInput) latInput.value = position.coords.latitude;
+              if (lngInput) lngInput.value = position.coords.longitude;
+              if (accInput) accInput.value = position.coords.accuracy;
+            },
+            function(error) {
+              console.log("GPS Notice:", error.message);
+            },
+            { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
+          );
+        }
+      })();
+    </script>
 
   {% endif %}
 

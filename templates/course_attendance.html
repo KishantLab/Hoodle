@@ -167,6 +167,17 @@
       </div>
 
       <div class="attendance-action-btns" style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+        <button type="button" class="btn btn-secondary" onclick="openModal('geofenceModal')" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 600;" title="Configure venue GPS coordinates and radius for silent anti-proxy tracking">
+          <span>📍</span>
+          <span>Classroom Geofence</span>
+          {% if course.classroom_lat is not none and course.classroom_lng is not none and course.geofence_enabled %}
+            <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 0.72rem; padding: 2px 6px;">Active ({{ course.geofence_radius_meters or 100 }}m)</span>
+          {% elif course.classroom_lat is not none and course.classroom_lng is not none %}
+            <span class="badge" style="background: #fef08a; color: #854d0e; font-size: 0.72rem; padding: 2px 6px;">Disabled</span>
+          {% else %}
+            <span class="badge" style="background: #f1f5f9; color: #64748b; font-size: 0.72rem; padding: 2px 6px;">Not Set</span>
+          {% endif %}
+        </button>
         <button type="button" class="btn btn-secondary" onclick="openModal('importAttendanceModal')" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 600;">
           <span>📥</span>
           <span>Import Past Attendance</span>
@@ -621,6 +632,72 @@
 
 </div>
 
+<!-- Classroom Geofence & Anti-Proxy Modal -->
+<div id="geofenceModal" class="modal-backdrop">
+  <div class="modal-content" style="max-width: 540px;">
+    <div class="modal-header">
+      <div>
+        <h3 style="font-size: 1.2rem; font-weight: 800; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+          <span>📍</span>
+          <span>Classroom Geofence (Anti-Proxy)</span>
+        </h3>
+        <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">Define venue GPS location to silently detect off-site attendance.</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('geofenceModal')">&times;</button>
+    </div>
+
+    <p style="font-size: 0.84rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.25rem;">
+      When geofencing is enabled, students submitting attendance from outside the allowed radius will have their record <strong>silently flagged</strong> in <strong style="color: #dc2626;">bold red</strong> on teacher &amp; TA rosters. The student will <strong>never be notified</strong> or shown an error, preventing them from circumventing the check.
+    </p>
+
+    <form action="{{ url_for('course_attendance_geofence', course_id=course.id) }}" method="POST">
+      <div style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+          <span style="font-size: 0.85rem; font-weight: 700;">📍 Auto-Detect Venue GPS</span>
+          <button type="button" id="btnDetectLocation" onclick="detectTeacherLocation()" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--primary);">
+            <span>📡</span>
+            <span>Use My Location</span>
+          </button>
+        </div>
+        <div id="geoDetectStatus" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem;">
+          Click "Use My Location" while sitting in the classroom/lab to fill your exact GPS coordinates.
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+        <div class="form-group">
+          <label class="form-label" for="classroom_lat" style="font-size: 0.82rem; font-weight: 700;">Latitude (°N)</label>
+          <input type="number" step="any" id="classroom_lat" name="classroom_lat" class="form-control" placeholder="e.g. 21.251412" value="{{ course.classroom_lat or '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="classroom_lng" style="font-size: 0.82rem; font-weight: 700;">Longitude (°E)</label>
+          <input type="number" step="any" id="classroom_lng" name="classroom_lng" class="form-control" placeholder="e.g. 81.629631" value="{{ course.classroom_lng or '' }}">
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label class="form-label" for="geofence_radius_meters" style="font-size: 0.82rem; font-weight: 700;">Allowed Radius (Meters)</label>
+        <input type="number" min="10" max="5000" id="geofence_radius_meters" name="geofence_radius_meters" class="form-control" value="{{ course.geofence_radius_meters or 100 }}">
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+          Default: 100 meters (recommended to accommodate standard mobile GPS drift inside buildings).
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 700; cursor: pointer;">
+          <input type="checkbox" name="geofence_enabled" value="1" {% if course.geofence_enabled != 0 %}checked{% endif %}>
+          <span>Enable Geofencing Anti-Proxy for this Course</span>
+        </label>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button type="button" onclick="closeModal('geofenceModal')" class="btn btn-secondary">Cancel</button>
+        <button type="submit" class="btn btn-primary" style="font-weight: 700;">💾 Save Geofence</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Individual Student Drilldown History Modal -->
 <div id="studentDetailModal" class="modal-backdrop">
   <div class="modal-content" style="max-width: 650px;">
@@ -1045,6 +1122,30 @@ Example:
         console.error(err);
         document.getElementById("modalStudentLogsBody").innerHTML = `<tr><td colspan="4" style="text-align: center; color: red; padding: 1.5rem;">Failed to load attendance logs.</td></tr>`;
       });
+  }
+
+  function detectTeacherLocation() {
+    const statusEl = document.getElementById("geoDetectStatus");
+    const btn = document.getElementById("btnDetectLocation");
+    if (!("geolocation" in navigator)) {
+      statusEl.innerHTML = "<span style='color: #dc2626;'>Geolocation is not supported by your browser.</span>";
+      return;
+    }
+    statusEl.textContent = "Acquiring high-accuracy GPS coordinates...";
+    btn.disabled = true;
+    navigator.geolocation.getCurrentPosition(
+      function(pos) {
+        btn.disabled = false;
+        document.getElementById("classroom_lat").value = pos.coords.latitude.toFixed(6);
+        document.getElementById("classroom_lng").value = pos.coords.longitude.toFixed(6);
+        statusEl.innerHTML = `<span style='color: #16a34a; font-weight: 700;'>✅ Acquired: ${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)} (Accuracy: ±${pos.coords.accuracy.toFixed(1)}m)</span>`;
+      },
+      function(err) {
+        btn.disabled = false;
+        statusEl.innerHTML = `<span style='color: #dc2626;'>Could not acquire GPS: ${err.message}</span>`;
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   }
 </script>
 {% endblock %}

@@ -63,9 +63,21 @@
     {% if data.cw_items or is_teacher_or_admin %}
       <div>
         <div class="topic-header-row">
-          <h2 class="topic-title">
-            📁 {{ data.topic.name }}
-          </h2>
+          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+            <h2 class="topic-title" style="margin: 0;">
+              📁 {{ data.topic.name }}
+            </h2>
+            {% if is_teacher_or_admin and data.topic.id %}
+              <div class="topic-move-btns" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                <form action="{{ url_for('move_topic', course_id=course.id, topic_id=data.topic.id, direction='up') }}" method="POST" style="display: inline; margin: 0;">
+                  <button type="submit" class="btn btn-secondary btn-sm" title="Move Topic Up" style="padding: 2px 7px; font-size: 0.85rem; line-height: 1.2;" {% if loop.first %}disabled style="opacity: 0.35; cursor: not-allowed;"{% endif %}>⬆️</button>
+                </form>
+                <form action="{{ url_for('move_topic', course_id=course.id, topic_id=data.topic.id, direction='down') }}" method="POST" style="display: inline; margin: 0;">
+                  <button type="submit" class="btn btn-secondary btn-sm" title="Move Topic Down" style="padding: 2px 7px; font-size: 0.85rem; line-height: 1.2;" {% if loop.last or (loop.index == topics|length) %}disabled style="opacity: 0.35; cursor: not-allowed;"{% endif %}>⬇️</button>
+                </form>
+              </div>
+            {% endif %}
+          </div>
           {% if is_teacher_or_admin and data.topic.id %}
             <form action="{{ url_for('delete_topic', course_id=course.id, topic_id=data.topic.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove this topic?');">
               <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger);">

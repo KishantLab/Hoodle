@@ -85,7 +85,7 @@
             {% if exam.instructions %}
             <div class="instructions-box">
                 <div class="inst-title">📋 Exam Instructions:</div>
-                <div class="inst-content">{{ exam.instructions|nl2br }}</div>
+                <div class="inst-content rich-text-content">{{ exam.instructions|rich_text }}</div>
             </div>
             {% endif %}
         </section>

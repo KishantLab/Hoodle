@@ -221,17 +221,71 @@ def filter_rich_text(s):
     import re
     from markupsafe import Markup
     try:
-        import markdown
-        raw_text = str(s)
-        # Normalize loose spaces inside bold/italic syntax e.g. **hello ** -> **hello**
+        raw_text = str(s).replace("\r\n", "\n").replace("\r", "\n")
+        # 1. Normalize spaces inside bold and italic markers
         raw_text = re.sub(r'\*\*(\s*)([^\*\n]+?)(\s*)\*\*', r'\1**\2**\3', raw_text)
         raw_text = re.sub(r'(?<!\*)\*(\s*)([^\*\n]+?)(\s*)\*(?!\*)', r'\1*\2*\3', raw_text)
-        safe_escaped = html.escape(raw_text)
+
+        # 2. Ensure bullet and numbered lists are preceded and followed by blank lines for proper Markdown parsing
+        lines = raw_text.split("\n")
+        new_lines = []
+        current_list_type = None
+        for line in lines:
+            ul_match = re.match(r'^\s*[-*]\s+', line)
+            ol_match = re.match(r'^\s*\d+\.\s+', line)
+            line_list_type = 'ul' if ul_match else ('ol' if ol_match else None)
+
+            if line_list_type:
+                if current_list_type is None:
+                    if new_lines and new_lines[-1].strip() != "":
+                        new_lines.append("")
+                elif current_list_type != line_list_type:
+                    new_lines.append("")
+                    new_lines.append("<!-- -->")
+                    new_lines.append("")
+                current_list_type = line_list_type
+            else:
+                if current_list_type is not None:
+                    if line.strip() != "":
+                        new_lines.append("")
+                    current_list_type = None
+            new_lines.append(line)
+        raw_text = "\n".join(new_lines)
+
+        import markdown
+        safe_escaped = html.escape(raw_text).replace("&lt;!-- --&gt;", "<!-- -->")
         rendered_html = markdown.markdown(safe_escaped, extensions=["extra", "nl2br"])
+        # Fallback regex pass for any unparsed **bold** and *italic*
+        rendered_html = re.sub(r'\*\*([^\*\n]+?)\*\*', r'<strong>\1</strong>', rendered_html)
+        rendered_html = re.sub(r'(?<!\*)\*([^\*\n]+?)\*(?!\*)', r'<em>\1</em>', rendered_html)
+        rendered_html = rendered_html.replace("<!-- -->", "")
         return Markup(rendered_html)
     except Exception:
-        from markupsafe import escape
-        return Markup("<br>".join(escape(str(s)).splitlines()))
+        import html
+        raw_text = html.escape(str(s))
+        raw_text = re.sub(r'\*\*([^\*\n]+?)\*\*', r'<strong>\1</strong>', raw_text)
+        raw_text = re.sub(r'(?<!\*)\*([^\*\n]+?)\*(?!\*)', r'<em>\1</em>', raw_text)
+        return Markup("<br>".join(raw_text.splitlines()))
+
+
+def haversine_distance_meters(lat1, lon1, lat2, lon2):
+    """
+    Computes Great Circle distance between two GPS coordinates in meters using the Haversine formula.
+    """
+    import math
+    try:
+        R = 6371000.0  # Earth's mean radius in meters
+        phi1 = math.radians(float(lat1))
+        phi2 = math.radians(float(lat2))
+        delta_phi = math.radians(float(lat2) - float(lat1))
+        delta_lambda = math.radians(float(lon2) - float(lon1))
+
+        a = math.sin(delta_phi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0)**2
+        c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+        return R * c
+    except Exception:
+        return 999999.0
+
 
 
 
@@ -613,6 +667,14 @@ def init_db():
             c.execute("ALTER TABLE courses ADD COLUMN gradebook_sheet_sync_status TEXT DEFAULT NULL")
         if "gradebook_feed_token" not in course_cols:
             c.execute("ALTER TABLE courses ADD COLUMN gradebook_feed_token TEXT DEFAULT NULL")
+        if "classroom_lat" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN classroom_lat REAL DEFAULT NULL")
+        if "classroom_lng" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN classroom_lng REAL DEFAULT NULL")
+        if "geofence_radius_meters" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN geofence_radius_meters INTEGER DEFAULT 100")
+        if "geofence_enabled" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN geofence_enabled INTEGER DEFAULT 1")
 
         # Pre-populate missing attendance_feed_tokens
         c.execute("SELECT id FROM courses WHERE attendance_feed_token IS NULL OR attendance_feed_token = ''")
@@ -636,6 +698,14 @@ def init_db():
             c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS gradebook_sheet_last_synced text DEFAULT NULL")
             c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS gradebook_sheet_sync_status text DEFAULT NULL")
             c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS gradebook_feed_token text DEFAULT NULL")
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS classroom_lat REAL DEFAULT NULL")
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS classroom_lng REAL DEFAULT NULL")
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS geofence_radius_meters INTEGER DEFAULT 100")
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS geofence_enabled INTEGER DEFAULT 1")
+            c.execute("ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS latitude REAL DEFAULT NULL")
+            c.execute("ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS longitude REAL DEFAULT NULL")
+            c.execute("ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS accuracy_meters REAL DEFAULT NULL")
+            c.execute("ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS distance_meters REAL DEFAULT NULL")
             c.execute("SELECT id FROM courses WHERE gradebook_feed_token IS NULL OR gradebook_feed_token = ''")
             for crow in c.fetchall():
                 cid = crow["id"] if isinstance(crow, dict) or hasattr(crow, "__getitem__") else crow[0]
@@ -685,6 +755,16 @@ def init_db():
             c.execute("ALTER TABLE attendance_logs ADD COLUMN is_proxy_suspect INTEGER DEFAULT 0")
         if "proxy_remark" not in att_cols:
             c.execute("ALTER TABLE attendance_logs ADD COLUMN proxy_remark TEXT DEFAULT ''")
+        if "latitude" not in att_cols:
+            c.execute("ALTER TABLE attendance_logs ADD COLUMN latitude REAL DEFAULT NULL")
+        if "longitude" not in att_cols:
+            c.execute("ALTER TABLE attendance_logs ADD COLUMN longitude REAL DEFAULT NULL")
+        if "accuracy_meters" not in att_cols:
+            c.execute("ALTER TABLE attendance_logs ADD COLUMN accuracy_meters REAL DEFAULT NULL")
+        if "distance_meters" not in att_cols:
+            c.execute("ALTER TABLE attendance_logs ADD COLUMN distance_meters REAL DEFAULT NULL")
+    except Exception:
+        pass
     except Exception:
         pass
 
@@ -3906,7 +3986,7 @@ def course_classwork(course_id):
         LEFT JOIN topics t ON cw.topic_id = t.id
         LEFT JOIN submissions s ON s.coursework_id = cw.id AND s.student_id = ?
         WHERE cw.course_id = ?
-        ORDER BY cw.created_at DESC
+        ORDER BY cw.created_at ASC
     """, (user_id, course_id)).fetchall()
 
     topic_map = {}
@@ -3966,6 +4046,50 @@ def create_topic(course_id):
     conn.close()
 
     flash(f"Topic '{name}' created successfully.", "success")
+    return redirect(url_for("course_classwork", course_id=course_id))
+
+
+@app.route("/courses/<int:course_id>/topics/<int:topic_id>/move/<string:direction>", methods=["POST"])
+@teacher_required
+def move_topic(course_id, topic_id, direction):
+    """
+    Reorders topics up or down by swapping display_order with adjacent topic.
+    """
+    if direction not in ("up", "down"):
+        flash("Invalid move direction.", "danger")
+        return redirect(url_for("course_classwork", course_id=course_id))
+
+    conn = get_db()
+    course_topics = conn.execute("""
+        SELECT id, display_order FROM topics
+        WHERE course_id = ?
+        ORDER BY display_order ASC, created_at ASC, id ASC
+    """, (course_id,)).fetchall()
+
+    topic_ids = [t["id"] for t in course_topics]
+    if topic_id not in topic_ids:
+        conn.close()
+        flash("Topic not found in this course.", "warning")
+        return redirect(url_for("course_classwork", course_id=course_id))
+
+    idx = topic_ids.index(topic_id)
+    target_idx = idx - 1 if direction == "up" else idx + 1
+
+    if 0 <= target_idx < len(course_topics):
+        # Renumber to clean multiples of 10
+        for i, t in enumerate(course_topics):
+            conn.execute("UPDATE topics SET display_order = ? WHERE id = ?", (i * 10, t["id"]))
+        # Swap current and target
+        current_order = idx * 10
+        target_order = target_idx * 10
+        conn.execute("UPDATE topics SET display_order = ? WHERE id = ?", (target_order, topic_id))
+        conn.execute("UPDATE topics SET display_order = ? WHERE id = ?", (current_order, topic_ids[target_idx]))
+        conn.commit()
+        flash(f"Topic moved {direction} successfully.", "success")
+    else:
+        flash(f"Topic is already at the {'top' if direction == 'up' else 'bottom'}.", "info")
+
+    conn.close()
     return redirect(url_for("course_classwork", course_id=course_id))
 
 
@@ -9047,7 +9171,6 @@ def attend_submit(course_id):
     # Check if this IP address was already used by another student in this session today
     proxy_suspect = 0
     proxy_remark = ""
-    proxy_warning_user = None
 
     if client_ip:
         ro_conn = get_db(read_only=True)
@@ -9064,11 +9187,43 @@ def attend_submit(course_id):
             prev_name = prev_ip_holder["student_name"]
             prev_roll = prev_ip_holder["roll_number"]
             proxy_remark = f"Duplicate device/IP used previously by {prev_roll} ({prev_name}) at {prev_ip_holder['marked_at']}"
-            proxy_warning_user = {
-                "name": prev_name,
-                "roll_number": prev_roll,
-                "marked_at": prev_ip_holder["marked_at"]
-            }
+
+    # Geolocation Anti-Proxy Geofence Check
+    student_lat_raw = request.form.get("latitude", "").strip()
+    student_lng_raw = request.form.get("longitude", "").strip()
+    student_acc_raw = request.form.get("accuracy", "").strip()
+    student_lat = None
+    student_lng = None
+    student_acc = None
+    distance_meters = None
+
+    try:
+        if student_lat_raw and student_lng_raw:
+            student_lat = float(student_lat_raw)
+            student_lng = float(student_lng_raw)
+        if student_acc_raw:
+            student_acc = float(student_acc_raw)
+    except (ValueError, TypeError):
+        pass
+
+    geofence_enabled = course.get("geofence_enabled", 1) if isinstance(course, dict) else (course["geofence_enabled"] if "geofence_enabled" in course.keys() else 1)
+    classroom_lat = course.get("classroom_lat") if isinstance(course, dict) else (course["classroom_lat"] if "classroom_lat" in course.keys() else None)
+    classroom_lng = course.get("classroom_lng") if isinstance(course, dict) else (course["classroom_lng"] if "classroom_lng" in course.keys() else None)
+    radius = (course.get("geofence_radius_meters") if isinstance(course, dict) else (course["geofence_radius_meters"] if "geofence_radius_meters" in course.keys() else 100)) or 100
+
+    if geofence_enabled and classroom_lat is not None and classroom_lng is not None:
+        if student_lat is not None and student_lng is not None:
+            distance_meters = haversine_distance_meters(student_lat, student_lng, classroom_lat, classroom_lng)
+            if distance_meters > radius:
+                proxy_suspect = 1
+                dist_str = f"{int(distance_meters)}m" if distance_meters < 1000 else f"{distance_meters/1000:.2f}km"
+                geo_msg = f"Outside Geofence: {dist_str} away (Allowed: {radius}m)"
+                proxy_remark = f"{proxy_remark} | {geo_msg}" if proxy_remark else geo_msg
+        else:
+            # Geofencing enabled for course, but student did not supply coordinates
+            proxy_suspect = 1
+            geo_msg = "Location Denied / Unavailable (Geofence Active)"
+            proxy_remark = f"{proxy_remark} | {geo_msg}" if proxy_remark else geo_msg
 
     def _do_submit(conn):
         conn.execute("BEGIN IMMEDIATE")
@@ -9079,15 +9234,17 @@ def attend_submit(course_id):
             INSERT INTO attendance_logs (
                 course_id, session_id, student_id, roll_number, student_name,
                 section, session_type, attendance_date, status, method, ip_address, marked_at, attendance_key,
-                is_proxy_suspect, proxy_remark
-            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'PRESENT', 'QR_SCAN', ?, ?, ?, ?, ?)
+                is_proxy_suspect, proxy_remark,
+                latitude, longitude, accuracy_meters, distance_meters
+            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'PRESENT', 'QR_SCAN', ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             course_id, user["id"], roll_number, user["display_name"],
             course["section"] or "Section A", session_type, today_str,
             client_ip, now_str, target_key,
-            proxy_suspect, proxy_remark
+            proxy_suspect, proxy_remark,
+            student_lat, student_lng, student_acc, distance_meters
         ))
-        if proxy_suspect:
+        if proxy_suspect and client_ip:
             # Also flag the earlier student log from this same IP so teacher sees both
             conn.execute("""
                 UPDATE attendance_logs
@@ -9114,6 +9271,8 @@ def attend_submit(course_id):
         flash(f"Attendance for today's {session_type} has already been logged.", "info")
         return redirect(url_for("course_attendance", course_id=course_id))
 
+    # Anti-Proxy design requirement: NEVER inform the student if flagged as suspicious proxy.
+    # Student sees clean confirmation; proxy alert is shown strictly to teachers/TAs.
     return render_template(
         "attendance_confirm.html",
         course=course,
@@ -9122,8 +9281,63 @@ def attend_submit(course_id):
         today_str=today_str,
         now_str=now_str,
         user=user,
-        proxy_warning=proxy_warning_user
+        proxy_warning=None
     )
+
+
+@app.route("/courses/<int:course_id>/attendance/geofence", methods=["POST"])
+@teacher_required
+def course_attendance_geofence(course_id):
+    """
+    Teacher & TA Classroom Geolocation & Geofencing Configuration:
+    Sets venue latitude, longitude, and allowed radius in meters.
+    """
+    course = get_course_or_404(course_id)
+    enabled = 1 if request.form.get("geofence_enabled") in ("1", "true", "on", "yes") else 0
+    lat_raw = request.form.get("classroom_lat", "").strip()
+    lng_raw = request.form.get("classroom_lng", "").strip()
+    radius_raw = request.form.get("geofence_radius_meters", "100").strip()
+
+    lat = None
+    lng = None
+    radius = 100
+
+    if lat_raw and lng_raw:
+        try:
+            lat = float(lat_raw)
+            lng = float(lng_raw)
+            if not (-90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
+                flash("Latitude must be between -90 and 90, Longitude between -180 and 180.", "danger")
+                return redirect(url_for("course_attendance", course_id=course_id))
+        except (ValueError, TypeError):
+            flash("Latitude and Longitude must be valid numbers.", "danger")
+            return redirect(url_for("course_attendance", course_id=course_id))
+
+    if radius_raw:
+        try:
+            radius = max(10, min(5000, int(radius_raw)))
+        except (ValueError, TypeError):
+            radius = 100
+
+    def _do_update(conn):
+        conn.execute("""
+            UPDATE courses
+            SET classroom_lat = ?, classroom_lng = ?, geofence_radius_meters = ?, geofence_enabled = ?
+            WHERE id = ?
+        """, (lat, lng, radius, enabled, course_id))
+        conn.commit()
+
+    execute_db_write_with_retry(_do_update)
+
+    if lat is not None and lng is not None:
+        status_txt = f"Venue set to ({lat:.6f}, {lng:.6f}) with {radius}m radius."
+        if not enabled:
+            status_txt += " (Geofencing is currently DISABLED)"
+        flash(f"📍 {status_txt}", "success")
+    else:
+        flash("📍 Classroom geolocation cleared. Geofencing is inactive.", "info")
+
+    return redirect(url_for("course_attendance", course_id=course_id))
 
 
 # --- Main Course Attendance Tab & Logs Dashboard ---
