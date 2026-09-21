@@ -9170,6 +9170,42 @@ def attend_scan_landing(course_id):
             user=user
         )
     
+    # 4. Check whether geofence is active for this session type / venue
+    ro_conn = get_db(read_only=True)
+    venue_row = ro_conn.execute("""
+        SELECT session_type, venue_name, latitude, longitude, radius_meters, is_enabled
+        FROM course_venue_geofences
+        WHERE course_id = ? AND LOWER(session_type) = LOWER(?)
+    """, (course_id, session_type)).fetchone()
+    ro_conn.close()
+
+    target_lat = None
+    target_lng = None
+    radius = 100
+    venue_enabled = False
+    vname = ""
+
+    if venue_row and venue_row["latitude"] is not None and venue_row["longitude"] is not None:
+        target_lat = venue_row["latitude"]
+        target_lng = venue_row["longitude"]
+        radius = venue_row["radius_meters"] or 100
+        venue_enabled = bool(venue_row["is_enabled"])
+        vname = (venue_row["venue_name"] or "").strip()
+    else:
+        # Fallback to course default geofence (courses.classroom_lat)
+        geofence_enabled = course.get("geofence_enabled", 1) if isinstance(course, dict) else (course["geofence_enabled"] if "geofence_enabled" in course.keys() else 1)
+        classroom_lat = course.get("classroom_lat") if isinstance(course, dict) else (course["classroom_lat"] if "classroom_lat" in course.keys() else None)
+        classroom_lng = course.get("classroom_lng") if isinstance(course, dict) else (course["classroom_lng"] if "classroom_lng" in course.keys() else None)
+        course_radius = (course.get("geofence_radius_meters") if isinstance(course, dict) else (course["geofence_radius_meters"] if "geofence_radius_meters" in course.keys() else 100)) or 100
+        if geofence_enabled and classroom_lat is not None and classroom_lng is not None:
+            target_lat = classroom_lat
+            target_lng = classroom_lng
+            radius = course_radius
+            venue_enabled = True
+
+    venue_display = f"{session_type} ({vname})" if vname else session_type
+    geofence_active = bool(venue_enabled and target_lat is not None and target_lng is not None)
+
     return render_template(
         "attendance_confirm.html",
         course=course,
@@ -9177,7 +9213,10 @@ def attend_scan_landing(course_id):
         token=scanned_token,
         session_type=session_type,
         today_str=today_str,
-        user=user
+        user=user,
+        geofence_active=geofence_active,
+        venue_display=venue_display,
+        venue_radius=radius
     )
 
 
@@ -9287,17 +9326,16 @@ def attend_submit(course_id):
     venue_display = f"{session_type} ({vname})" if vname else session_type
 
     if venue_enabled and target_lat is not None and target_lng is not None:
-        if student_lat is not None and student_lng is not None:
-            distance_meters = haversine_distance_meters(student_lat, student_lng, target_lat, target_lng)
-            if distance_meters > radius:
-                proxy_suspect = 1
-                dist_str = f"{int(distance_meters)}m" if distance_meters < 1000 else f"{distance_meters/1000:.2f}km"
-                geo_msg = f"Outside {venue_display} Geofence: {dist_str} away (Allowed: {radius}m)"
-                proxy_remark = f"{proxy_remark} | {geo_msg}" if proxy_remark else geo_msg
-        else:
-            # Geofencing enabled for this venue, but student did not supply coordinates
+        if student_lat is None or student_lng is None:
+            # Location is mandatory while marking attendance when geofence is active
+            flash(f"📍 Location is mandatory while marking attendance. {venue_display} geofence is active, but your device did not supply GPS coordinates. Please allow location access in your browser and try again.", "danger")
+            return redirect(url_for("attend_scan_landing", course_id=course_id, type=session_type, token=token))
+
+        distance_meters = haversine_distance_meters(student_lat, student_lng, target_lat, target_lng)
+        if distance_meters > radius:
             proxy_suspect = 1
-            geo_msg = f"Location Denied / Unavailable ({venue_display} Geofence Active)"
+            dist_str = f"{int(distance_meters)}m" if distance_meters < 1000 else f"{distance_meters/1000:.2f}km"
+            geo_msg = f"Outside {venue_display} Geofence: {dist_str} away (Allowed: {radius}m)"
             proxy_remark = f"{proxy_remark} | {geo_msg}" if proxy_remark else geo_msg
 
     def _do_submit(conn):
