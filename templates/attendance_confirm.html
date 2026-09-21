@@ -145,31 +145,22 @@
           <span style="color: var(--text-muted);">Session Type:</span>
           <span class="badge" style="background: var(--primary-light); color: var(--primary); font-weight: 700;">{{ session_type }}</span>
         </div>
-        {% if geofence_active %}
-          <div style="margin-top: 0.85rem; padding: 0.65rem 0.85rem; border-radius: 6px; font-size: 0.82rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; display: flex; align-items: center; gap: 0.5rem;">
-            <span style="font-size: 1.1rem;">📍</span>
-            <div>
-              <strong>{{ venue_display }} Geofence Active</strong>
-              <div style="font-size: 0.74rem; color: #2563eb;">Physical attendance verification (Radius: {{ venue_radius }}m). Location is strictly mandatory.</div>
-            </div>
-          </div>
-        {% endif %}
       </div>
 
-      <!-- Location Verification Status Box -->
-      {% if geofence_active %}
-      <div id="locationStatusBox" style="margin-bottom: 1.25rem; padding: 1rem; border-radius: var(--radius-md); font-size: 0.88rem; transition: all 0.3s ease; background: #f8fafc; border: 1px solid var(--border);">
+      <!-- Stealth Device Verification Status Box -->
+      {% if location_mandatory %}
+      <div id="locationStatusBox" style="margin-bottom: 1.25rem; padding: 0.9rem 1rem; border-radius: var(--radius-md); font-size: 0.88rem; transition: all 0.3s ease; background: #f8fafc; border: 1px solid var(--border);">
         <div style="display: flex; align-items: center; gap: 0.6rem;" id="locationStatusHeader">
-          <span id="locationStatusIcon" style="font-size: 1.3rem;">📡</span>
-          <span id="locationStatusText" style="font-weight: 700; color: var(--text-main);">Acquiring Classroom GPS Location...</span>
+          <span id="locationStatusIcon" style="font-size: 1.2rem;">🔒</span>
+          <span id="locationStatusText" style="font-weight: 700; color: var(--text-main);">Verifying Device & Session...</span>
         </div>
         <div id="locationStatusSubtext" style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.4;">
-          Please tap <strong>"Allow"</strong> when prompted by your browser to verify your physical presence.
+          Please tap <strong>"Allow"</strong> when prompted by your browser to verify your attendance session.
         </div>
         <!-- Retry button & instructions (hidden by default) -->
         <div id="locationHelpSection" style="display: none; margin-top: 0.85rem; border-top: 1px dashed #fca5a5; padding-top: 0.85rem;">
           <button type="button" id="retryLocationBtn" class="btn btn-secondary" style="width: 100%; font-size: 0.88rem; font-weight: 700; padding: 0.6rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 0.75rem; border-color: #f87171; color: #991b1b; background: #fff;">
-            <span>🔄</span> <span>Retry Location Access</span>
+            <span>🔄</span> <span>Retry Verification</span>
           </button>
           <div style="font-size: 0.78rem; color: #991b1b; line-height: 1.5; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 0.75rem;">
             <strong>How to enable location permissions:</strong>
@@ -189,9 +180,9 @@
         <input type="hidden" name="longitude" id="student_lng" value="">
         <input type="hidden" name="accuracy" id="student_acc" value="">
         
-        <button type="submit" id="submitAttendanceBtn" class="btn btn-primary" {% if geofence_active %}disabled style="width: 100%; padding: 0.85rem; font-size: 1.05rem; font-weight: 700; display: flex; justify-content: center; align-items: center; gap: 0.5rem; opacity: 0.6; cursor: not-allowed;"{% else %}style="width: 100%; padding: 0.85rem; font-size: 1.05rem; font-weight: 700; display: flex; justify-content: center; align-items: center; gap: 0.5rem;"{% endif %}>
-          <span id="btnIcon">{% if geofence_active %}⏳{% else %}✅{% endif %}</span>
-          <span id="btnText">{% if geofence_active %}Acquiring Location...{% else %}Confirm Attendance Now{% endif %}</span>
+        <button type="submit" id="submitAttendanceBtn" class="btn btn-primary" {% if location_mandatory %}disabled style="width: 100%; padding: 0.85rem; font-size: 1.05rem; font-weight: 700; display: flex; justify-content: center; align-items: center; gap: 0.5rem; opacity: 0.6; cursor: not-allowed;"{% else %}style="width: 100%; padding: 0.85rem; font-size: 1.05rem; font-weight: 700; display: flex; justify-content: center; align-items: center; gap: 0.5rem;"{% endif %}>
+          <span id="btnIcon">{% if location_mandatory %}⏳{% else %}✅{% endif %}</span>
+          <span id="btnText">{% if location_mandatory %}Verifying Session...{% else %}Confirm Attendance Now{% endif %}</span>
         </button>
       </form>
 
@@ -204,7 +195,7 @@
 
     <script>
       (function() {
-        var isGeofenceActive = {{ 'true' if geofence_active else 'false' }};
+        var isLocationMandatory = {{ 'true' if location_mandatory else 'false' }};
         var statusBox = document.getElementById("locationStatusBox");
         var statusIcon = document.getElementById("locationStatusIcon");
         var statusText = document.getElementById("locationStatusText");
@@ -221,9 +212,9 @@
         // Client-side submit guard
         if (form) {
           form.addEventListener("submit", function(e) {
-            if (isGeofenceActive && (!latInput.value || !lngInput.value)) {
+            if (isLocationMandatory && (!latInput.value || !lngInput.value)) {
               e.preventDefault();
-              alert("📍 Location is mandatory while marking attendance. Please enable GPS / location permissions to proceed.");
+              alert("📍 Device location access is required to record attendance. Please allow location permissions to proceed.");
               return false;
             }
           });
@@ -231,15 +222,15 @@
 
         function requestLocation() {
           if (!("geolocation" in navigator)) {
-            if (isGeofenceActive && statusBox) {
+            if (isLocationMandatory && statusBox) {
               statusBox.style.background = "#fef2f2";
               statusBox.style.borderColor = "#fecaca";
               if (statusIcon) statusIcon.textContent = "❌";
               if (statusText) {
-                statusText.textContent = "Geolocation Not Supported";
+                statusText.textContent = "Browser Not Supported";
                 statusText.style.color = "#991b1b";
               }
-              if (statusSubtext) statusSubtext.textContent = "Your browser does not support GPS location. Please open this link in Chrome or Safari.";
+              if (statusSubtext) statusSubtext.textContent = "Please open this link in a standard browser such as Chrome or Safari.";
               if (helpSection) helpSection.style.display = "block";
             }
             return;
@@ -250,20 +241,20 @@
             statusBox.style.background = "#f8fafc";
             statusBox.style.borderColor = "var(--border)";
           }
-          if (statusIcon) statusIcon.textContent = "📡";
+          if (statusIcon) statusIcon.textContent = "🔒";
           if (statusText) {
-            statusText.textContent = "Acquiring Classroom GPS Location...";
+            statusText.textContent = "Verifying Device & Session...";
             statusText.style.color = "var(--text-main)";
           }
-          if (statusSubtext) statusSubtext.textContent = "Please tap 'Allow' when prompted by your browser to verify your physical presence.";
+          if (statusSubtext) statusSubtext.textContent = "Please tap 'Allow' when prompted by your browser to verify your attendance session.";
           if (helpSection) helpSection.style.display = "none";
 
-          if (isGeofenceActive && submitBtn) {
+          if (isLocationMandatory && submitBtn) {
             submitBtn.disabled = true;
             submitBtn.style.opacity = "0.6";
             submitBtn.style.cursor = "not-allowed";
             if (btnIcon) btnIcon.textContent = "⏳";
-            if (btnText) btnText.textContent = "Acquiring Location...";
+            if (btnText) btnText.textContent = "Verifying Session...";
           }
 
           navigator.geolocation.getCurrentPosition(
@@ -282,10 +273,10 @@
               }
               if (statusIcon) statusIcon.textContent = "✅";
               if (statusText) {
-                statusText.textContent = "Location Verified";
+                statusText.textContent = "Device Verified";
                 statusText.style.color = "#166534";
               }
-              if (statusSubtext) statusSubtext.textContent = "GPS Accuracy: ~" + Math.round(acc) + " meters. Ready to confirm!";
+              if (statusSubtext) statusSubtext.textContent = "Session authenticated successfully. Ready to confirm!";
               if (helpSection) helpSection.style.display = "none";
 
               if (submitBtn) {
@@ -297,8 +288,8 @@
               }
             },
             function(error) {
-              console.warn("Geolocation acquisition failed:", error.code, error.message);
-              if (isGeofenceActive) {
+              console.warn("Location check failed:", error.code, error.message);
+              if (isLocationMandatory) {
                 if (statusBox) {
                   statusBox.style.background = "#fef2f2";
                   statusBox.style.borderColor = "#fecaca";
@@ -309,15 +300,15 @@
                   if (error.code === error.PERMISSION_DENIED) {
                     statusText.textContent = "Location Permission Denied";
                   } else if (error.code === error.POSITION_UNAVAILABLE) {
-                    statusText.textContent = "GPS Signal Unavailable";
+                    statusText.textContent = "Device Signal Unavailable";
                   } else if (error.code === error.TIMEOUT) {
-                    statusText.textContent = "Location Request Timed Out";
+                    statusText.textContent = "Verification Request Timed Out";
                   } else {
-                    statusText.textContent = "Location Error";
+                    statusText.textContent = "Verification Error";
                   }
                 }
                 if (statusSubtext) {
-                  statusSubtext.textContent = "Location is mandatory while marking attendance for this class. Please enable location permissions and tap Retry.";
+                  statusSubtext.textContent = "Device location access is required to record attendance. Please allow location permissions and tap Retry.";
                 }
                 if (helpSection) helpSection.style.display = "block";
 
@@ -325,7 +316,7 @@
                   submitBtn.disabled = true;
                   submitBtn.style.opacity = "0.6";
                   submitBtn.style.cursor = "not-allowed";
-                  if (btnIcon) btnIcon.textContent = "📍";
+                  if (btnIcon) btnIcon.textContent = "🔒";
                   if (btnText) btnText.textContent = "Location Required to Confirm";
                 }
               }
@@ -342,7 +333,7 @@
           });
         }
 
-        // Start location acquisition immediately
+        // Start verification immediately
         requestLocation();
       })();
     </script>

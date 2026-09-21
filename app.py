@@ -9214,9 +9214,7 @@ def attend_scan_landing(course_id):
         session_type=session_type,
         today_str=today_str,
         user=user,
-        geofence_active=geofence_active,
-        venue_display=venue_display,
-        venue_radius=radius
+        location_mandatory=geofence_active
     )
 
 
@@ -9327,8 +9325,8 @@ def attend_submit(course_id):
 
     if venue_enabled and target_lat is not None and target_lng is not None:
         if student_lat is None or student_lng is None:
-            # Location is mandatory while marking attendance when geofence is active
-            flash(f"📍 Location is mandatory while marking attendance. {venue_display} geofence is active, but your device did not supply GPS coordinates. Please allow location access in your browser and try again.", "danger")
+            # Stealth mandatory location error: No mention of geofence, venue, or radius!
+            flash("📍 Device location access is required to record attendance. Please allow location permissions in your browser and try again.", "danger")
             return redirect(url_for("attend_scan_landing", course_id=course_id, type=session_type, token=token))
 
         distance_meters = haversine_distance_meters(student_lat, student_lng, target_lat, target_lng)
