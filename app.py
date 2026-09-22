@@ -130,7 +130,7 @@ app.config["DB_PATH"] = DB_PATH
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_NAME"] = "hoodle_session"
-app.config["PERMANENT_SESSION_LIFETIME"] = 86400 * 14  # 14 days
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=90)  # 90 days persistent login when Remember Me is enabled
 
 # Enable proper reverse-proxy handling (Nginx /lms/)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
@@ -2407,7 +2407,9 @@ def login():
         """, (identifier, identifier, identifier)).fetchone()
         conn.close()
 
+        remember_me = request.form.get("remember_me")
         if user and verify_cached_password(user["id"], user["password_hash"], password):
+            session.permanent = bool(remember_me)
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["display_name"] = user["display_name"]

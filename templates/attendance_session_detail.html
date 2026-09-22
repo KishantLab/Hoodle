@@ -88,9 +88,10 @@
   </div>
 
   <!-- Search & View Tabs Filter -->
-  <div class="card" style="padding: 1rem 1.25rem; margin-bottom: 1.5rem;">
+  <div class="card" style="padding: 1.1rem 1.25rem; margin-bottom: 1.5rem;">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-      <div style="display: flex; gap: 0.5rem;">
+      <!-- Tab filter buttons -->
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <button type="button" class="btn btn-sm view-filter-btn" onclick="switchRosterTab('all', this)" style="border-radius: 9999px; padding: 0.35rem 0.85rem; font-weight: 700; background: var(--primary); color: white;">
           All Students ({{ total_enrolled }})
         </button>
@@ -102,7 +103,43 @@
         </button>
       </div>
 
-      <input type="text" id="sessionRosterSearch" placeholder="🔍 Search roll or name..." onkeyup="filterSessionRoster()" style="padding: 0.45rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; width: 220px;">
+      <!-- Sorting & Search Toolbar -->
+      <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+        <!-- Sort Dropdown -->
+        <div style="display: flex; align-items: center; gap: 0.35rem;">
+          <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Sort:</span>
+          <select id="sessionRosterSort" onchange="applySortFromDropdown(this.value)" style="padding: 0.42rem 0.65rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.84rem; background: white; font-weight: 600; color: var(--text-main); cursor: pointer;">
+            <option value="roll_asc">🔢 Roll Number (Ascending)</option>
+            <option value="roll_desc">🔢 Roll Number (Descending)</option>
+            <option value="proxy_first">⚠️ Proxy / Suspect Location First</option>
+            <option value="time_desc">⏱️ Marked Time (Latest First)</option>
+            <option value="time_asc">⏱️ Marked Time (Earliest First)</option>
+            <option value="name_asc">🔤 Student Name (A → Z)</option>
+            <option value="name_desc">🔤 Student Name (Z → A)</option>
+            <option value="dist_desc">📍 Distance (Farthest First)</option>
+          </select>
+        </div>
+
+        <!-- Search input -->
+        <input type="text" id="sessionRosterSearch" placeholder="🔍 Search roll or name..." onkeyup="filterSessionRoster()" style="padding: 0.42rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; width: 190px;">
+      </div>
+    </div>
+
+    <!-- Quick Sort Pills Strip -->
+    <div style="margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px dashed var(--border); display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+      <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-right: 0.2rem;">Quick Sort:</span>
+      <button type="button" class="btn btn-secondary btn-sm" id="btnSortRoll" onclick="toggleSort('roll')" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 700; border-radius: 4px;">
+        🔢 Roll No <span id="quick-icon-roll">▲</span>
+      </button>
+      <button type="button" class="btn btn-secondary btn-sm" id="btnSortProxy" onclick="triggerProxyFirstSort()" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 700; border-radius: 4px; color: #b91c1c; border-color: #fca5a5; background: #fff1f2;">
+        ⚠️ Proxy Suspects First
+      </button>
+      <button type="button" class="btn btn-secondary btn-sm" id="btnSortTime" onclick="toggleSort('time')" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 600; border-radius: 4px;">
+        ⏱️ Marked Time <span id="quick-icon-time">↕</span>
+      </button>
+      <button type="button" class="btn btn-secondary btn-sm" id="btnSortName" onclick="toggleSort('name')" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 600; border-radius: 4px;">
+        🔤 Name <span id="quick-icon-name">↕</span>
+      </button>
     </div>
   </div>
 
@@ -113,24 +150,45 @@
         <span>✅</span>
         <span>Present Students ({{ present_count }})</span>
       </h3>
+      <span style="font-size: 0.78rem; color: var(--text-muted);">
+        💡 Click any column header below to sort
+      </span>
     </div>
 
     {% if present_list %}
       <div class="table-responsive">
-        <table class="table lms-table" style="width: 100%; border-collapse: collapse;">
+        <table class="table lms-table" id="presentTable" style="width: 100%; border-collapse: collapse;">
           <thead>
             <tr style="border-bottom: 2px solid var(--border); font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">
-              <th style="padding: 0.65rem;">Roll Number</th>
-              <th style="padding: 0.65rem;">Student Name</th>
-              <th style="padding: 0.65rem;">Marked Time</th>
-              <th style="padding: 0.65rem;">Method</th>
+              <th onclick="toggleSort('roll')" style="padding: 0.65rem; cursor: pointer; user-select: none;" title="Click to sort by Roll Number">
+                Roll Number <span id="th-sort-roll" style="color: var(--primary); font-weight: 900;">▲</span>
+              </th>
+              <th onclick="toggleSort('name')" style="padding: 0.65rem; cursor: pointer; user-select: none;" title="Click to sort by Student Name">
+                Student Name <span id="th-sort-name" style="opacity: 0.45;">↕</span>
+              </th>
+              <th onclick="toggleSort('time')" style="padding: 0.65rem; cursor: pointer; user-select: none;" title="Click to sort by Marked Time">
+                Marked Time <span id="th-sort-time" style="opacity: 0.45;">↕</span>
+              </th>
+              <th onclick="toggleSort('method')" style="padding: 0.65rem; cursor: pointer; user-select: none;" title="Click to sort by Method">
+                Method <span id="th-sort-method" style="opacity: 0.45;">↕</span>
+              </th>
               <th style="padding: 0.65rem;">IP Address</th>
-              <th style="padding: 0.65rem;">Anti-Proxy Status</th>
+              <th onclick="toggleSort('proxy')" style="padding: 0.65rem; cursor: pointer; user-select: none;" title="Click to sort by Anti-Proxy Status">
+                Anti-Proxy Status <span id="th-sort-proxy" style="opacity: 0.45;">↕</span>
+              </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="presentTableBody">
             {% for p in present_list %}
-              <tr class="student-session-row" data-status="present" data-name="{{ p.student_name | lower }}" data-roll="{{ p.roll_number | lower }}" style="border-bottom: 1px solid var(--border); font-size: 0.88rem; {% if p.is_proxy_suspect %}background: #fff1f2; border-left: 4px solid #dc2626;{% endif %}">
+              <tr class="student-session-row"
+                  data-status="present"
+                  data-name="{{ (p.student_name or '') | lower }}"
+                  data-roll="{{ (p.roll_number or '') | lower }}"
+                  data-time="{{ p.marked_at or '' }}"
+                  data-method="{{ (p.method or '') | lower }}"
+                  data-proxy="{{ 1 if p.is_proxy_suspect else 0 }}"
+                  data-distance="{{ p.distance_meters if p.distance_meters is not none else -1 }}"
+                  style="border-bottom: 1px solid var(--border); font-size: 0.88rem; {% if p.is_proxy_suspect %}background: #fff1f2; border-left: 4px solid #dc2626;{% endif %}">
                 <td style="padding: 0.65rem; font-family: monospace; font-weight: 700; color: {% if p.is_proxy_suspect %}#b91c1c{% else %}var(--primary){% endif %};">
                   {{ p.roll_number }}
                 </td>
@@ -206,18 +264,27 @@
 
     {% if absent_list %}
       <div class="table-responsive">
-        <table class="table lms-table" style="width: 100%; border-collapse: collapse;">
+        <table class="table lms-table" id="absentTable" style="width: 100%; border-collapse: collapse;">
           <thead>
             <tr style="border-bottom: 2px solid var(--border); font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">
-              <th style="padding: 0.65rem;">Roll Number</th>
-              <th style="padding: 0.65rem;">Student Name</th>
+              <th onclick="toggleSort('roll')" style="padding: 0.65rem; cursor: pointer; user-select: none;" title="Click to sort by Roll Number">
+                Roll Number <span id="th-abs-sort-roll" style="color: var(--primary); font-weight: 900;">▲</span>
+              </th>
+              <th onclick="toggleSort('name')" style="padding: 0.65rem; cursor: pointer; user-select: none;" title="Click to sort by Student Name">
+                Student Name <span id="th-abs-sort-name" style="opacity: 0.45;">↕</span>
+              </th>
               <th style="padding: 0.65rem;">Email</th>
               <th style="padding: 0.65rem; text-align: right;">Quick Action</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="absentTableBody">
             {% for a in absent_list %}
-              <tr class="student-session-row" data-status="absent" data-name="{{ a.display_name | lower }}" data-roll="{{ (a.roll_number or a.username) | lower }}" style="border-bottom: 1px solid var(--border); font-size: 0.88rem;">
+              <tr class="student-session-row"
+                  data-status="absent"
+                  data-name="{{ (a.display_name or '') | lower }}"
+                  data-roll="{{ (a.roll_number or a.username or '') | lower }}"
+                  data-email="{{ (a.email or '') | lower }}"
+                  style="border-bottom: 1px solid var(--border); font-size: 0.88rem;">
                 <td style="padding: 0.65rem; font-family: monospace; font-weight: 700; color: var(--text-muted);">
                   {{ a.roll_number or a.username }}
                 </td>
@@ -253,6 +320,8 @@
 
 <script>
   let currentTab = 'all';
+  let currentSortKey = 'roll';
+  let currentSortDir = 'asc'; // 'asc' or 'desc'
 
   function switchRosterTab(tab, btn) {
     currentTab = tab;
@@ -293,5 +362,163 @@
       r.style.display = match ? '' : 'none';
     });
   }
+
+  function sortTableBody(tbodyId, key, dir) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr.student-session-row'));
+
+    rows.sort((a, b) => {
+      if (key === 'roll') {
+        const valA = a.getAttribute('data-roll') || '';
+        const valB = b.getAttribute('data-roll') || '';
+        return dir === 'asc'
+          ? valA.localeCompare(valB, undefined, {numeric: true, sensitivity: 'base'})
+          : valB.localeCompare(valA, undefined, {numeric: true, sensitivity: 'base'});
+      } else if (key === 'name') {
+        const valA = a.getAttribute('data-name') || '';
+        const valB = b.getAttribute('data-name') || '';
+        return dir === 'asc'
+          ? valA.localeCompare(valB, undefined, {sensitivity: 'base'})
+          : valB.localeCompare(valA, undefined, {sensitivity: 'base'});
+      } else if (key === 'time') {
+        const valA = a.getAttribute('data-time') || '';
+        const valB = b.getAttribute('data-time') || '';
+        return dir === 'asc'
+          ? valA.localeCompare(valB)
+          : valB.localeCompare(valA);
+      } else if (key === 'proxy') {
+        const proxyA = parseInt(a.getAttribute('data-proxy') || '0', 10);
+        const proxyB = parseInt(b.getAttribute('data-proxy') || '0', 10);
+        if (proxyA !== proxyB) {
+          return dir === 'desc' ? (proxyB - proxyA) : (proxyA - proxyB);
+        }
+        // secondary tie-breaker: distance farthest first
+        const distA = parseFloat(a.getAttribute('data-distance') || '-1');
+        const distB = parseFloat(b.getAttribute('data-distance') || '-1');
+        return distB - distA;
+      } else if (key === 'distance') {
+        const distA = parseFloat(a.getAttribute('data-distance') || '-1');
+        const distB = parseFloat(b.getAttribute('data-distance') || '-1');
+        return dir === 'desc' ? (distB - distA) : (distA - distB);
+      } else if (key === 'method') {
+        const valA = a.getAttribute('data-method') || '';
+        const valB = b.getAttribute('data-method') || '';
+        return dir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      return 0;
+    });
+
+    rows.forEach(r => tbody.appendChild(r));
+  }
+
+  function updateSortIndicators(key, dir) {
+    // Reset all headers
+    ['roll', 'name', 'time', 'method', 'proxy'].forEach(k => {
+      const el = document.getElementById('th-sort-' + k);
+      if (el) {
+        el.textContent = '↕';
+        el.style.opacity = '0.4';
+        el.style.color = 'inherit';
+      }
+    });
+
+    ['roll', 'name'].forEach(k => {
+      const el = document.getElementById('th-abs-sort-' + k);
+      if (el) {
+        el.textContent = '↕';
+        el.style.opacity = '0.4';
+        el.style.color = 'inherit';
+      }
+    });
+
+    // Reset quick sort icons
+    const qRoll = document.getElementById('quick-icon-roll');
+    const qTime = document.getElementById('quick-icon-time');
+    const qName = document.getElementById('quick-icon-name');
+    if (qRoll) qRoll.textContent = '↕';
+    if (qTime) qTime.textContent = '↕';
+    if (qName) qName.textContent = '↕';
+
+    // Active column icon
+    const activeIcon = dir === 'asc' ? '▲' : '▼';
+    const activeHeader = document.getElementById('th-sort-' + key);
+    if (activeHeader) {
+      activeHeader.textContent = activeIcon;
+      activeHeader.style.opacity = '1';
+      activeHeader.style.color = 'var(--primary)';
+    }
+    const activeAbsHeader = document.getElementById('th-abs-sort-' + key);
+    if (activeAbsHeader) {
+      activeAbsHeader.textContent = activeIcon;
+      activeAbsHeader.style.opacity = '1';
+      activeAbsHeader.style.color = 'var(--primary)';
+    }
+
+    if (key === 'roll' && qRoll) qRoll.textContent = activeIcon;
+    if (key === 'time' && qTime) qTime.textContent = activeIcon;
+    if (key === 'name' && qName) qName.textContent = activeIcon;
+
+    // Sync dropdown value
+    const select = document.getElementById('sessionRosterSort');
+    if (select) {
+      if (key === 'proxy') {
+        select.value = 'proxy_first';
+      } else if (key === 'distance') {
+        select.value = 'dist_desc';
+      } else {
+        const optionVal = key + '_' + dir;
+        if (select.querySelector(`option[value="${optionVal}"]`)) {
+          select.value = optionVal;
+        }
+      }
+    }
+  }
+
+  function executeSort(key, dir) {
+    currentSortKey = key;
+    currentSortDir = dir;
+    sortTableBody('presentTableBody', key, dir);
+    sortTableBody('absentTableBody', key, dir);
+    updateSortIndicators(key, dir);
+  }
+
+  function toggleSort(key) {
+    if (currentSortKey === key) {
+      currentSortDir = (currentSortDir === 'asc') ? 'desc' : 'asc';
+    } else {
+      currentSortKey = key;
+      // For marked time and proxy, default to newest / suspect first
+      currentSortDir = (key === 'time' || key === 'proxy') ? 'desc' : 'asc';
+    }
+    executeSort(currentSortKey, currentSortDir);
+  }
+
+  function triggerProxyFirstSort() {
+    executeSort('proxy', 'desc');
+    // Ensure present section is visible since proxy entries are there
+    if (currentTab === 'absent') {
+      const allBtn = document.querySelector('.view-filter-btn');
+      switchRosterTab('all', allBtn);
+    }
+  }
+
+  function applySortFromDropdown(val) {
+    if (val === 'proxy_first') {
+      triggerProxyFirstSort();
+    } else if (val === 'dist_desc') {
+      executeSort('distance', 'desc');
+    } else {
+      const parts = val.split('_');
+      if (parts.length === 2) {
+        executeSort(parts[0], parts[1]);
+      }
+    }
+  }
+
+  // Initial sort on page load: Roll number ascending
+  document.addEventListener('DOMContentLoaded', () => {
+    executeSort('roll', 'asc');
+  });
 </script>
 {% endblock %}
