@@ -220,7 +220,58 @@
           });
         }
 
+        function onCoordsSuccess(lat, lng, acc) {
+          if (latInput) latInput.value = lat;
+          if (lngInput) lngInput.value = lng;
+          if (accInput) accInput.value = acc;
+
+          if (statusBox) {
+            statusBox.style.background = "#f0fdf4";
+            statusBox.style.borderColor = "#bbf7d0";
+          }
+          if (statusIcon) statusIcon.textContent = "✅";
+          if (statusText) {
+            statusText.textContent = "Device Verified";
+            statusText.style.color = "#166534";
+          }
+          if (statusSubtext) statusSubtext.textContent = "Session authenticated successfully. Ready to confirm!";
+          if (helpSection) helpSection.style.display = "none";
+
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = "1";
+            submitBtn.style.cursor = "pointer";
+            if (btnIcon) btnIcon.textContent = "✅";
+            if (btnText) btnText.textContent = "Confirm Attendance Now";
+          }
+        }
+
         function requestLocation() {
+          var isApp = typeof window.Android !== 'undefined' && window.Android !== null;
+
+          // Check if running inside Hoodle Android App
+          if (isApp) {
+            if (typeof window.Android.isLocationEnabled === 'function' && !window.Android.isLocationEnabled()) {
+              if (typeof window.Android.promptTurnOnLocation === 'function') {
+                window.Android.promptTurnOnLocation();
+              }
+            }
+            if (typeof window.Android.getNativeLocation === 'function') {
+              try {
+                var nativeLocRaw = window.Android.getNativeLocation();
+                if (nativeLocRaw) {
+                  var nativeLoc = JSON.parse(nativeLocRaw);
+                  if (nativeLoc.success && nativeLoc.latitude && nativeLoc.longitude) {
+                    onCoordsSuccess(nativeLoc.latitude, nativeLoc.longitude, nativeLoc.accuracy || 10);
+                    return;
+                  }
+                }
+              } catch(e) {
+                console.warn("Native location check error:", e);
+              }
+            }
+          }
+
           if (!("geolocation" in navigator)) {
             if (isLocationMandatory && statusBox) {
               statusBox.style.background = "#fef2f2";
@@ -259,36 +310,19 @@
 
           navigator.geolocation.getCurrentPosition(
             function(position) {
-              var lat = position.coords.latitude;
-              var lng = position.coords.longitude;
-              var acc = position.coords.accuracy;
-
-              if (latInput) latInput.value = lat;
-              if (lngInput) lngInput.value = lng;
-              if (accInput) accInput.value = acc;
-
-              if (statusBox) {
-                statusBox.style.background = "#f0fdf4";
-                statusBox.style.borderColor = "#bbf7d0";
-              }
-              if (statusIcon) statusIcon.textContent = "✅";
-              if (statusText) {
-                statusText.textContent = "Device Verified";
-                statusText.style.color = "#166534";
-              }
-              if (statusSubtext) statusSubtext.textContent = "Session authenticated successfully. Ready to confirm!";
-              if (helpSection) helpSection.style.display = "none";
-
-              if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.style.opacity = "1";
-                submitBtn.style.cursor = "pointer";
-                if (btnIcon) btnIcon.textContent = "✅";
-                if (btnText) btnText.textContent = "Confirm Attendance Now";
-              }
+              onCoordsSuccess(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
             },
             function(error) {
               console.warn("Location check failed:", error.code, error.message);
+              if (isApp && error.code === error.PERMISSION_DENIED) {
+                if (typeof window.Android.requestLocationPermission === 'function') {
+                  window.Android.requestLocationPermission();
+                }
+                if (typeof window.Android.isLocationEnabled === 'function' && !window.Android.isLocationEnabled()) {
+                  window.Android.promptTurnOnLocation();
+                }
+              }
+
               if (isLocationMandatory) {
                 if (statusBox) {
                   statusBox.style.background = "#fef2f2";
@@ -298,7 +332,7 @@
                 if (statusText) {
                   statusText.style.color = "#991b1b";
                   if (error.code === error.PERMISSION_DENIED) {
-                    statusText.textContent = "Location Permission Denied";
+                    statusText.textContent = isApp ? "App Location / GPS Denied" : "Location Permission Denied";
                   } else if (error.code === error.POSITION_UNAVAILABLE) {
                     statusText.textContent = "Device Signal Unavailable";
                   } else if (error.code === error.TIMEOUT) {
@@ -308,7 +342,9 @@
                   }
                 }
                 if (statusSubtext) {
-                  statusSubtext.textContent = "Device location access is required to record attendance. Please allow location permissions and tap Retry.";
+                  statusSubtext.textContent = isApp ?
+                    "Hoodle app needs location enabled to record attendance. Please tap Allow or turn on Location in Quick Settings, then tap Retry." :
+                    "Device location access is required to record attendance. Please allow location permissions and tap Retry.";
                 }
                 if (helpSection) helpSection.style.display = "block";
 

@@ -686,15 +686,31 @@
       <!-- LECTURE PANEL -->
       <div id="venuePanel_lecture" class="venue-tab-panel">
         <div style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
             <span style="font-size: 0.85rem; font-weight: 700;">📍 Auto-Detect Lecture GPS</span>
-            <button type="button" id="btnDetectLocation_lecture" onclick="detectVenueLocation('lecture')" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--primary);">
-              <span>📡</span>
-              <span>Use My Location</span>
-            </button>
+            <div style="display: flex; gap: 0.4rem; align-items: center;">
+              <button type="button" id="btnDetectLocation_lecture" onclick="detectVenueLocation('lecture')" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--primary);">
+                <span>📡</span>
+                <span>Use My Location</span>
+              </button>
+            </div>
           </div>
           <div id="geoDetectStatus_lecture" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem;">
             Click while in the lecture hall (e.g. LHC) to capture current GPS coordinates.
+          </div>
+
+          <!-- Quick Campus Presets Strip -->
+          <div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin-top: 0.65rem; padding-top: 0.55rem; border-top: 1px dashed var(--border);">
+            <span style="font-size: 0.74rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Quick Preset:</span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="setVenuePreset('lecture', 'Lecture Hall Complex (LHC-101)', 21.245922, 81.317810, 100)" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 700; border-radius: 4px;">
+              🏛️ LHC (Permanent Campus)
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="setVenuePreset('lecture', 'Lecture Hall (LHC)', 21.251412, 81.629631, 100)" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 600; border-radius: 4px;">
+              🏛️ LHC (Transit Campus)
+            </button>
+            <a href="https://www.google.com/maps/@21.2459,81.3178,17z" target="_blank" class="btn btn-secondary btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; text-decoration: none; color: var(--primary);" title="Open Google Maps to view or copy coordinates">
+              🗺️ Open Map ↗
+            </a>
           </div>
         </div>
 
@@ -733,15 +749,31 @@
       <!-- LAB PANEL -->
       <div id="venuePanel_lab" class="venue-tab-panel" style="display: none;">
         <div style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
             <span style="font-size: 0.85rem; font-weight: 700;">📍 Auto-Detect Lab GPS</span>
-            <button type="button" id="btnDetectLocation_lab" onclick="detectVenueLocation('lab')" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--primary);">
-              <span>📡</span>
-              <span>Use My Location</span>
-            </button>
+            <div style="display: flex; gap: 0.4rem; align-items: center;">
+              <button type="button" id="btnDetectLocation_lab" onclick="detectVenueLocation('lab')" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--primary);">
+                <span>📡</span>
+                <span>Use My Location</span>
+              </button>
+            </div>
           </div>
           <div id="geoDetectStatus_lab" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem;">
             Click while in the lab building (e.g. ED Building) to capture current GPS coordinates.
+          </div>
+
+          <!-- Quick Campus Presets Strip -->
+          <div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin-top: 0.65rem; padding-top: 0.55rem; border-top: 1px dashed var(--border);">
+            <span style="font-size: 0.74rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Quick Preset:</span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="setVenuePreset('lab', 'ED Building - Computer Lab', 21.246300, 81.318200, 100)" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 700; border-radius: 4px;">
+              🔬 ED Lab (Permanent Campus)
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="setVenuePreset('lab', 'ED Building Lab 320', 21.252310, 81.631240, 100)" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 600; border-radius: 4px;">
+              🔬 ED Lab (Transit Campus)
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyVenueFromLecture('lab')" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 700; border-radius: 4px; color: #1e40af; border-color: #bfdbfe; background: #eff6ff;">
+              📋 Copy from Lecture
+            </button>
           </div>
         </div>
 
@@ -780,15 +812,31 @@
       <!-- TUTORIAL PANEL -->
       <div id="venuePanel_tutorial" class="venue-tab-panel" style="display: none;">
         <div style="background: var(--bg-app); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 1rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
             <span style="font-size: 0.85rem; font-weight: 700;">📍 Auto-Detect Tutorial GPS</span>
-            <button type="button" id="btnDetectLocation_tutorial" onclick="detectVenueLocation('tutorial')" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--primary);">
-              <span>📡</span>
-              <span>Use My Location</span>
-            </button>
+            <div style="display: flex; gap: 0.4rem; align-items: center;">
+              <button type="button" id="btnDetectLocation_tutorial" onclick="detectVenueLocation('tutorial')" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; color: var(--primary);">
+                <span>📡</span>
+                <span>Use My Location</span>
+              </button>
+            </div>
           </div>
           <div id="geoDetectStatus_tutorial" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem;">
             Click while in tutorial room to capture current GPS coordinates.
+          </div>
+
+          <!-- Quick Campus Presets Strip -->
+          <div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin-top: 0.65rem; padding-top: 0.55rem; border-top: 1px dashed var(--border);">
+            <span style="font-size: 0.74rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Quick Preset:</span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="setVenuePreset('tutorial', 'Academic Block - Tutorial Room', 21.245800, 81.317500, 80)" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 700; border-radius: 4px;">
+              📖 Tutorial (Permanent Campus)
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="setVenuePreset('tutorial', 'Academic Block 204', 21.251800, 81.630500, 80)" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 600; border-radius: 4px;">
+              📖 Tutorial (Transit Campus)
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyVenueFromLecture('tutorial')" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; font-weight: 700; border-radius: 4px; color: #1e40af; border-color: #bfdbfe; background: #eff6ff;">
+              📋 Copy from Lecture
+            </button>
           </div>
         </div>
 
@@ -1277,29 +1325,233 @@ Example:
     });
   }
 
+  function isSecureConnection() {
+    return (typeof window.Android !== 'undefined' && window.Android !== null) ||
+           window.isSecureContext ||
+           window.location.protocol === 'https:' ||
+           window.location.hostname === 'localhost' ||
+           window.location.hostname === '127.0.0.1';
+  }
+
+  function switchToHttpsLocation() {
+    const host = window.location.hostname || "10.10.14.104";
+    let path = window.location.pathname || "/";
+    const search = window.location.search || "";
+    if (!path.startsWith('/lms') && !path.startsWith('/hoodle')) {
+      path = '/lms' + (path.startsWith('/') ? path : '/' + path);
+    }
+    window.location.assign(`https://${host}${path}${search}`);
+  }
+
+  function setVenuePreset(sessionKey, venueName, lat, lng, radius) {
+    const vNameEl = document.getElementById("venue_name_" + sessionKey);
+    const latEl = document.getElementById("classroom_lat_" + sessionKey);
+    const lngEl = document.getElementById("classroom_lng_" + sessionKey);
+    const radEl = document.getElementById("geofence_radius_" + sessionKey);
+    const statusEl = document.getElementById("geoDetectStatus_" + sessionKey);
+
+    if (vNameEl && !vNameEl.value.trim()) vNameEl.value = venueName;
+    if (latEl) latEl.value = lat.toFixed(6);
+    if (lngEl) lngEl.value = lng.toFixed(6);
+    if (radEl) radEl.value = radius || 100;
+
+    if (statusEl) {
+      statusEl.innerHTML = `<span style="color: #16a34a; font-weight: 700;">✅ Applied Preset: ${venueName} (${lat.toFixed(6)}, ${lng.toFixed(6)})</span>`;
+    }
+  }
+
+  function copyVenueFromLecture(sessionKey) {
+    const lecLat = document.getElementById("classroom_lat_lecture")?.value;
+    const lecLng = document.getElementById("classroom_lng_lecture")?.value;
+    const lecRad = document.getElementById("geofence_radius_lecture")?.value;
+    const statusEl = document.getElementById("geoDetectStatus_" + sessionKey);
+
+    if (!lecLat || !lecLng) {
+      alert("Lecture coordinates are not set yet. Please set or detect Lecture venue coordinates first.");
+      return;
+    }
+
+    const latEl = document.getElementById("classroom_lat_" + sessionKey);
+    const lngEl = document.getElementById("classroom_lng_" + sessionKey);
+    const radEl = document.getElementById("geofence_radius_" + sessionKey);
+
+    if (latEl) latEl.value = lecLat;
+    if (lngEl) lngEl.value = lecLng;
+    if (radEl) radEl.value = lecRad || 100;
+
+    if (statusEl) {
+      statusEl.innerHTML = `<span style="color: #16a34a; font-weight: 700;">✅ Copied coordinates from Lecture venue!</span>`;
+    }
+  }
+
   function detectVenueLocation(sessionKey) {
     const statusEl = document.getElementById("geoDetectStatus_" + sessionKey);
     const btn = document.getElementById("btnDetectLocation_" + sessionKey);
+
+    // Helper to apply acquired coordinates
+    function onCoordsAcquired(pos, modeStr) {
+      if (btn) btn.disabled = false;
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const acc = pos.coords.accuracy || 0;
+      const latEl = document.getElementById("classroom_lat_" + sessionKey);
+      const lngEl = document.getElementById("classroom_lng_" + sessionKey);
+      if (latEl) latEl.value = lat.toFixed(6);
+      if (lngEl) lngEl.value = lng.toFixed(6);
+      if (statusEl) {
+        statusEl.innerHTML = `
+          <div style="color: #16a34a; font-weight: 700; margin-top: 0.3rem; display: flex; align-items: center; gap: 0.35rem;">
+            <span>✅</span>
+            <span>Acquired (${modeStr}): ${lat.toFixed(6)}, ${lng.toFixed(6)} (±${acc.toFixed(1)}m)</span>
+          </div>
+        `;
+      }
+    }
+
+    // Helper to show permission denial guidance
+    function showPermissionDeniedUI() {
+      if (btn) btn.disabled = false;
+      const isApp = typeof window.Android !== 'undefined' && window.Android !== null;
+      if (isApp) {
+        if (typeof window.Android.requestLocationPermission === 'function') {
+          window.Android.requestLocationPermission();
+        }
+        if (typeof window.Android.isLocationEnabled === 'function' && !window.Android.isLocationEnabled()) {
+          window.Android.promptTurnOnLocation();
+        }
+      }
+
+      const host = window.location.hostname || "10.10.14.104";
+      if (statusEl) {
+        statusEl.innerHTML = `
+          <div style="background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 8px; padding: 0.85rem; margin-top: 0.5rem; text-align: left;">
+            <div style="font-weight: 800; color: #991b1b; font-size: 0.86rem; display: flex; align-items: center; gap: 0.4rem;">
+              <span>⚠️</span>
+              <span>${isApp ? 'App Location / GPS Turned Off' : 'Browser Blocked Location Access'}</span>
+            </div>
+            <div style="font-size: 0.8rem; color: #7f1d1d; margin-top: 0.35rem; line-height: 1.5;">
+              ${isApp ? 'Device GPS or location permission was denied. Tap <strong>Allow</strong> on the prompt or turn on Location in Android Quick Settings.' :
+                        `Your browser blocked location permissions for <code>${host}</code>. Click the 🔒 lock icon in the address bar &rarr; Permissions &rarr; Location &rarr; <strong>Allow</strong>.`}
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 0.6rem;">
+              ${isApp ? '<button type="button" class="btn btn-sm btn-primary" onclick="if(window.Android){window.Android.promptTurnOnLocation();window.Android.requestLocationPermission();setTimeout(()=>detectVenueLocation(\''+sessionKey+'\'), 1500);}" style="font-weight: 700;">📍 Turn On GPS / Permissions</button>' : ''}
+              <button type="button" class="btn btn-sm btn-primary" onclick="detectVenueLocation('${sessionKey}')" style="font-weight: 700;">
+                🔄 Retry Detection
+              </button>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="window.location.reload()" style="font-size: 0.78rem;">
+                ↻ Reload Page
+              </button>
+              <span style="font-size: 0.75rem; color: #991b1b;">Or click a <strong>Quick Preset</strong> above!</span>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    // Check if running inside Hoodle Android App
+    if (typeof window.Android !== 'undefined' && window.Android !== null) {
+      if (typeof window.Android.isLocationEnabled === 'function' && !window.Android.isLocationEnabled()) {
+        if (typeof window.Android.promptTurnOnLocation === 'function') {
+          window.Android.promptTurnOnLocation();
+        }
+      }
+      if (typeof window.Android.getNativeLocation === 'function') {
+        try {
+          const nativeLocRaw = window.Android.getNativeLocation();
+          if (nativeLocRaw) {
+            const nativeLoc = JSON.parse(nativeLocRaw);
+            if (nativeLoc.success && nativeLoc.latitude && nativeLoc.longitude) {
+              onCoordsAcquired({
+                coords: {
+                  latitude: nativeLoc.latitude,
+                  longitude: nativeLoc.longitude,
+                  accuracy: nativeLoc.accuracy || 10
+                }
+              }, "Hoodle App Native GPS");
+              return;
+            }
+          }
+        } catch(e) {
+          console.warn("Native location check error:", e);
+        }
+      }
+    }
+
     if (!("geolocation" in navigator)) {
-      if (statusEl) statusEl.innerHTML = "<span style='color: #dc2626;'>Geolocation is not supported by your browser.</span>";
+      if (statusEl) {
+        statusEl.innerHTML = "<div style='color: #dc2626; font-weight: 700;'>❌ Geolocation is not supported by your browser.</div>";
+      }
       return;
     }
-    if (statusEl) statusEl.textContent = "Acquiring high-accuracy GPS coordinates...";
+
+    // Check secure context (Chrome and Safari strictly block geolocation on plain HTTP)
+    if (!isSecureConnection()) {
+      if (statusEl) {
+        statusEl.innerHTML = `
+          <div style="background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 8px; padding: 0.85rem; margin-top: 0.5rem; text-align: left;">
+            <div style="font-weight: 800; color: #1e40af; font-size: 0.85rem; display: flex; align-items: center; gap: 0.35rem;">
+              <span>🔒</span>
+              <span>HTTPS Required for Browser GPS Auto-Detection</span>
+            </div>
+            <div style="font-size: 0.8rem; color: #1e3a8a; margin-top: 0.3rem; line-height: 1.45;">
+              Chrome & Safari strictly block GPS on plain <code>http://</code> addresses for security. Switch to secure HTTPS to auto-detect:
+            </div>
+            <div style="margin-top: 0.6rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              <button type="button" class="btn btn-sm btn-primary" onclick="switchToHttpsLocation()" style="font-weight: 700;">
+                ⚡ Switch to Secure HTTPS
+              </button>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">(Accept certificate notice &rarr; Proceed)</span>
+            </div>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    if (statusEl) {
+      statusEl.innerHTML = "<span style='color: var(--primary); font-weight: 600;'>🛰️ Acquiring GPS satellite coordinates... (Please tap 'Allow' if prompted)</span>";
+    }
     if (btn) btn.disabled = true;
+
+    // Stage 1: Try High Accuracy (GPS hardware)
     navigator.geolocation.getCurrentPosition(
       function(pos) {
-        if (btn) btn.disabled = false;
-        const latEl = document.getElementById("classroom_lat_" + sessionKey);
-        const lngEl = document.getElementById("classroom_lng_" + sessionKey);
-        if (latEl) latEl.value = pos.coords.latitude.toFixed(6);
-        if (lngEl) lngEl.value = pos.coords.longitude.toFixed(6);
-        if (statusEl) statusEl.innerHTML = `<span style='color: #16a34a; font-weight: 700;'>✅ Acquired: ${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)} (±${pos.coords.accuracy.toFixed(1)}m)</span>`;
+        onCoordsAcquired(pos, "High-Accuracy GPS");
       },
       function(err) {
-        if (btn) btn.disabled = false;
-        if (statusEl) statusEl.innerHTML = `<span style='color: #dc2626;'>Could not acquire GPS: ${err.message}</span>`;
+        console.warn("High-accuracy location attempt failed:", err.code, err.message);
+        if (err.code === 1) { // PERMISSION_DENIED
+          showPermissionDeniedUI();
+          return;
+        }
+
+        // If timeout or unavailable, Stage 2: Fallback to standard/Wi-Fi positioning
+        if (statusEl) {
+          statusEl.innerHTML = "<span style='color: #b45309; font-weight: 600;'>🛰️ GPS hardware slow, retrying with Wi-Fi / Network positioning...</span>";
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          function(pos2) {
+            onCoordsAcquired(pos2, "Network / Wi-Fi");
+          },
+          function(err2) {
+            if (btn) btn.disabled = false;
+            if (err2.code === 1) {
+              showPermissionDeniedUI();
+            } else {
+              if (statusEl) {
+                statusEl.innerHTML = `
+                  <div style="color: #dc2626; font-size: 0.82rem; margin-top: 0.35rem;">
+                    ⚠️ Could not acquire GPS signal (${err2.message || 'Signal unavailable'}). You can click any <strong>Quick Preset</strong> above or manually enter coordinates.
+                  </div>
+                `;
+              }
+            }
+          },
+          { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
+        );
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
   }
 
