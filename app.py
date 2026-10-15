@@ -2468,7 +2468,7 @@ def login():
         password = request.form.get("password", "")
 
         if not identifier or not password:
-            flash("Please provide your username/roll number and password.", "danger")
+            flash("Please provide your email / roll number and password.", "danger")
             return render_template("login.html")
 
         conn = get_db()
@@ -2545,8 +2545,12 @@ def register():
         # Faculty and Instructor accounts must be created by Administrators.
         role = "student"
 
-        if not full_name or not roll_number or not password:
-            flash("Full Name, Roll Number, and Password are required.", "danger")
+        if not full_name or not roll_number or not email or not password:
+            flash("All fields (Full Name, Roll Number, Email, and Password) are mandatory.", "danger")
+            return render_template("login.html", register_active=True)
+
+        if "@" not in email or "." not in email:
+            flash("Please provide a valid institute or student email address.", "danger")
             return render_template("login.html", register_active=True)
 
         if password != confirm_password:
