@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+
+{% block title %}Edit {{ quiz.title }} - Hoodle{% endblock %}
+
+{% block content %}
+<div class="container-responsive" style="max-width: 1050px; margin: 1.5rem auto 4rem auto; padding: 0 1rem;">
+  
+  <!-- Breadcrumb & Top Bar -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+      <a href="{{ url_for('quizzes.course_quizzes', course_id=course.id) }}" style="color: #2563eb; text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 0.3rem;">
+        ← Back to Quizzes
+      </a>
+      <span style="color: #94a3b8;">/</span>
+      <span style="color: #64748b; font-weight: 600;">{{ course.code }}</span>
+      <span style="color: #94a3b8;">/</span>
+      <span style="color: #1e293b; font-weight: 700;">Question Builder</span>
+    </div>
+
+    <div style="display: flex; gap: 0.5rem;">
+      <a href="{{ url_for('quizzes.quiz_submissions', course_id=course.id, quiz_id=quiz.id) }}" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.45rem 0.9rem; font-weight: 700;">
+        📊 Submissions &amp; Proctoring
+      </a>
+    </div>
+  </div>
+
+  <!-- Quiz Meta Card -->
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <h1 style="font-size: 1.4rem; font-weight: 800; color: #0f172a; margin: 0 0 0.4rem 0;">
+          {{ quiz.title }}
+        </h1>
+        {% if quiz.description %}
+          <p style="font-size: 0.9rem; color: #475569; margin: 0 0 0.75rem 0; line-height: 1.4;">
+            {{ quiz.description }}
+          </p>
+        {% endif %}
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.85rem; color: #64748b;">
+          <span>⏱️ <strong>{{ quiz.duration_minutes }}</strong> mins</span>
+          <span>🎯 Total Points: <strong id="totalPointsDisplay">{{ quiz.total_marks }}</strong> (Pass: {{ quiz.pass_marks }})</span>
+          <span>❓ Questions: <strong>{{ questions|length }}</strong></span>
+          {% if quiz.exam_lockdown %}
+            <span class="badge" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-weight: 700; padding: 2px 7px; border-radius: 4px;">
+              🔒 Anti-Cheat Lockdown
+            </span>
+          {% endif %}
+          {% if quiz.remote_approval_required %}
+            <span class="badge" style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; font-weight: 700; padding: 2px 7px; border-radius: 4px;">
+              🛡️ Remote Gate
+            </span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Existing Questions Section -->
+  <div style="margin-bottom: 2.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h2 style="font-size: 1.15rem; font-weight: 800; color: #1e293b; margin: 0;">
+        Existing Questions ({{ questions|length }})
+      </h2>
+      <a href="#newQuestionCard" class="btn btn-primary" style="font-size: 0.82rem; padding: 0.4rem 0.85rem; font-weight: 700; border-radius: 6px;">
+        ➕ Jump to Add Question
+      </a>
+    </div>
+
+    {% if not questions %}
+      <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 2rem; text-align: center;">
+        <p style="color: #64748b; font-size: 0.92rem; margin: 0 0 0.75rem 0;">No questions added yet. Use the question builder below to add MCQs, MSQs, blanks, or code snippet questions.</p>
+      </div>
+    {% else %}
+      <div style="display: flex; flex-direction: column; gap: 1rem;">
+        {% for q in questions %}
+          <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.25rem; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 0.75rem;">
+              <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <span style="background: #2563eb; color: white; font-weight: 800; font-size: 0.78rem; padding: 2px 8px; border-radius: 4px;">
+                  Q{{ loop.index }}
+                </span>
+                
+                {% if q.question_type == 'mcq' %}
+                  <span class="badge" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 700; font-size: 0.75rem;">
+                    MCQ (Single Choice)
+                  </span>
+                {% elif q.question_type == 'msq' %}
+                  <span class="badge" style="background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; font-weight: 700; font-size: 0.75rem;">
+                    MSQ (Multiple Select)
+                  </span>
+                {% elif q.question_type == 'fitb' %}
+                  <span class="badge" style="background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; font-weight: 700; font-size: 0.75rem;">
+                    Fill in the Blanks
+                  </span>
+                {% elif q.question_type == 'mcq_justification' %}
+                  <span class="badge" style="background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; font-weight: 700; font-size: 0.75rem;">
+                    MCQ + Justification
+                  </span>
+                {% elif q.question_type == 'code_predict' %}
+                  <span class="badge" style="background: #0f172a; color: #38bdf8; border: 1px solid #334155; font-weight: 700; font-size: 0.75rem;">
+                    💻 Code - Predict Output
+                  </span>
+                {% elif q.question_type == 'code_blank' %}
+                  <span class="badge" style="background: #0f172a; color: #4ade80; border: 1px solid #334155; font-weight: 700; font-size: 0.75rem;">
+                    💻 Code - Missing Blank
+                  </span>
+                {% endif %}
+
+                <span style="font-size: 0.8rem; font-weight: 700; color: #475569;">
+                  ⭐ {{ q.points }} pt{% if q.points != 1 %}s{% endif %}
+                </span>
+              </div>
+
+              <!-- Delete Question Form -->
+              <form action="{{ url_for('quizzes.delete_quiz_question', course_id=course.id, quiz_id=quiz.id, question_id=q.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete Question {{ loop.index }}?');">
+                <button type="submit" class="btn" style="background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; font-size: 0.75rem; padding: 0.25rem 0.6rem; font-weight: 700; border-radius: 4px; cursor: pointer;">
+                  🗑️ Delete
+                </button>
+              </form>
+            </div>
+
+            <!-- Question Prompt -->
+            <div style="font-size: 0.95rem; color: #1e293b; font-weight: 600; line-height: 1.5; margin-bottom: 0.75rem; white-space: pre-wrap;">{{ q.prompt }}</div>
+
+            <!-- Code Snippet Box (if any) -->
+            {% if q.code_snippet %}
+              <div style="background: #0f172a; color: #f8fafc; border-radius: 8px; padding: 0.85rem 1.1rem; margin-bottom: 0.75rem; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.86rem; overflow-x: auto; line-height: 1.45; border: 1px solid #1e293b;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: #94a3b8; border-bottom: 1px solid #334155; padding-bottom: 0.35rem; margin-bottom: 0.6rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                  <span>Snippet ({{ q.code_language }})</span>
+                </div>
+                <pre style="margin: 0; font-family: inherit; white-space: pre;">{{ q.code_snippet }}</pre>
+              </div>
+            {% endif %}
+
+            <!-- Question-Specific Answers Display -->
+            {% if q.question_type in ('mcq', 'msq', 'mcq_justification') %}
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.5rem; margin-top: 0.5rem;">
+                {% for opt in q.options %}
+                  {% set opt_letter = loop.index0 | string %}
+                  {% set char_code = 65 + loop.index0 %}
+                  {% set letter = ('A', 'B', 'C', 'D', 'E', 'F')[loop.index0] if loop.index0 < 6 else '?' %}
+                  {% set is_correct = (letter in q.correct_answer.split(',')) %}
+                  <div style="padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; background: {% if is_correct %}#ecfdf5{% else %}#f8fafc{% endif %}; border: 1px solid {% if is_correct %}#10b981{% else %}#e2e8f0{% endif %};">
+                    <strong style="color: {% if is_correct %}#047857{% else %}#64748b{% endif %};">{{ letter }}.</strong>
+                    <span style="flex: 1; color: #334155;">{{ opt }}</span>
+                    {% if is_correct %}
+                      <span style="color: #059669; font-weight: 800; font-size: 0.8rem;">✓ Correct</span>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+              </div>
+              {% if q.question_type == 'mcq_justification' %}
+                <div style="font-size: 0.78rem; color: #d97706; margin-top: 0.5rem; font-weight: 600;">
+                  📝 Requires student justification paragraph for TA evaluation.
+                </div>
+              {% endif %}
+            {% elif q.question_type in ('fitb', 'code_predict', 'code_blank') %}
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.6rem 0.85rem; font-size: 0.84rem; margin-top: 0.5rem;">
+                <div style="color: #0f172a;">
+                  <strong>Expected Answer:</strong> <code style="background: #e2e8f0; padding: 1px 5px; border-radius: 4px; font-weight: 700; color: #047857;">{{ q.correct_answer }}</code>
+                </div>
+                {% if q.variations %}
+                  <div style="color: #64748b; font-size: 0.78rem; margin-top: 0.3rem;">
+                    Acceptable Variations:
+                    {% for v in q.variations %}
+                      <code style="background: #f1f5f9; padding: 1px 4px; border-radius: 3px;">{{ v }}</code>{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            {% endif %}
+
+            {% if q.explanation %}
+              <div style="font-size: 0.8rem; color: #64748b; margin-top: 0.5rem; font-style: italic;">
+                💡 Solution Note: {{ q.explanation }}
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Add New Question Form Card -->
+  <div id="newQuestionCard" style="background: white; border: 2px solid #3b82f6; border-radius: 12px; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.06);">
+    <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1.25rem;">
+      <h3 style="font-size: 1.2rem; font-weight: 800; color: #1e293b; margin: 0 0 0.25rem 0;">
+        ➕ Add Question to Quiz
+      </h3>
+      <p style="font-size: 0.85rem; color: #64748b; margin: 0;">
+        Select from 6 versatile assessment formats including auto-graded code snippets and justifications.
+      </p>
+    </div>
+
+    <form action="{{ url_for('quizzes.add_quiz_question', course_id=course.id, quiz_id=quiz.id) }}" method="POST">
+      <!-- Question Type Selector -->
+      <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Question Format *</label>
+          <select name="question_type" id="questionTypeSelect" class="form-control" onchange="switchQuestionType(this.value)" style="font-weight: 600;">
+            <option value="mcq">1. MCQ (Single Choice - 1 Correct Option)</option>
+            <option value="msq">2. MSQ (Multiple Choice / Multiple Select - Partial Credit)</option>
+            <option value="fitb">3. Fill in the Blanks (FITB - Multiple Acceptable Answers)</option>
+            <option value="mcq_justification">4. MCQ with Justification (Auto-graded option + TA Review)</option>
+            <option value="code_predict">5. Code Snippet - Predict Output (Exact Console Output)</option>
+            <option value="code_blank">6. Code Snippet - Missing Blank (Fill in Blank in Code)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Points / Marks *</label>
+          <input type="number" step="0.5" name="points" class="form-control" value="2.0" required>
+        </div>
+      </div>
+
+      <!-- Question Prompt Statement -->
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Question Prompt / Statement *</label>
+        <textarea name="prompt" id="promptInput" class="form-control" rows="3" placeholder="Enter question statement here..." required></textarea>
+      </div>
+
+      <!-- Code Snippet Section (Shown for Code Predict, Code Blank, and optional for others) -->
+      <div id="codeSnippetSection" style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem; margin: 0;">Code Snippet</label>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <label style="font-size: 0.8rem; font-weight: 600; color: #475569;">Language:</label>
+            <select name="code_language" class="form-control" style="width: auto; padding: 0.2rem 0.6rem; font-size: 0.8rem;">
+              <option value="c">C</option>
+              <option value="cpp">C++</option>
+              <option value="cuda">CUDA C++</option>
+              <option value="python" selected>Python</option>
+              <option value="bash">Bash / Shell</option>
+            </select>
+          </div>
+        </div>
+        <textarea name="code_snippet" id="codeSnippetInput" class="form-control" rows="5" placeholder="// Type or paste code snippet here...&#10;// For Blank questions, use ___BLANK___ where student must supply code" style="font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85rem; background: #0f172a; color: #f8fafc;"></textarea>
+        <small style="color: #64748b; font-size: 0.75rem; display: block; margin-top: 0.35rem;">
+          💡 For Missing Blank questions, place <code>___BLANK___</code> in the code snippet.
+        </small>
+      </div>
+
+      <!-- Format-Specific Subform 1: Single Choice (MCQ & MCQ+Justification) -->
+      <div id="mcqOptionsSection" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Answer Options &amp; Correct Choice *</label>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          {% for letter in ['A', 'B', 'C', 'D'] %}
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <label style="display: flex; align-items: center; gap: 0.35rem; min-width: 45px; font-weight: 700; cursor: pointer;">
+                <input type="radio" name="correct_option" value="{{ loop.index0 }}" {% if loop.first %}checked{% endif %}>
+                <span>{{ letter }}</span>
+              </label>
+              <input type="text" name="options[]" class="form-control" placeholder="Option {{ letter }} text" style="font-size: 0.88rem;">
+            </div>
+          {% endfor %}
+        </div>
+        <div id="justificationNote" style="display: none; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 0.6rem 0.85rem; font-size: 0.8rem; color: #92400e; margin-top: 0.75rem;">
+          📌 <strong>MCQ with Justification Mode:</strong> Hoodle will automatically grade the student's objective choice (A, B, C, or D). The student will also be required to submit a justification paragraph explaining their reasoning, which will be conveniently displayed in your grading view.
+        </div>
+      </div>
+
+      <!-- Format-Specific Subform 2: Multiple Select (MSQ) -->
+      <div id="msqOptionsSection" style="display: none; margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Answer Options &amp; Correct Choices (Select all that apply) *</label>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          {% for letter in ['A', 'B', 'C', 'D'] %}
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <label style="display: flex; align-items: center; gap: 0.35rem; min-width: 45px; font-weight: 700; cursor: pointer;">
+                <input type="checkbox" name="correct_msq[]" value="{{ loop.index0 }}">
+                <span>{{ letter }}</span>
+              </label>
+              <input type="text" name="options[]" class="form-control" placeholder="Option {{ letter }} text" style="font-size: 0.88rem;">
+            </div>
+          {% endfor %}
+        </div>
+        <small style="color: #64748b; font-size: 0.75rem; display: block; margin-top: 0.35rem;">
+          💡 Students receive partial credit for correct choices without penalties.
+        </small>
+      </div>
+
+      <!-- Format-Specific Subform 3: Text / Code Answers (FITB, Code Predict, Code Blank) -->
+      <div id="textAnswerSection" style="display: none; margin-bottom: 1rem;">
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Primary Correct Answer *</label>
+          <input type="text" name="correct_answer" id="correctAnswerInput" class="form-control" placeholder="e.g. 42 or return 0; or threadIdx.x" style="font-family: 'Consolas', 'Monaco', monospace; font-size: 0.88rem;">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Acceptable Variations (One per line)</label>
+          <textarea name="acceptable_variations" class="form-control" rows="2" placeholder="e.g.&#10;42.0&#10;forty-two" style="font-family: 'Consolas', 'Monaco', monospace; font-size: 0.82rem;"></textarea>
+          <small style="color: #64748b; font-size: 0.75rem; display: block; margin-top: 0.3rem;">
+            Hoodle normalizes trailing whitespace and line endings automatically during auto-grading.
+          </small>
+        </div>
+      </div>
+
+      <!-- Optional Explanation -->
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Solution Explanation (Optional)</label>
+        <input type="text" name="explanation" class="form-control" placeholder="Shown to students in review after submission">
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button type="submit" class="btn btn-primary" style="font-weight: 700; padding: 0.6rem 1.4rem;">
+          💾 Save &amp; Add Question
+        </button>
+      </div>
+    </form>
+  </div>
+
+</div>
+
+<script>
+function switchQuestionType(type) {
+  const codeSec = document.getElementById("codeSnippetSection");
+  const mcqSec = document.getElementById("mcqOptionsSection");
+  const msqSec = document.getElementById("msqOptionsSection");
+  const textSec = document.getElementById("textAnswerSection");
+  const justNote = document.getElementById("justificationNote");
+
+  // Reset displays
+  codeSec.style.display = "none";
+  mcqSec.style.display = "none";
+  msqSec.style.display = "none";
+  textSec.style.display = "none";
+  justNote.style.display = "none";
+
+  if (type === "mcq") {
+    mcqSec.style.display = "block";
+  } else if (type === "mcq_justification") {
+    mcqSec.style.display = "block";
+    justNote.style.display = "block";
+  } else if (type === "msq") {
+    msqSec.style.display = "block";
+  } else if (type === "fitb") {
+    textSec.style.display = "block";
+  } else if (type === "code_predict") {
+    codeSec.style.display = "block";
+    textSec.style.display = "block";
+  } else if (type === "code_blank") {
+    codeSec.style.display = "block";
+    textSec.style.display = "block";
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Result: {{ quiz.title }} - Hoodle{% endblock %}
+
+{% block content %}
+<div class="container-responsive" style="max-width: 680px; margin: 3rem auto 5rem auto; padding: 0 1rem;">
+  
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);">
+    
+    <!-- Header Banner -->
+    <div style="padding: 2rem; text-align: center; background: {% if attempt.status == 'auto_submitted_violation' %}#fef2f2{% elif attempt.is_passed %}#ecfdf5{% else %}#eff6ff{% endif %}; border-bottom: 1px solid {% if attempt.status == 'auto_submitted_violation' %}#fecaca{% elif attempt.is_passed %}#a7f3d0{% else %}#bfdbfe{% endif %};">
+      <div style="font-size: 3.5rem; margin-bottom: 0.5rem;">
+        {% if attempt.status == 'auto_submitted_violation' %}🛑
+        {% elif attempt.is_passed %}🏆
+        {% else %}📝{% endif %}
+      </div>
+
+      <h1 style="font-size: 1.5rem; font-weight: 800; color: {% if attempt.status == 'auto_submitted_violation' %}#b91c1c{% elif attempt.is_passed %}#047857{% else %}#1e40af{% endif %}; margin: 0 0 0.35rem 0;">
+        {% if attempt.status == 'auto_submitted_violation' %}
+          Assessment Locked &amp; Auto-Submitted
+        {% elif attempt.is_passed %}
+          Congratulations! Assessment Passed
+        {% else %}
+          Assessment Completed
+        {% endif %}
+      </h1>
+
+      <p style="font-size: 0.95rem; color: #475569; margin: 0;">
+        {{ quiz.title }} • {{ course.code }}
+      </p>
+    </div>
+
+    <!-- Body Content -->
+    <div style="padding: 2rem;">
+      
+      <!-- Score Display Card -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; text-align: center; margin-bottom: 1.5rem;">
+        <div style="font-size: 0.82rem; text-transform: uppercase; font-weight: 700; color: #64748b; letter-spacing: 0.5px; margin-bottom: 0.25rem;">
+          Your Final Score
+        </div>
+        <div style="font-size: 2.8rem; font-weight: 900; color: {% if attempt.is_passed %}#047857{% else %}#0f172a{% endif %}; line-height: 1.1;">
+          {{ attempt.score }}
+          <span style="font-size: 1.25rem; font-weight: 600; color: #64748b;">/ {{ attempt.total_possible or quiz.total_marks }} pts</span>
+        </div>
+
+        <div style="margin-top: 0.75rem;">
+          <span class="badge" style="background: {% if attempt.is_passed %}#ecfdf5{% else %}#fee2e2{% endif %}; color: {% if attempt.is_passed %}#047857{% else %}#b91c1c{% endif %}; border: 1px solid {% if attempt.is_passed %}#a7f3d0{% else %}#fecaca{% endif %}; font-weight: 800; font-size: 0.85rem; padding: 4px 12px; border-radius: 9999px;">
+            {% if attempt.is_passed %}PASS (Threshold: {{ quiz.pass_marks }} pts){% else %}DID NOT MEET PASS THRESHOLD ({{ quiz.pass_marks }} pts){% endif %}
+          </span>
+        </div>
+      </div>
+
+      <!-- Attempt Meta -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; font-size: 0.88rem;">
+        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.85rem 1rem;">
+          <div style="color: #64748b; font-size: 0.75rem; text-transform: uppercase; font-weight: 700;">Submission Timestamp</div>
+          <div style="font-weight: 700; color: #1e293b; margin-top: 0.2rem;">{{ attempt.submitted_at or 'Auto-Submitted' }}</div>
+        </div>
+
+        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.85rem 1rem;">
+          <div style="color: #64748b; font-size: 0.75rem; text-transform: uppercase; font-weight: 700;">Lockdown Strikes</div>
+          <div style="font-weight: 700; color: {% if attempt.strikes > 0 %}#b91c1c{% else %}#047857{% endif %}; margin-top: 0.2rem;">
+            {{ attempt.strikes or 0 }} / 3 strikes
+          </div>
+        </div>
+      </div>
+
+      {% if attempt.status == 'auto_submitted_violation' %}
+        <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; font-size: 0.88rem; color: #991b1b; line-height: 1.45;">
+          <strong>Integrity Notice:</strong> Your attempt was locked and submitted automatically because 3 tab-switch or window-blur violations were detected during fullscreen exam mode. If this was caused by an unexpected system popup or OS notification, please notify your Course Instructor or TA; they have the capability to reopen your exam and restore your progress.
+        </div>
+      {% endif %}
+
+      <div style="display: flex; justify-content: center; margin-top: 1.5rem;">
+        <a href="{{ url_for('quizzes.course_quizzes', course_id=course.id) }}" class="btn btn-primary" style="padding: 0.7rem 2rem; font-weight: 700; border-radius: 8px; background: #2563eb;">
+          ← Back to Course Quizzes
+        </a>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

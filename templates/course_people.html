@@ -43,6 +43,9 @@
       <span class="badge" style="background: #ef4444; color: white; border-radius: 9999px; padding: 1px 6px; font-size: 0.7rem; font-weight: 800; margin-left: 0.3rem;">{{ c_unread }}</span>
     {% endif %}
   </a>
+  <a href="{{ url_for('quizzes.course_quizzes', course_id=course.id) }}" class="course-tab">
+    🎯 Quizzes
+  </a>
 </nav>
 
 <div style="max-width: 900px; margin: 0 auto;">

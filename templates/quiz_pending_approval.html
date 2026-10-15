@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Awaiting Approval - {{ quiz.title }} - Hoodle{% endblock %}
+
+{% block content %}
+<div class="container-responsive" style="max-width: 600px; margin: 3rem auto; padding: 0 1rem; text-align: center;">
+  
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 2.5rem 2rem; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);">
+    
+    <div style="width: 72px; height: 72px; background: #fffbeb; border: 2px solid #fde68a; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.2rem; margin: 0 auto 1.25rem auto;">
+      🛡️
+    </div>
+
+    <span class="badge" style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; font-weight: 700; font-size: 0.8rem; padding: 4px 10px; border-radius: 6px; margin-bottom: 0.75rem; display: inline-block;">
+      Remote Access Approval Gate
+    </span>
+
+    <h2 style="font-size: 1.35rem; font-weight: 800; color: #0f172a; margin-bottom: 0.5rem;">
+      Instructor Authorization Required
+    </h2>
+
+    <p style="font-size: 0.92rem; color: #475569; line-height: 1.5; margin-bottom: 1.5rem;">
+      You are accessing <strong>{{ quiz.title }}</strong> ({{ course.code }}) from outside the physical computer lab network or via the mobile app.
+      <br><br>
+      Your exam request has been queued in the instructor's live proctoring dashboard. As soon as your teacher or teaching assistant approves your connection, this page will automatically unlock and begin your exam.
+    </p>
+
+    <!-- Pulsing Indicator -->
+    <div style="display: flex; align-items: center; justify-content: center; gap: 0.6rem; margin-bottom: 2rem; color: #2563eb; font-weight: 700; font-size: 0.9rem;">
+      <span style="display: inline-block; width: 10px; height: 10px; background: #2563eb; border-radius: 50%; animation: pulse 1.5s infinite;"></span>
+      <span>Awaiting Teacher / TA Verification...</span>
+    </div>
+
+    <div style="display: flex; justify-content: center; gap: 0.75rem;">
+      <button onclick="window.location.reload()" class="btn btn-primary" style="padding: 0.6rem 1.4rem; font-weight: 700; border-radius: 8px;">
+        🔄 Check Approval Status
+      </button>
+      <a href="{{ url_for('quizzes.course_quizzes', course_id=course.id) }}" class="btn btn-secondary" style="padding: 0.6rem 1.2rem; border-radius: 8px;">
+        Back to Quizzes
+      </a>
+    </div>
+
+    <div style="font-size: 0.78rem; color: #94a3b8; margin-top: 1.75rem;">
+      Auto-checking status every 5 seconds...
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+// Automatically poll status every 5 seconds
+setTimeout(() => {
+  window.location.reload();
+}, 5000);
+</script>
+{% endblock %}

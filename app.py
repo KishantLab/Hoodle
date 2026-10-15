@@ -150,6 +150,10 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=90)  # 90 days persist
 # Enable proper reverse-proxy handling (Nginx /lms/)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
+# Feature #2: Interactive Quiz & Assessment System with Exam Lockdown
+from quizzes import quizzes_bp
+app.register_blueprint(quizzes_bp)
+
 
 @app.after_request
 def set_security_headers(response):
@@ -425,6 +429,95 @@ def ensure_feature_tables():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_teacher_reg_status ON teacher_registrations (status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_teacher_reg_email ON teacher_registrations (email)")
+
+        # 3. Interactive Quizzes & Assessments Table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS quizzes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id INTEGER NOT NULL,
+                topic_id INTEGER,
+                title TEXT NOT NULL,
+                description TEXT,
+                duration_minutes INTEGER DEFAULT 30,
+                pass_marks REAL DEFAULT 40.0,
+                total_marks REAL DEFAULT 100.0,
+                is_published INTEGER DEFAULT 1,
+                exam_lockdown INTEGER DEFAULT 1,
+                shuffle_questions INTEGER DEFAULT 1,
+                remote_approval_required INTEGER DEFAULT 1,
+                start_time TEXT,
+                end_time TEXT,
+                created_by INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+                FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE SET NULL,
+                FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_course ON quizzes (course_id)")
+
+        # 4. Quiz Questions Table (Supports 6 question formats)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                quiz_id INTEGER NOT NULL,
+                question_number INTEGER DEFAULT 1,
+                question_type TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                code_snippet TEXT DEFAULT '',
+                code_language TEXT DEFAULT 'python',
+                options_json TEXT DEFAULT '[]',
+                correct_answer TEXT NOT NULL,
+                acceptable_variations_json TEXT DEFAULT '[]',
+                points REAL DEFAULT 1.0,
+                explanation TEXT DEFAULT '',
+                FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_q_quiz ON quiz_questions (quiz_id)")
+
+        # 5. Quiz Attempts Table (Lockdown, strikes, extra time, remote approval)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                quiz_id INTEGER NOT NULL,
+                student_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'in_progress',
+                started_at TEXT NOT NULL,
+                submitted_at TEXT DEFAULT NULL,
+                score REAL DEFAULT 0.0,
+                total_possible REAL DEFAULT 0.0,
+                is_passed INTEGER DEFAULT 0,
+                extra_time_minutes INTEGER DEFAULT 0,
+                strikes INTEGER DEFAULT 0,
+                strike_log_json TEXT DEFAULT '[]',
+                is_remote INTEGER DEFAULT 0,
+                remote_approved INTEGER DEFAULT 0,
+                approved_by INTEGER DEFAULT NULL,
+                approved_at TEXT DEFAULT NULL,
+                FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE,
+                FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_att_quiz_stud ON quiz_attempts (quiz_id, student_id)")
+
+        # 6. Quiz Answers Table (Dynamic continuous autosave & justification)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_answers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attempt_id INTEGER NOT NULL,
+                question_id INTEGER NOT NULL,
+                student_answer TEXT DEFAULT '',
+                justification TEXT DEFAULT '',
+                is_correct INTEGER DEFAULT 0,
+                points_awarded REAL DEFAULT 0.0,
+                saved_at TEXT NOT NULL,
+                UNIQUE(attempt_id, question_id),
+                FOREIGN KEY (attempt_id) REFERENCES quiz_attempts(id) ON DELETE CASCADE,
+                FOREIGN KEY (question_id) REFERENCES quiz_questions(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_ans_att ON quiz_answers (attempt_id)")
         conn.commit()
         conn.close()
     except Exception as e:
@@ -2033,7 +2126,9 @@ def enforce_exam_lockdown():
     endpoint = request.endpoint or ""
     allowed_endpoints = {
         "exam_view", "exam_submit", "exam_receipt", "unsubmit_coursework", "logout", "static", "login",
-        "attend_scan_landing", "attend_submit", "course_attendance"
+        "attend_scan_landing", "attend_submit", "course_attendance",
+        "quizzes.course_quizzes", "quizzes.take_quiz", "quizzes.api_quiz_autosave",
+        "quizzes.api_quiz_strike", "quizzes.submit_quiz"
     }
 
 
