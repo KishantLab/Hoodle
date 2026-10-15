@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Contact &amp; Support — Hoodle{% endblock %}
+
+{% block content %}
+<div style="max-width: 860px; margin: 2rem auto; padding: 0 1rem;">
+  <div style="background: var(--bg-surface, #ffffff); border: 1.5px solid var(--border, #e2e8f0); border-radius: 14px; box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.05)); overflow: hidden;">
+    
+    <!-- Header Banner -->
+    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: #ffffff; padding: 2.2rem 2rem; position: relative;">
+      <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+        <span style="font-size: 2rem;">📬</span>
+        <h1 style="font-size: 1.75rem; font-weight: 800; margin: 0; color: #ffffff;">Contact &amp; Academic Support</h1>
+      </div>
+      <p style="margin: 0; font-size: 0.95rem; opacity: 0.9; max-width: 620px; line-height: 1.5;">
+        Need technical assistance, course enrollment support, or feature feedback? Reach out to the Hoodle laboratory team.
+      </p>
+    </div>
+
+    <!-- Cards Body -->
+    <div style="padding: 2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem;">
+      
+      <!-- Card 1: Official Email -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">✉️</div>
+          <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-main, #0f172a); margin: 0 0 0.5rem 0;">Direct Email Support</h3>
+          <p style="font-size: 0.88rem; color: var(--text-muted, #64748b); line-height: 1.5; margin: 0 0 1rem 0;">
+            For faculty onboarding, password resets, system inquiries, and bug reports.
+          </p>
+        </div>
+        <div>
+          <a href="mailto:hoodle.lms@gmail.com" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; font-weight: 700; font-size: 0.88rem; padding: 0.6rem 1rem;">
+            <span>hoodle.lms@gmail.com</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Card 2: Campus Address -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">🏛️</div>
+          <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-main, #0f172a); margin: 0 0 0.5rem 0;">Campus Location</h3>
+          <p style="font-size: 0.88rem; color: var(--text-muted, #64748b); line-height: 1.5; margin: 0;">
+            <strong>Room 402, Engineering Department 1</strong><br>
+            Accelerated Computing &amp; Computation Lab (ACCL)<br>
+            Indian Institute of Technology Bhilai<br>
+            Kutelabhata, Durg, Chhattisgarh - 491001
+          </p>
+        </div>
+        <div style="margin-top: 1rem;">
+          <span class="badge" style="background: #e0e7ff; color: #3730a3; font-weight: 700; font-size: 0.75rem; padding: 4px 10px; border-radius: 6px;">
+            IIT Bhilai Academic Campus
+          </span>
+        </div>
+      </div>
+
+      <!-- Card 3: Online Portals -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">🌐</div>
+          <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-main, #0f172a); margin: 0 0 0.5rem 0;">Access Addresses</h3>
+          <p style="font-size: 0.88rem; color: var(--text-muted, #64748b); line-height: 1.5; margin: 0;">
+            <strong>Public Internet:</strong> <a href="https://hoodle.in" target="_blank" style="color: var(--primary, #2563eb); font-weight: 600;">https://hoodle.in</a><br>
+            <strong>Campus Intranet:</strong> <span style="font-family: monospace; color: var(--text-main, #0f172a);">http://10.10.14.104/lms/</span>
+          </p>
+        </div>
+        <div style="margin-top: 1rem;">
+          <a href="{{ url_for('usage_guide') }}" class="btn btn-outline" style="font-size: 0.82rem; font-weight: 700; text-decoration: none; padding: 0.45rem 0.85rem;">
+            📖 Student &amp; Teacher Handbook &rarr;
+          </a>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom Footer inside card -->
+    <div style="padding: 1.25rem 2rem; background: #ffffff; border-top: 1px solid var(--border, #e2e8f0); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+      <span style="font-size: 0.82rem; color: var(--text-muted, #64748b);">
+        Hoodle LMS • Accelerated Classroom &amp; Lab Learning
+      </span>
+      <div style="display: flex; gap: 1rem; align-items: center;">
+        <a href="{{ url_for('index') }}" style="font-size: 0.85rem; color: var(--primary, #2563eb); font-weight: 600; text-decoration: none;">&larr; Home</a>
+        <a href="{{ url_for('login') }}" class="btn btn-sm btn-primary" style="font-weight: 700; text-decoration: none;">Sign In</a>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

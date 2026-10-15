@@ -18,7 +18,7 @@
   <header class="lms-navbar">
     <div class="navbar-primary-row {% if not current_user %}has-guest-nav{% endif %}">
       <!-- Left: Brand (Hoodle Logo + Dual Lab Logos + Hoodle Wordmark) -->
-      <a href="{{ url_for('dashboard') }}" class="brand-section">
+      <a href="{{ url_for('index') }}" class="brand-section">
         <div class="brand-logos-cluster">
           <img src="{{ url_for('static', filename='images/hoodle_mark.svg') }}" alt="Hoodle Icon" class="brand-logo hoodle-logo" style="height: 38px; width: auto; object-fit: contain;">
           <div class="brand-logos-divider"></div>
@@ -266,6 +266,16 @@
                   <span class="admin-sidebar-item-label">User Directory</span>
                 </div>
                 {% if request.path == url_for('admin_users') %}
+                  <span class="admin-nav-indicator"></span>
+                {% endif %}
+              </a>
+
+              <a href="{{ url_for('admin_teachers') }}" class="admin-sidebar-item {% if '/admin/teachers' in request.path %}active{% endif %}" title="Faculty &amp; Teacher Self-Registration Approvals">
+                <div class="admin-sidebar-item-left">
+                  <span class="admin-sidebar-item-icon">👨‍🏫</span>
+                  <span class="admin-sidebar-item-label">Teacher Approvals</span>
+                </div>
+                {% if '/admin/teachers' in request.path %}
                   <span class="admin-nav-indicator"></span>
                 {% endif %}
               </a>
@@ -714,14 +724,18 @@
         <span class="badge" style="background: #2563eb; color: #ffffff; font-size: 0.72rem; font-weight: 800; border-radius: 9999px; padding: 2px 8px; margin-left: 0.4rem; letter-spacing: 0.03em;">v2.0</span>
         <span class="footer-sep">•</span>
         <span class="footer-tagline">Accelerated Classroom &amp; Lab Learning</span>
+        <span class="footer-sep">•</span>
+        <a href="{{ url_for('contact_page') }}" style="color: #60a5fa; text-decoration: none; font-weight: 700; font-size: 0.8rem;">
+          📬 Contact Us
+        </a>
       </div>
 
-      <!-- Right: Developed by -->
+      <!-- Right: Developed by & Address -->
       <div class="footer-credits">
         <span>Developed by</span>
         <span class="footer-author-badge">Kishan Tamboli (PhD)</span>
         <span class="footer-sep">•</span>
-        <span class="footer-org">ACCL IIT Bhilai</span>
+        <span class="footer-org">Room 402, Eng-1 • ACCL IIT Bhilai</span>
       </div>
     </div>
   </footer>
@@ -928,11 +942,14 @@
       let targetUrl = "";
       if (targetMode === "internet") {
         // Switch to Remote Internet Portal (Public Access)
-        if (currentHost.includes("ts.net") || currentHost === "100.87.0.15") {
+        if (currentHost === "hoodle.in" || currentHost === "www.hoodle.in" || currentHost.includes("ts.net") || currentHost === "100.87.0.15") {
           updateNetworkUI("internet");
           return;
         }
-        targetUrl = `https://accllogin.tail77fd8b.ts.net${path}${search}${hash}`;
+        let cleanPath = path;
+        if (cleanPath.startsWith('/lms/')) cleanPath = cleanPath.substring(4);
+        else if (cleanPath === '/lms') cleanPath = '/';
+        targetUrl = `https://hoodle.in${cleanPath}${search}${hash}`;
       } else {
         // Switch to Campus Intranet Portal (Default & Priority)
         if (currentHost === "10.10.14.104" || currentHost === "localhost" || currentHost === "127.0.0.1") {
@@ -954,7 +971,7 @@
         } catch(e) {}
       }
       const host = window.location.hostname;
-      if (host.includes("ts.net") || host === "100.87.0.15") {
+      if (host === "hoodle.in" || host === "www.hoodle.in" || host.includes("ts.net") || host === "100.87.0.15") {
         return "internet";
       }
       return "intranet";

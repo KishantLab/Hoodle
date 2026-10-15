@@ -105,7 +105,22 @@ DB_PATH = Path(os.environ.get("DB_PATH", BASE_DIR / "accl_lms.db"))
 PORT = int(os.environ.get("PORT", 8095))
 HOST = os.environ.get("HOST", "0.0.0.0")
 MAX_CONTENT_LENGTH = 300 * 1024 * 1024  # 300 MB max upload limit
-SECRET_KEY = os.environ.get("SECRET_KEY", "accl_lms_classroom_secret_2026_super_secure")
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+if not SECRET_KEY:
+    hoodle_env_path = "/etc/hoodle/hoodle.env"
+    if os.path.exists(hoodle_env_path):
+        try:
+            with open(hoodle_env_path, "r") as _ef:
+                for _line in _ef:
+                    _line = _line.strip()
+                    if _line.startswith("SECRET_KEY="):
+                        SECRET_KEY = _line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+        except Exception:
+            pass
+if not SECRET_KEY:
+    SECRET_KEY = "accl_lms_classroom_secret_2026_super_secure"
+
 DEFAULT_LOCKER_QUOTA = 500 * 1024 * 1024  # 500 MB default private storage quota
 
 # Tailscale Network Configuration for Public and Mesh Google Sheet Feeds
@@ -355,7 +370,65 @@ except ImportError:
                     except Exception:
                         pass
                 raise
-        raise last_err
+def ensure_feature_tables():
+    """
+    Safe additive-only table initializations for new platform capabilities.
+    Works seamlessly on both PostgreSQL and SQLite backends without schema mutation.
+    """
+    try:
+        conn = get_db()
+        # 1. Attendance Audit Log Table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS attendance_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id INTEGER NOT NULL,
+                original_log_id INTEGER,
+                student_id INTEGER NOT NULL,
+                roll_number TEXT NOT NULL,
+                student_name TEXT NOT NULL,
+                session_type TEXT NOT NULL,
+                attendance_date TEXT NOT NULL,
+                action TEXT NOT NULL,
+                snapshot_json TEXT NOT NULL,
+                reason TEXT DEFAULT '',
+                performed_by INTEGER NOT NULL,
+                performed_at TEXT NOT NULL,
+                restored_at TEXT DEFAULT NULL,
+                restored_by INTEGER DEFAULT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_att_audit_course_date ON attendance_audit_log (course_id, attendance_date, session_type)")
+
+        # 2. Teacher Registration System Table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS teacher_registrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                full_name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                department TEXT NOT NULL,
+                designation TEXT NOT NULL,
+                employee_id TEXT DEFAULT '',
+                otp_hash TEXT NOT NULL,
+                otp_expires_at TEXT NOT NULL,
+                otp_attempts INTEGER DEFAULT 0,
+                otp_sent_count INTEGER DEFAULT 1,
+                last_otp_sent_at TEXT NOT NULL,
+                email_verified_at TEXT DEFAULT NULL,
+                status TEXT NOT NULL DEFAULT 'pending_otp',
+                review_note TEXT DEFAULT '',
+                reviewed_by INTEGER DEFAULT NULL,
+                reviewed_at TEXT DEFAULT NULL,
+                created_user_id INTEGER DEFAULT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_teacher_reg_status ON teacher_registrations (status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_teacher_reg_email ON teacher_registrations (email)")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        app.logger.warning("ensure_feature_tables notice (safe fallback): %s", e)
 
 
 def init_db():
@@ -760,7 +833,7 @@ def init_db():
                 except Exception:
                     pass
     except Exception as e:
-        logger.warning(f"PostgreSQL courses column migration notice: {e}")
+        app.logger.warning(f"PostgreSQL courses column migration notice: {e}")
 
     # SQLite migration for Version 2 columns
     try:
@@ -2449,7 +2522,8 @@ def login():
         else:
             flash("Invalid credentials. Please check your username/roll number and password.", "danger")
 
-    return render_template("login.html")
+    register_active = (request.args.get("tab") == "register")
+    return render_template("login.html", register_active=register_active)
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -2575,6 +2649,464 @@ def register():
         return redirect(url_for("login"))
 
     return render_template("login.html", register_active=True)
+
+
+# --- Teacher Self-Registration & Verification (#1) ---
+
+@app.route("/register/teacher", methods=["GET", "POST"])
+def teacher_register():
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        full_name = request.form.get("full_name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        department = request.form.get("department", "").strip()
+        designation = request.form.get("designation", "").strip()
+        employee_id = request.form.get("employee_id", "").strip().upper()
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if not full_name or not email or not password or not department or not designation:
+            flash("Full Name, Email, Department, Designation, and Password are required.", "danger")
+            return render_template("teacher_register.html")
+
+        if "@" not in email or "." not in email:
+            flash("Please enter a valid email address.", "danger")
+            return render_template("teacher_register.html")
+
+        if password != confirm_password:
+            flash("Passwords do not match. Please verify.", "danger")
+            return render_template("teacher_register.html")
+
+        if len(password) < 6:
+            flash("Password must contain at least 6 characters.", "danger")
+            return render_template("teacher_register.html")
+
+        conn = get_db()
+        existing_user = conn.execute("""
+            SELECT id FROM users
+            WHERE LOWER(email) = ? OR (roll_number != '' AND UPPER(roll_number) = ?)
+        """, (email, employee_id)).fetchone()
+
+        if existing_user:
+            conn.close()
+            flash("An account with this Email or Employee ID already exists. Please log in.", "warning")
+            return redirect(url_for("login"))
+
+        existing_reg = conn.execute("""
+            SELECT id, status FROM teacher_registrations
+            WHERE LOWER(email) = ? AND status IN ('pending_otp', 'pending_approval')
+        """, (email,)).fetchone()
+
+        now_dt = datetime.now()
+        now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+        raw_otp = f"{secrets.randbelow(900000) + 100000}"
+        otp_hash = hashlib.sha256(raw_otp.encode("utf-8")).hexdigest()
+        otp_exp = (now_dt + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+        pwd_hash = hash_password(password)
+
+        if existing_reg:
+            reg_id = existing_reg["id"]
+            def _update_reg(c):
+                c.execute("BEGIN IMMEDIATE")
+                c.execute("""
+                    UPDATE teacher_registrations
+                    SET full_name = ?, password_hash = ?, department = ?, designation = ?,
+                        employee_id = ?, otp_hash = ?, otp_expires_at = ?, otp_attempts = 0,
+                        otp_sent_count = otp_sent_count + 1, last_otp_sent_at = ?, status = 'pending_otp'
+                    WHERE id = ?
+                """, (full_name, pwd_hash, department, designation, employee_id, otp_hash, otp_exp, now_str, reg_id))
+                c.commit()
+                return reg_id
+            execute_db_write_with_retry(_update_reg)
+        else:
+            def _insert_reg(c):
+                c.execute("BEGIN IMMEDIATE")
+                cur = c.execute("""
+                    INSERT INTO teacher_registrations (
+                        full_name, email, password_hash, department, designation, employee_id,
+                        otp_hash, otp_expires_at, otp_attempts, otp_sent_count, last_otp_sent_at,
+                        status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, 'pending_otp', ?)
+                """, (full_name, email, pwd_hash, department, designation, employee_id, otp_hash, otp_exp, now_str, now_str))
+                rid = getattr(cur, "lastrowid", None)
+                if not rid:
+                    row = c.execute("SELECT id FROM teacher_registrations WHERE LOWER(email) = ?", (email,)).fetchone()
+                    rid = row["id"] if row else None
+                c.commit()
+                return rid
+            reg_id = execute_db_write_with_retry(_insert_reg)
+
+        conn.close()
+
+        # Send OTP email
+        otp_body = f"""
+Dear {full_name},
+
+Thank you for registering as an Instructor / Faculty member on Hoodle LMS.
+Your 6-digit email verification security code is:
+
+    {raw_otp}
+
+This code will expire in 10 minutes. Please enter it on the verification screen to submit your application for administrator review.
+
+If you did not initiate this registration, please disregard this email.
+
+Best regards,
+Hoodle LMS Academic Platform
+Room 402, Engineering Department 1, IIT Bhilai
+"""
+        otp_html = f"""
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h2 style="color: #1e3a8a; margin: 0;">👨‍🏫 Faculty Email Verification</h2>
+    <p style="color: #64748b; font-size: 14px; margin-top: 5px;">Hoodle Learning Management System</p>
+  </div>
+  <p>Dear <strong>{full_name}</strong>,</p>
+  <p>Your one-time verification security code for instructor self-registration is:</p>
+  <div style="background: #f1f5f9; padding: 16px; text-align: center; border-radius: 8px; margin: 24px 0;">
+    <span style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #2563eb; font-family: monospace;">{raw_otp}</span>
+  </div>
+  <p style="font-size: 13px; color: #64748b;">This code expires in 10 minutes. After verifying your email, your account will be reviewed by the system administrator for activation.</p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
+  <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">Room 402, Engineering Dept 1, IIT Bhilai • <a href="https://hoodle.in" style="color: #2563eb;">hoodle.in</a></p>
+</div>
+"""
+        try:
+            enqueue_email(email, "Your Hoodle Faculty Verification Code", "Email Verification", otp_body, otp_html, otp_body, priority=100, expires_in_minutes=15)
+        except Exception as e:
+            app.logger.warning("Could not enqueue verification email: %s", e)
+
+        flash("Verification code sent to your email. Please enter the 6-digit OTP below.", "info")
+        return redirect(url_for("teacher_verify", reg_id=reg_id))
+
+    return render_template("teacher_register.html")
+
+
+@app.route("/register/teacher/verify/<int:reg_id>", methods=["GET", "POST"])
+def teacher_verify(reg_id):
+    conn = get_db()
+    reg = conn.execute("SELECT * FROM teacher_registrations WHERE id = ?", (reg_id,)).fetchone()
+    conn.close()
+
+    if not reg:
+        flash("Registration application not found.", "danger")
+        return redirect(url_for("teacher_register"))
+
+    if reg["status"] == "pending_approval":
+        flash("Your email is already verified! Application is currently awaiting administrator approval.", "info")
+        return redirect(url_for("login"))
+    elif reg["status"] == "approved":
+        flash("Your instructor account has already been approved! Please sign in with your email.", "success")
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        otp = request.form.get("otp", "").strip()
+        now_dt = datetime.now()
+        now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        if now_str > (reg["otp_expires_at"] or ""):
+            flash("Verification code has expired. Please click 'Resend Code'.", "danger")
+            return render_template("teacher_verify.html", reg=reg)
+
+        if (reg["otp_attempts"] or 0) >= 5:
+            flash("Too many failed verification attempts. Please request a new code.", "danger")
+            return render_template("teacher_verify.html", reg=reg)
+
+        otp_hash = hashlib.sha256(otp.encode("utf-8")).hexdigest()
+        if otp_hash != reg["otp_hash"]:
+            conn = get_db()
+            conn.execute("UPDATE teacher_registrations SET otp_attempts = otp_attempts + 1 WHERE id = ?", (reg_id,))
+            conn.commit()
+            conn.close()
+            flash("Invalid verification code. Please check your email and try again.", "danger")
+            return render_template("teacher_verify.html", reg=reg)
+
+        # OTP verified successfully -> status becomes pending_approval
+        def _verify_success(c):
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("""
+                UPDATE teacher_registrations
+                SET email_verified_at = ?, status = 'pending_approval'
+                WHERE id = ?
+            """, (now_str, reg_id))
+            c.commit()
+            return True
+
+        execute_db_write_with_retry(_verify_success)
+
+        # Notify administrator(s) via email queue
+        try:
+            admin_conn = get_db()
+            admins = admin_conn.execute("SELECT email FROM users WHERE role = 'admin' AND email != ''").fetchall()
+            admin_conn.close()
+            admin_emails = [a["email"] for a in admins] or ["hoodle.lms@gmail.com"]
+            for a_email in admin_emails:
+                enqueue_email(
+                    a_email,
+                    f"New Faculty Registration Pending: {reg['full_name']}",
+                    "Teacher Approval Required",
+                    f"{reg['full_name']} ({reg['email']}, {reg['department']}) has verified their email and requested teacher access.",
+                    f"<p><strong>{reg['full_name']}</strong> ({reg['email']}, {reg['department']} - {reg['designation']}) has applied for teacher access.<br><a href='https://hoodle.in/admin/teachers'>Open Teacher Approvals Dashboard</a></p>",
+                    f"{reg['full_name']} ({reg['email']}) registered as teacher.",
+                    priority=50,
+                    expires_in_minutes=1440
+                )
+        except Exception:
+            pass
+
+        flash("✅ Email verified successfully! Your application has been submitted to the administrator for approval. You will receive an email upon activation.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("teacher_verify.html", reg=reg)
+
+
+@app.route("/register/teacher/resend/<int:reg_id>", methods=["POST"])
+def teacher_resend_otp(reg_id):
+    conn = get_db()
+    reg = conn.execute("SELECT * FROM teacher_registrations WHERE id = ?", (reg_id,)).fetchone()
+    conn.close()
+
+    if not reg or reg["status"] not in ("pending_otp",):
+        flash("Invalid request.", "danger")
+        return redirect(url_for("teacher_register"))
+
+    now_dt = datetime.now()
+    now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Rate limit: 60s between resends
+    if reg["last_otp_sent_at"]:
+        try:
+            last_dt = datetime.strptime(reg["last_otp_sent_at"], "%Y-%m-%d %H:%M:%S")
+            if (now_dt - last_dt).total_seconds() < 60:
+                flash("Please wait a moment before requesting another verification code.", "warning")
+                return redirect(url_for("teacher_verify", reg_id=reg_id))
+        except Exception:
+            pass
+
+    raw_otp = f"{secrets.randbelow(900000) + 100000}"
+    otp_hash = hashlib.sha256(raw_otp.encode("utf-8")).hexdigest()
+    otp_exp = (now_dt + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+
+    def _do_resend(c):
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("""
+            UPDATE teacher_registrations
+            SET otp_hash = ?, otp_expires_at = ?, otp_attempts = 0,
+                otp_sent_count = otp_sent_count + 1, last_otp_sent_at = ?
+            WHERE id = ?
+        """, (otp_hash, otp_exp, now_str, reg_id))
+        c.commit()
+        return True
+
+    execute_db_write_with_retry(_do_resend)
+
+    otp_body = f"Your new Hoodle verification code is: {raw_otp}\nExpires in 10 minutes."
+    try:
+        enqueue_email(reg["email"], "Your New Hoodle Faculty Verification Code", "Email Verification", otp_body, f"<p>Your code is: <strong>{raw_otp}</strong></p>", otp_body, priority=100, expires_in_minutes=15)
+    except Exception:
+        pass
+
+    flash("A new 6-digit verification code has been dispatched to your email.", "info")
+    return redirect(url_for("teacher_verify", reg_id=reg_id))
+
+
+# --- Admin Teacher Approvals Dashboard ---
+
+@app.route("/admin/teachers")
+@admin_required
+def admin_teachers():
+    tab = request.args.get("tab", "pending").strip().lower()
+    if tab not in ("pending", "approved", "rejected"):
+        tab = "pending"
+
+    status_filter = "pending_approval" if tab == "pending" else tab
+
+    conn = get_db()
+    registrations = conn.execute("""
+        SELECT * FROM teacher_registrations
+        WHERE status = ?
+        ORDER BY created_at DESC
+    """, (status_filter,)).fetchall()
+
+    counts = conn.execute("""
+        SELECT
+            SUM(CASE WHEN status = 'pending_approval' THEN 1 ELSE 0 END) as pending_count,
+            SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_count,
+            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count
+        FROM teacher_registrations
+    """).fetchone()
+    conn.close()
+
+    p_count = (counts["pending_count"] if counts else 0) or 0
+    a_count = (counts["approved_count"] if counts else 0) or 0
+    r_count = (counts["rejected_count"] if counts else 0) or 0
+
+    return render_template(
+        "admin_teachers.html",
+        registrations=registrations,
+        current_tab=tab,
+        pending_count=p_count,
+        approved_count=a_count,
+        rejected_count=r_count
+    )
+
+
+@app.route("/admin/teachers/<int:reg_id>/approve", methods=["POST"])
+@admin_required
+def admin_teacher_approve(reg_id):
+    actor_id = session.get("user_id")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db()
+    reg = conn.execute("SELECT * FROM teacher_registrations WHERE id = ?", (reg_id,)).fetchone()
+    if not reg or reg["status"] != "pending_approval":
+        conn.close()
+        flash("Registration request not found or not in pending state.", "danger")
+        return redirect(url_for("admin_teachers"))
+
+    # Determine unique username (use email or employee ID)
+    cand_username = reg["email"].strip().lower()
+    existing_u = conn.execute("SELECT id FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?", (cand_username, reg["email"].lower())).fetchone()
+    if existing_u:
+        conn.close()
+        flash("A user account with this email or username already exists in the system.", "warning")
+        return redirect(url_for("admin_teachers"))
+    conn.close()
+
+    def _do_approve(c):
+        c.execute("BEGIN IMMEDIATE")
+        cur = c.execute("""
+            INSERT INTO users (
+                username, roll_number, email, password_hash, display_name, role, created_at
+            ) VALUES (?, ?, ?, ?, ?, 'teacher', ?)
+        """, (
+            cand_username,
+            reg["employee_id"] or "",
+            reg["email"],
+            reg["password_hash"],
+            reg["full_name"],
+            now_str
+        ))
+        uid = getattr(cur, "lastrowid", None)
+        if not uid:
+            u_row = c.execute("SELECT id FROM users WHERE LOWER(username) = ?", (cand_username,)).fetchone()
+            uid = u_row["id"] if u_row else None
+
+        c.execute("""
+            UPDATE teacher_registrations
+            SET status = 'approved', reviewed_by = ?, reviewed_at = ?, created_user_id = ?
+            WHERE id = ?
+        """, (actor_id, now_str, uid, reg_id))
+        c.commit()
+        return uid
+
+    new_uid = execute_db_write_with_retry(_do_approve)
+
+    # Notify teacher via email
+    welcome_body = f"""
+Dear {reg['full_name']},
+
+Congratulations! Your instructor account on Hoodle LMS has been approved and activated by the administrator.
+
+You may now sign in using your email address ({reg['email']}) and the password you set during registration:
+https://hoodle.in/login
+
+With your instructor privileges, you can now:
+  • Create and conduct courses and labs
+  • Launch high-speed rotating QR attendance projectors
+  • Manage course announcements, assignments, and exam lockers
+  • Access real-time gradebook and attendance analytics
+
+Best regards,
+Hoodle LMS Academic Platform
+Room 402, Engineering Department 1, IIT Bhilai
+"""
+    try:
+        enqueue_email(
+            reg["email"],
+            "Hoodle LMS — Your Instructor Account Has Been Approved!",
+            "Account Approved",
+            welcome_body,
+            f"<div style='font-family: sans-serif; padding: 20px;'><h2 style='color: #15803d;'>🎉 Welcome to Hoodle LMS</h2><p>Dear {reg['full_name']},</p><pp>Your instructor account has been approved. You can now <a href='https://hoodle.in/login'>Sign in with your email</a>.</p></div>",
+            welcome_body,
+            priority=100,
+            expires_in_minutes=1440
+        )
+    except Exception as e:
+        app.logger.warning("Could not enqueue approval email: %s", e)
+
+    flash(f"✅ Approved! Teacher account created for {reg['full_name']} (User #{new_uid}). Notification email dispatched.", "success")
+    return redirect(url_for("admin_teachers"))
+
+
+@app.route("/admin/teachers/<int:reg_id>/reject", methods=["POST"])
+@admin_required
+def admin_teacher_reject(reg_id):
+    actor_id = session.get("user_id")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    review_note = request.form.get("review_note", "").strip()
+
+    conn = get_db()
+    reg = conn.execute("SELECT * FROM teacher_registrations WHERE id = ?", (reg_id,)).fetchone()
+    if not reg:
+        conn.close()
+        flash("Registration request not found.", "danger")
+        return redirect(url_for("admin_teachers"))
+    conn.close()
+
+    def _do_reject(c):
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("""
+            UPDATE teacher_registrations
+            SET status = 'rejected', review_note = ?, reviewed_by = ?, reviewed_at = ?, otp_hash = ''
+            WHERE id = ?
+        """, (review_note, actor_id, now_str, reg_id))
+        c.commit()
+        return True
+
+    execute_db_write_with_retry(_do_reject)
+
+    reject_body = f"""
+Dear {reg['full_name']},
+
+Thank you for your interest in Hoodle LMS.
+Your instructor registration application has been reviewed. At this time, the application could not be approved.
+
+Reason / Administrator Note:
+{review_note or 'Application requirements not met.'}
+
+If you believe this is in error, please contact hoodle.lms@gmail.com.
+
+Best regards,
+Hoodle LMS Administration
+Room 402, Engineering Department 1, IIT Bhilai
+"""
+    try:
+        enqueue_email(
+            reg["email"],
+            "Update on your Hoodle Instructor Registration",
+            "Application Update",
+            reject_body,
+            f"<p>{reject_body.replace(chr(10), '<br>')}</p>",
+            reject_body,
+            priority=50,
+            expires_in_minutes=1440
+        )
+    except Exception:
+        pass
+
+    flash(f"Application for {reg['full_name']} marked as rejected.", "info")
+    return redirect(url_for("admin_teachers"))
+
+
+# --- Contact Us Public Page (#7) ---
+
+@app.route("/contact")
+def contact_page():
+    """Public academic contact and support page."""
+    return render_template("contact.html")
 
 
 @app.route("/logout")
@@ -2948,7 +3480,7 @@ student_guide = usage_guide
 def index():
     if "user_id" in session:
         return redirect(url_for("dashboard"))
-    return redirect(url_for("login"))
+    return render_template("home.html")
 
 
 @app.route("/dashboard")
@@ -9959,6 +10491,17 @@ def attendance_session_detail(course_id):
         WHERE course_id = ? AND excluded_date = ? AND session_type = ?
     """, (course_id, target_date, session_type)).fetchone()
 
+    # 4. Fetch revoked audit logs for this session (for transparency & instant restore)
+    audit_logs = []
+    try:
+        audit_logs = conn.execute("""
+            SELECT * FROM attendance_audit_log
+            WHERE course_id = ? AND attendance_date = ? AND session_type = ? AND action = 'REMOVED' AND restored_at IS NULL
+            ORDER BY performed_at DESC
+        """, (course_id, target_date, session_type)).fetchall()
+    except Exception:
+        pass
+
     conn.close()
 
     present_student_ids = {l["student_id"] for l in logs}
@@ -9982,8 +10525,139 @@ def attendance_session_detail(course_id):
         absent_count=absent_count,
         attendance_pct=pct,
         is_excluded=bool(excluded_row),
-        excluded_info=excluded_row
+        excluded_info=excluded_row,
+        audit_logs=audit_logs
     )
+
+
+@app.route("/courses/<int:course_id>/attendance/delete-record/<int:log_id>", methods=["POST"])
+@teacher_required
+def attendance_delete_student_record(course_id, log_id):
+    """
+    Teacher & TA Single Attendance Record Removal (#3):
+    Safely archives the attendance record into the audit log before removing it from attendance_logs.
+    Prevents cross-course IDOR deletion and guarantees full zero-data-loss auditability.
+    """
+    course = get_course_or_404(course_id)
+    target_date = request.form.get("target_date", "").strip()
+    session_type = request.form.get("session_type", "Lecture").strip()
+    reason = request.form.get("reason", "").strip()
+    actor_id = session.get("user_id")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db()
+    log_row = conn.execute("SELECT * FROM attendance_logs WHERE id = ? AND course_id = ?", (log_id, course_id)).fetchone()
+    if not log_row:
+        conn.close()
+        flash("Attendance record not found or does not belong to this course.", "danger")
+        return redirect(url_for("attendance_session_detail", course_id=course_id, date=target_date, type=session_type))
+
+    log_dict = dict(log_row)
+    snapshot = json.dumps(log_dict)
+    stud_name = log_dict.get("student_name", "Student")
+    stud_roll = log_dict.get("roll_number", "")
+    conn.close()
+
+    def _do_archive_and_delete(c):
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("""
+            INSERT INTO attendance_audit_log (
+                course_id, original_log_id, student_id, roll_number, student_name,
+                session_type, attendance_date, action, snapshot_json, reason,
+                performed_by, performed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'REMOVED', ?, ?, ?, ?)
+        """, (
+            course_id, log_id, log_dict["student_id"], stud_roll, stud_name,
+            log_dict.get("session_type", session_type), log_dict.get("attendance_date", target_date),
+            snapshot, reason, actor_id, now_str
+        ))
+        c.execute("DELETE FROM attendance_logs WHERE id = ? AND course_id = ?", (log_id, course_id))
+        c.commit()
+        return True
+
+    execute_db_write_with_retry(_do_archive_and_delete)
+    flash(f"🗑️ Attendance record for {stud_name} ({stud_roll}) safely removed and archived.", "info")
+    return redirect(url_for("attendance_session_detail", course_id=course_id, date=target_date, type=session_type))
+
+
+@app.route("/courses/<int:course_id>/attendance/restore-record/<int:audit_id>", methods=["POST"])
+@teacher_required
+def attendance_restore_student_record(course_id, audit_id):
+    """
+    Teacher & TA 1-Click Record Restore:
+    Restores an archived attendance record from attendance_audit_log back into attendance_logs.
+    """
+    course = get_course_or_404(course_id)
+    target_date = request.form.get("target_date", "").strip()
+    session_type = request.form.get("session_type", "Lecture").strip()
+    actor_id = session.get("user_id")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db()
+    audit_row = conn.execute("SELECT * FROM attendance_audit_log WHERE id = ? AND course_id = ?", (audit_id, course_id)).fetchone()
+    if not audit_row:
+        conn.close()
+        flash("Audit record not found.", "danger")
+        return redirect(url_for("attendance_session_detail", course_id=course_id, date=target_date, type=session_type))
+
+    log_data = json.loads(audit_row["snapshot_json"])
+    conn.close()
+
+    def _do_restore(c):
+        c.execute("BEGIN IMMEDIATE")
+        # Check if already marked
+        existing = c.execute("""
+            SELECT id FROM attendance_logs
+            WHERE course_id = ? AND student_id = ? AND attendance_date = ? AND session_type = ?
+        """, (course_id, log_data["student_id"], log_data["attendance_date"], log_data["session_type"])).fetchone()
+
+        if existing:
+            c.rollback()
+            return "already_present"
+
+        c.execute("""
+            INSERT INTO attendance_logs (
+                course_id, session_id, student_id, roll_number, student_name,
+                section, session_type, attendance_date, status, method,
+                ip_address, marked_at, attendance_key, latitude, longitude,
+                accuracy_meters, distance_meters, is_proxy_suspect, proxy_remark
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            log_data.get("course_id", course_id),
+            log_data.get("session_id"),
+            log_data.get("student_id"),
+            log_data.get("roll_number"),
+            log_data.get("student_name"),
+            log_data.get("section", "Section A"),
+            log_data.get("session_type", session_type),
+            log_data.get("attendance_date", target_date),
+            log_data.get("status", "PRESENT"),
+            log_data.get("method", "RESTORED"),
+            log_data.get("ip_address"),
+            log_data.get("marked_at", now_str),
+            log_data.get("attendance_key", f"RESTORE_{uuid.uuid4().hex[:12]}"),
+            log_data.get("latitude"),
+            log_data.get("longitude"),
+            log_data.get("accuracy_meters"),
+            log_data.get("distance_meters"),
+            log_data.get("is_proxy_suspect", 0),
+            log_data.get("proxy_remark", "")
+        ))
+
+        c.execute("""
+            UPDATE attendance_audit_log
+            SET restored_at = ?, restored_by = ?
+            WHERE id = ?
+        """, (now_str, actor_id, audit_id))
+        c.commit()
+        return "ok"
+
+    res = execute_db_write_with_retry(_do_restore)
+    if res == "already_present":
+        flash("Student is already marked present for this session.", "warning")
+    else:
+        flash(f"↩️ Attendance record for {log_data.get('student_name')} restored successfully.", "success")
+    return redirect(url_for("attendance_session_detail", course_id=course_id, date=target_date, type=session_type))
 
 
 @app.route("/courses/<int:course_id>/attendance/session/delete", methods=["POST"])
@@ -11344,6 +12018,7 @@ def download_apk():
 
 with app.app_context():
     init_db()
+    ensure_feature_tables()
     start_daily_google_sheet_backup_daemon()
 
 

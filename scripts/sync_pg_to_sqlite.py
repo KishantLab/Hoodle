@@ -10,7 +10,23 @@ import psycopg2
 import psycopg2.extras
 
 SQLITE_PATH = os.environ.get("SQLITE_PATH", "/data/admin/ACCLLMS/accl_lms.db")
-PG_URL = os.environ.get("PG_URL", "postgresql://kishan_accl:HoodleLMS_Secure_2026@127.0.0.1:5432/accl_lms")
+def get_pg_url():
+    url = os.environ.get("PG_URL") or os.environ.get("DATABASE_URL")
+    if not url and os.path.exists("/etc/hoodle/hoodle.env"):
+        try:
+            with open("/etc/hoodle/hoodle.env") as f:
+                for line in f:
+                    if line.startswith("DATABASE_URL="):
+                        url = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+        except Exception:
+            pass
+    return url
+
+PG_URL = get_pg_url()
+if not PG_URL:
+    print("❌ Error: PG_URL or DATABASE_URL must be set in environment or /etc/hoodle/hoodle.env")
+    sys.exit(1)
 
 def sync_to_sqlite():
     print(f"[*] Connecting to PostgreSQL...")

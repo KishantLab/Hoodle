@@ -8,13 +8,18 @@ echo "=================================================="
 # 1. Verify PostgreSQL connectivity from all 3 nodes
 echo "[*] Verifying cluster connectivity to PostgreSQL..."
 python3 -c "
-import psycopg2
-for node, host in [('master', '127.0.0.1'), ('master_cluster', '192.168.99.2')]:
-    conn = psycopg2.connect(f'postgresql://kishan_accl:HoodleLMS_Secure_2026@{host}:5432/accl_lms')
-    conn.close()
+import psycopg2, os
+url = os.environ.get('DATABASE_URL')
+if not url and os.path.exists('/etc/hoodle/hoodle.env'):
+    with open('/etc/hoodle/hoodle.env') as f:
+        for l in f:
+            if l.startswith('DATABASE_URL='):
+                url = l.split('=', 1)[1].strip().strip('\"').strip(\"'\")
+conn = psycopg2.connect(url or 'postgresql://kishan_accl@127.0.0.1:5432/accl_lms')
+conn.close()
 "
-ssh gpu1 "python3 -c \"import psycopg2; psycopg2.connect('postgresql://kishan_accl:HoodleLMS_Secure_2026@192.168.99.2:5432/accl_lms').close()\""
-ssh gpu2 "python3 -c \"import psycopg2; psycopg2.connect('postgresql://kishan_accl:HoodleLMS_Secure_2026@192.168.99.2:5432/accl_lms').close()\""
+ssh gpu1 "python3 -c \"import psycopg2, os; url = os.environ.get('DATABASE_URL'); f_path = '/etc/hoodle/hoodle.env'; (url := [l.split('=', 1)[1].strip().strip('\\\"').strip('\\\'') for l in open(f_path) if l.startswith('DATABASE_URL=')][0]) if not url and os.path.exists(f_path) else None; conn = psycopg2.connect(url); conn.close()\""
+ssh gpu2 "python3 -c \"import psycopg2, os; url = os.environ.get('DATABASE_URL'); f_path = '/etc/hoodle/hoodle.env'; (url := [l.split('=', 1)[1].strip().strip('\\\"').strip('\\\'') for l in open(f_path) if l.startswith('DATABASE_URL=')][0]) if not url and os.path.exists(f_path) else None; conn = psycopg2.connect(url); conn.close()\""
 echo "  -> Database reachable from all 3 nodes."
 
 # 2. Ensure services are running on gpu1 and gpu2

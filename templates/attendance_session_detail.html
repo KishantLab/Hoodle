@@ -176,6 +176,7 @@
               <th onclick="toggleSort('proxy')" style="padding: 0.65rem; cursor: pointer; user-select: none;" title="Click to sort by Anti-Proxy Status">
                 Anti-Proxy Status <span id="th-sort-proxy" style="opacity: 0.45;">↕</span>
               </th>
+              <th style="padding: 0.65rem; text-align: right;">Action</th>
             </tr>
           </thead>
           <tbody id="presentTableBody">
@@ -230,6 +231,15 @@
                     {% endif %}
                   {% endif %}
                 </td>
+                <td style="padding: 0.65rem; text-align: right;">
+                  <form action="{{ url_for('attendance_delete_student_record', course_id=course.id, log_id=p.id) }}" method="POST" style="margin: 0; display: inline;" onsubmit="return confirm('Remove attendance for {{ p.student_name }} ({{ p.roll_number }})? Record is safely archived in audit log and can be restored anytime.');">
+                    <input type="hidden" name="target_date" value="{{ target_date }}">
+                    <input type="hidden" name="session_type" value="{{ session_type }}">
+                    <button type="submit" class="btn btn-sm btn-outline" style="color: #dc2626; border-color: #fca5a5; font-size: 0.78rem; padding: 0.25rem 0.55rem; font-weight: 700;" title="Remove this student's attendance record (Safely archived)">
+                      🗑️ Revoke
+                    </button>
+                  </form>
+                </td>
               </tr>
             {% endfor %}
           </tbody>
@@ -238,6 +248,53 @@
     {% else %}
       <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
         No students recorded as present for this session.
+      </div>
+    {% endif %}
+
+    {% if audit_logs %}
+      <!-- Audit Trail: Revoked Attendance Records -->
+      <div style="margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1.5px dashed var(--border);">
+        <details>
+          <summary style="cursor: pointer; font-size: 0.88rem; font-weight: 700; color: #64748b; user-select: none;">
+            <span>📋 Audit Trail: Revoked / Removed Records for this Session ({{ audit_logs|length }})</span>
+          </summary>
+          <div style="margin-top: 0.75rem; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.82rem;">
+              <thead>
+                <tr style="background: #f1f5f9; border-bottom: 1px solid var(--border); text-align: left; color: var(--text-muted); font-size: 0.74rem; text-transform: uppercase;">
+                  <th style="padding: 0.5rem 0.75rem;">Roll Number</th>
+                  <th style="padding: 0.5rem 0.75rem;">Student Name</th>
+                  <th style="padding: 0.5rem 0.75rem;">Action</th>
+                  <th style="padding: 0.5rem 0.75rem;">Revoked By / Time</th>
+                  <th style="padding: 0.5rem 0.75rem; text-align: right;">Restore</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for a in audit_logs %}
+                  <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 0.5rem 0.75rem; font-family: monospace; font-weight: 700;">{{ a.roll_number }}</td>
+                    <td style="padding: 0.5rem 0.75rem;">{{ a.student_name }}</td>
+                    <td style="padding: 0.5rem 0.75rem;">
+                      <span class="badge" style="background: #fef2f2; color: #991b1b; font-size: 0.72rem; font-weight: 700;">{{ a.action }}</span>
+                    </td>
+                    <td style="padding: 0.5rem 0.75rem; color: var(--text-muted); font-size: 0.78rem;">
+                      User #{{ a.performed_by }} • {{ a.performed_at }}
+                    </td>
+                    <td style="padding: 0.5rem 0.75rem; text-align: right;">
+                      <form action="{{ url_for('attendance_restore_student_record', course_id=course.id, audit_id=a.id) }}" method="POST" style="margin: 0; display: inline;" onsubmit="return confirm('Restore attendance for {{ a.student_name }} ({{ a.roll_number }})?');">
+                        <input type="hidden" name="target_date" value="{{ target_date }}">
+                        <input type="hidden" name="session_type" value="{{ session_type }}">
+                        <button type="submit" class="btn btn-sm btn-outline" style="color: #16a34a; border-color: #86efac; font-size: 0.75rem; padding: 0.2rem 0.5rem; font-weight: 700;">
+                          ↩️ Restore Record
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </div>
     {% endif %}
   </div>

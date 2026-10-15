@@ -13,6 +13,8 @@ import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Bitmap;
+import android.location.Location;
+import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import com.google.android.material.button.MaterialButton;
 import android.net.NetworkCapabilities;
@@ -23,8 +25,10 @@ import android.os.Environment;
 import android.net.http.SslError;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.GeolocationPermissions;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.SslErrorHandler;
@@ -46,11 +50,16 @@ import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.location.LocationManagerCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+
+import org.json.JSONObject;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -69,6 +78,10 @@ public class MainActivity extends AppCompatActivity {
     public static final String URL_HTTP = "http://10.10.14.104/lms/";
     public static final String URL_DIRECT = "http://10.10.14.104:8095/lms/";
     private static final String CHANNEL_ID = "hoodle_notifications_channel";
+    private static final int REQUEST_LOCATION_PERMISSION_CODE = 103;
+
+    private GeolocationPermissions.Callback pendingGeolocationCallback = null;
+    private String pendingGeolocationOrigin = null;
 
     private WebView webView;
     private ProgressBar progressBar;
@@ -107,6 +120,9 @@ public class MainActivity extends AppCompatActivity {
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.CAMERA}, 102);
         }
+
+        // Request Location permissions for Attendance Verification & Geofences
+        checkAndRequestLocationPermissions();
 
         // Initialize UI Elements
         webView = findViewById(R.id.webView);
@@ -253,6 +269,12 @@ public class MainActivity extends AppCompatActivity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
+        // Geolocation Settings for Attendance Geofencing
+        settings.setGeolocationEnabled(true);
+        try {
+            settings.setGeolocationDatabasePath(getFilesDir().getPath());
+        } catch (Exception ignored) {}
+
         // User Agent customization
         String defaultUA = settings.getUserAgentString();
         settings.setUserAgentString(defaultUA + " Hoodle_Android_App/1.0");
@@ -317,12 +339,33 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // WebChromeClient for Camera permissions (Attendance QR Scanner) and File Uploads
+        // WebChromeClient for Camera permissions, Geolocation prompts, and File Uploads
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
                 // Grant camera access directly to the WebView HTML5 QR scanner
                 request.grant(request.getResources());
+            }
+
+            @Override
+            public void onGeolocationPermissionsShowPrompt(final String origin, final GeolocationPermissions.Callback callback) {
+                if (hasLocationPermission()) {
+                    if (!isDeviceLocationEnabled()) {
+                        checkAndPromptDeviceGpsEnabled();
+                    }
+                    callback.invoke(origin, true, true);
+                } else {
+                    pendingGeolocationCallback = callback;
+                    pendingGeolocationOrigin = origin;
+                    ActivityCompat.requestPermissions(
+                        MainActivity.this,
+                        new String[]{
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                        },
+                        REQUEST_LOCATION_PERMISSION_CODE
+                    );
+                }
             }
 
             @Override
@@ -547,6 +590,121 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    public boolean hasLocationPermission() {
+        return ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+               ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    public void checkAndRequestLocationPermissions() {
+        if (!hasLocationPermission()) {
+            ActivityCompat.requestPermissions(
+                this,
+                new String[]{
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                },
+                REQUEST_LOCATION_PERMISSION_CODE
+            );
+        } else {
+            checkAndPromptDeviceGpsEnabled();
+        }
+    }
+
+    public boolean isDeviceLocationEnabled() {
+        LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        if (locationManager == null) return false;
+        return LocationManagerCompat.isLocationEnabled(locationManager);
+    }
+
+    public void checkAndPromptDeviceGpsEnabled() {
+        if (!isDeviceLocationEnabled()) {
+            new AlertDialog.Builder(this)
+                .setTitle("📍 Turn On Location")
+                .setMessage("Location is turned off on your device. Hoodle requires location services to auto-detect attendance venues and verify attendance.\n\nPlease turn on location in settings.")
+                .setPositiveButton("Turn On", (dialog, which) -> {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        Toast.makeText(MainActivity.this, "Unable to open location settings", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> dialog.dismiss())
+                .show();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_LOCATION_PERMISSION_CODE) {
+            boolean granted = false;
+            for (int res : grantResults) {
+                if (res == PackageManager.PERMISSION_GRANTED) {
+                    granted = true;
+                    break;
+                }
+            }
+            if (pendingGeolocationCallback != null && pendingGeolocationOrigin != null) {
+                pendingGeolocationCallback.invoke(pendingGeolocationOrigin, granted, false);
+                pendingGeolocationCallback = null;
+                pendingGeolocationOrigin = null;
+            }
+            if (granted) {
+                checkAndPromptDeviceGpsEnabled();
+            } else {
+                Toast.makeText(this, "Location permission is required for attendance verification", Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
+    public String getLatestNativeCoordinatesJson() {
+        try {
+            if (!hasLocationPermission()) {
+                JSONObject err = new JSONObject();
+                err.put("success", false);
+                err.put("error", "PERMISSION_DENIED");
+                err.put("message", "App location permission denied");
+                return err.toString();
+            }
+            LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            if (lm == null || !LocationManagerCompat.isLocationEnabled(lm)) {
+                JSONObject err = new JSONObject();
+                err.put("success", false);
+                err.put("error", "LOCATION_DISABLED");
+                err.put("message", "Device location is turned off");
+                return err.toString();
+            }
+            Location bestLocation = null;
+            for (String provider : lm.getProviders(true)) {
+                @SuppressLint("MissingPermission")
+                Location l = lm.getLastKnownLocation(provider);
+                if (l != null) {
+                    if (bestLocation == null || l.getAccuracy() < bestLocation.getAccuracy()) {
+                        bestLocation = l;
+                    }
+                }
+            }
+            if (bestLocation != null) {
+                JSONObject res = new JSONObject();
+                res.put("success", true);
+                res.put("latitude", bestLocation.getLatitude());
+                res.put("longitude", bestLocation.getLongitude());
+                res.put("accuracy", (double) bestLocation.getAccuracy());
+                res.put("provider", bestLocation.getProvider());
+                return res.toString();
+            } else {
+                JSONObject err = new JSONObject();
+                err.put("success", false);
+                err.put("error", "POSITION_UNAVAILABLE");
+                err.put("message", "Waiting for GPS satellite fix...");
+                return err.toString();
+            }
+        } catch (Exception e) {
+            return "{\"success\": false, \"error\": \"" + e.getMessage() + "\"}";
+        }
+    }
+
     public static class WebAppInterface {
         private final MainActivity activity;
 
@@ -603,6 +761,31 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public void switchToHttps() {
             activity.runOnUiThread(activity::switchToCampus);
+        }
+
+        @JavascriptInterface
+        public boolean isLocationEnabled() {
+            return activity.isDeviceLocationEnabled();
+        }
+
+        @JavascriptInterface
+        public boolean hasLocationPermission() {
+            return activity.hasLocationPermission();
+        }
+
+        @JavascriptInterface
+        public void promptTurnOnLocation() {
+            activity.runOnUiThread(activity::checkAndPromptDeviceGpsEnabled);
+        }
+
+        @JavascriptInterface
+        public void requestLocationPermission() {
+            activity.runOnUiThread(activity::checkAndRequestLocationPermissions);
+        }
+
+        @JavascriptInterface
+        public String getNativeLocation() {
+            return activity.getLatestNativeCoordinatesJson();
         }
     }
 }

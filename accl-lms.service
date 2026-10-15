@@ -1,16 +1,21 @@
 [Unit]
 Description=ACCL Learning Management System & Classroom Portal
-After=network.target
+After=network.target postgresql.service
 
 [Service]
 Type=simple
 User=kishan
 WorkingDirectory=/data/admin/ACCLLMS
+Nice=10
+EnvironmentFile=-/etc/hoodle/hoodle.env
 Environment="PORT=8095"
 Environment="HOST=0.0.0.0"
 Environment="STORAGE_DIR=/data/admin/ACCLLMS/storage"
-Environment="DB_PATH=/data/admin/ACCLLMS/accl_lms.db"
-ExecStart=/usr/bin/gunicorn --workers 16 --threads 4 --worker-class gthread --bind 0.0.0.0:8095 --timeout 120 --keep-alive 5 --max-requests 2000 --max-requests-jitter 200 app:app
+Environment="DATABASE_BACKEND=postgres"
+Environment="CUDA_VISIBLE_DEVICES="
+Environment="GMAIL_SMTP_USER=hoodle.lms@gmail.com"
+Environment="GMAIL_FROM_NAME=Hoodle LMS"
+ExecStart=/usr/bin/gunicorn --workers 2 --threads 4 --worker-class gthread --backlog 2048 --worker-tmp-dir /dev/shm --bind 0.0.0.0:8096 --timeout 120 --keep-alive 5 --max-requests 2000 --max-requests-jitter 200 app:app
 Restart=always
 RestartSec=3
 

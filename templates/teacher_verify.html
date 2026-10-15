@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Verify Faculty Email — Hoodle{% endblock %}
+
+{% block content %}
+<div style="max-width: 480px; margin: 3rem auto; padding: 0 1rem;">
+  <div style="background: var(--bg-surface, #ffffff); border: 1.5px solid var(--border, #e2e8f0); border-radius: 14px; box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.05)); overflow: hidden;">
+    
+    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: #ffffff; padding: 1.8rem; text-align: center;">
+      <div style="font-size: 2.2rem; margin-bottom: 0.35rem;">✉️</div>
+      <h2 style="font-size: 1.4rem; font-weight: 800; margin: 0 0 0.35rem 0; color: #ffffff;">Enter Verification Code</h2>
+      <p style="font-size: 0.86rem; color: #dbeafe; margin: 0; line-height: 1.45;">
+        We've sent a 6-digit OTP code to <br><strong style="color: #ffffff;">{{ reg.email }}</strong>
+      </p>
+    </div>
+
+    <div style="padding: 1.8rem;">
+      <form action="{{ url_for('teacher_verify', reg_id=reg.id) }}" method="POST">
+        <div class="form-group" style="margin-bottom: 1.25rem; text-align: center;">
+          <label class="form-label" style="font-weight: 700; font-size: 0.88rem; margin-bottom: 0.5rem; display: block;">6-Digit OTP *</label>
+          <input type="text" name="otp" class="form-control" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" placeholder="123456" required autofocus style="width: 220px; margin: 0 auto; padding: 0.75rem; text-align: center; font-size: 1.6rem; letter-spacing: 0.35em; font-family: monospace; font-weight: 800; border-radius: 8px; border: 2px solid var(--primary);">
+          <small style="color: var(--text-muted); font-size: 0.76rem; display: block; margin-top: 0.5rem;">
+            Code expires in 10 minutes.
+          </small>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; font-weight: 700; font-size: 0.95rem; border-radius: 8px;">
+          Verify Email &amp; Submit Application &rarr;
+        </button>
+      </form>
+
+      <form action="{{ url_for('teacher_resend_otp', reg_id=reg.id) }}" method="POST" style="margin-top: 1rem; text-align: center;">
+        <button type="submit" class="btn btn-outline" style="font-size: 0.82rem; font-weight: 600; padding: 0.4rem 0.85rem;">
+          🔄 Resend Code
+        </button>
+      </form>
+    </div>
+
+    <div style="padding: 1rem 1.8rem; background: #f8fafc; border-top: 1px solid var(--border); text-align: center; font-size: 0.82rem; color: var(--text-muted);">
+      Wrong email? <a href="{{ url_for('teacher_register') }}" style="color: var(--primary); font-weight: 600; text-decoration: none;">Start over</a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

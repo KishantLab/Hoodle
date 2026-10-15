@@ -9,6 +9,7 @@
 **Accelerated Classroom & Lab Learning (Hoodle)**  
 *Developed by **Kishan Tamboli (PhD)** • **Accelerated Computing Research Lab (ACCL)** • **Indian Institute of Technology Bhilai***
 
+[![Portal](https://img.shields.io/badge/live%20portal-hoodle.in-blue?style=flat&logo=google-chrome)](https://hoodle.in/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Flask 3.0](https://img.shields.io/badge/framework-Flask%203.0-green.svg)](https://palletsprojects.com/p/flask/)
 [![Tests](https://img.shields.io/badge/tests-73%20passing-brightgreen.svg)](test_lms.py)
@@ -16,6 +17,15 @@
 [![License](https://img.shields.io/badge/license-ACCL%20IIT%20Bhilai-red.svg)](README.md)
 
 </div>
+
+---
+
+## 🌐 Live Portal Access
+
+Hoodle LMS is officially accessible via:
+* **Public Internet Portal:** **[https://hoodle.in](https://hoodle.in/)** *(Optimized for mobile data, external faculty, and remote students)*
+* **Campus Intranet Portal:** **`http://10.10.14.104/lms/`** *(Ultra-low latency LAN routing on IIT Bhilai campus Wi-Fi)*
+* **Academic Support:** **`hoodle.lms@gmail.com`** *(Room 402, Engineering Department 1, IIT Bhilai)*
 
 ---
 

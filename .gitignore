@@ -43,3 +43,7 @@ android/app/build/
 android/local.properties
 android/.idea/
 
+app.py.bak_ip_fix
+agy_conversation_id.sh
+testdata/
+test_write.tmp

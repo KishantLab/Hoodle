@@ -117,7 +117,21 @@
       <button type="submit" class="btn btn-success" style="width: 100%; padding: 0.75rem; margin-top: 0.5rem;">
         Create Student Account
       </button>
+
+      <div style="margin-top: 1rem; text-align: center; padding-top: 0.75rem; border-top: 1px dashed var(--border);">
+        <span style="font-size: 0.82rem; color: var(--text-muted);">Faculty or Instructor?</span>
+        <a href="{{ url_for('teacher_register') }}" style="font-size: 0.82rem; font-weight: 700; color: var(--primary); margin-left: 0.35rem; text-decoration: none;">
+          Register as Teacher &rarr;
+        </a>
+      </div>
     </form>
+  </div>
+
+  <!-- Quick Links (Contact & Handbook) -->
+  <div style="margin-top: 1rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
+    <a href="{{ url_for('contact_page') }}" style="color: var(--text-muted); text-decoration: none; margin-right: 0.75rem;">📬 Contact Us</a>
+    <span>•</span>
+    <a href="{{ url_for('usage_guide') }}" style="color: var(--text-muted); text-decoration: none; margin-left: 0.75rem;">📖 Student Handbook</a>
   </div>
 
   <!-- Network Access Switcher (Campus Intranet vs Internet) -->
