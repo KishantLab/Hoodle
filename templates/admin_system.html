@@ -49,6 +49,96 @@
     </div>
   </div>
 
+  
+  <!-- Course Add-on Access Control & Feature Governance Panel -->
+  <div class="card" style="padding: 1.25rem 1.5rem; margin-bottom: 2rem; border-left: 4px solid #2563eb;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+      <div>
+        <h3 style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+          <span>💻</span>
+          <span>Course Add-on Governance: Cloud IDE &amp; GPU Accelerator Access</span>
+        </h3>
+        <p style="color: var(--text-muted); font-size: 0.82rem; margin: 0.25rem 0 0 0;">
+          Enable or revoke Cloud IDE &amp; CUDA accelerator access on a per-course basis to protect GPU cluster load.
+        </p>
+      </div>
+    </div>
+
+    <div style="overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+        <thead>
+          <tr style="background: #f8fafc; border-bottom: 2px solid var(--border); text-align: left;">
+            <th style="padding: 0.6rem 0.85rem; font-weight: 700; color: #475569;">Course Code</th>
+            <th style="padding: 0.6rem 0.85rem; font-weight: 700; color: #475569;">Course Title</th>
+            <th style="padding: 0.6rem 0.85rem; font-weight: 700; color: #475569;">Lead Instructor</th>
+            <th style="padding: 0.6rem 0.85rem; font-weight: 700; color: #475569;">Request Status</th>
+            <th style="padding: 0.6rem 0.85rem; font-weight: 700; color: #475569;">Cloud IDE Access</th>
+            <th style="padding: 0.6rem 0.85rem; font-weight: 700; color: #475569; text-align: right;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in courses %}
+          <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: 0.65rem 0.85rem; font-weight: 800; color: #1e293b;">
+              {{ c.code }}
+            </td>
+            <td style="padding: 0.65rem 0.85rem; color: #334155;">
+              {{ c.title }}
+            </td>
+            <td style="padding: 0.65rem 0.85rem; color: #64748b;">
+              👨‍🏫 {{ c.teacher_name }}
+            </td>
+            <td style="padding: 0.65rem 0.85rem;">
+              {% if c.ide_request_status == 'requested' %}
+                <span class="badge" style="background: #fef3c7; color: #b45309; font-weight: 700;">Pending Approval</span>
+              {% elif c.enable_cloud_ide %}
+                <span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 700;">Active / Granted</span>
+              {% else %}
+                <span class="badge" style="background: #f1f5f9; color: #64748b;">Not Requested</span>
+              {% endif %}
+            </td>
+            <td style="padding: 0.65rem 0.85rem;">
+              <span id="ideStatusBadge_{{ c.id }}" class="badge" style="background: {% if c.enable_cloud_ide %}#dbeafe; color: #1e40af;{% else %}#f1f5f9; color: #64748b;{% endif %}; font-weight: 800;">
+                {% if c.enable_cloud_ide %}ENABLED{% else %}DISABLED{% endif %}
+              </span>
+            </td>
+            <td style="padding: 0.65rem 0.85rem; text-align: right;">
+              <button onclick="adminToggleIdeFeature({{ c.id }}, {% if c.enable_cloud_ide %}0{% else %}1{% endif %})" id="btnToggle_{{ c.id }}" class="btn btn-sm {% if c.enable_cloud_ide %}btn-secondary{% else %}btn-primary{% endif %}" style="font-size: 0.75rem; padding: 0.25rem 0.65rem;">
+                {% if c.enable_cloud_ide %}❌ Revoke Access{% else %}✅ Grant Access{% endif %}
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+  async function adminToggleIdeFeature(courseId, enableVal) {
+    const actionText = enableVal ? "Grant Cloud IDE & GPU accelerator access" : "Revoke Cloud IDE access";
+    if (!confirm(`${actionText} for Course #${courseId}?`)) return;
+    
+    const basePrefix = window.location.pathname.startsWith("/lms") ? "/lms" : "";
+    try {
+      const res = await fetch(`${basePrefix}/admin/courses/${courseId}/toggle-feature`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feature: "cloud_ide", enable: enableVal })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("✅ Course Cloud IDE access updated!");
+        location.reload();
+      } else {
+        alert("Failed to update access: " + (data.error || "Unknown error"));
+      }
+    } catch(e) {
+      alert("Error: " + e.message);
+    }
+  }
+  </script>
+
   <!-- Quick Telemetry Stat Cards -->
   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
     <!-- Nodes Stat -->
@@ -111,7 +201,7 @@
         <span>🌐</span>
         <span>Cluster Node Endpoints (Traffic &amp; Latency)</span>
       </h2>
-      <span style="font-size: 0.8rem; color: var(--text-muted);">Monitored via internal private network (10.10.99.*)</span>
+      <span style="font-size: 0.8rem; color: var(--text-muted);">Monitored via internal private network (192.168.99.*)</span>
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem;" id="nodesGrid">
@@ -120,7 +210,7 @@
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
           <div>
             <div style="font-weight: 800; font-size: 1.1rem; color: #1e3a8a;">Master Gateway</div>
-            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">10.10.99.2:8095 (10.10.14.104)</div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">192.168.99.2:8095 (10.10.14.104)</div>
           </div>
           <span class="badge" id="node-badge-master" style="background: #e2e8f0; color: #475569; font-size: 0.78rem; padding: 4px 10px; border-radius: 9999px;">
             Checking...
@@ -141,14 +231,14 @@
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
           <div>
             <div style="font-weight: 800; font-size: 1.1rem; color: #1e3a8a;">Worker Node 1 (gpu1)</div>
-            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">10.10.99.1:8095</div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">192.168.99.3:8095</div>
           </div>
           <span class="badge" id="node-badge-gpu1" style="background: #e2e8f0; color: #475569; font-size: 0.78rem; padding: 4px 10px; border-radius: 9999px;">
             Checking...
           </span>
         </div>
         <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-          Role: <strong>CPU Application Worker (12 Gunicorn Workers)</strong>
+          Role: <strong>CPU Application Worker (8 Gunicorn Workers)</strong>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 0.6rem;">
           <span>HTTP Response: <strong id="node-code-gpu1">--</strong></span>
@@ -162,14 +252,14 @@
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
           <div>
             <div style="font-weight: 800; font-size: 1.1rem; color: #1e3a8a;">Worker Node 2 (gpu2)</div>
-            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">10.10.99.3:8095</div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">192.168.99.4:8095</div>
           </div>
           <span class="badge" id="node-badge-gpu2" style="background: #e2e8f0; color: #475569; font-size: 0.78rem; padding: 4px 10px; border-radius: 9999px;">
             Checking...
           </span>
         </div>
         <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-          Role: <strong>CPU Application Worker (12 Gunicorn Workers)</strong>
+          Role: <strong>CPU Application Worker (8 Gunicorn Workers)</strong>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 0.6rem;">
           <span>HTTP Response: <strong id="node-code-gpu2">--</strong></span>
@@ -347,7 +437,7 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>127.0.0.1:8095</code></td>
+            <td><code>127.0.0.1:8096</code></td>
             <td><strong>Master Gateway (master)</strong></td>
             <td>Weight = 2 (25%)</td>
             <td>8 Workers</td>
@@ -355,18 +445,18 @@
             <td><span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 700;">● Active</span></td>
           </tr>
           <tr>
-            <td><code>10.10.99.1:8095</code></td>
+            <td><code>192.168.99.3:8095</code></td>
             <td><strong>Worker Node 1 (gpu1)</strong></td>
             <td>Weight = 3 (37.5%)</td>
-            <td>12 Workers</td>
+            <td>8 Workers</td>
             <td><code>max_fails=2 fail_timeout=5s</code></td>
             <td><span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 700;">● Active</span></td>
           </tr>
           <tr>
-            <td><code>10.10.99.3:8095</code></td>
+            <td><code>192.168.99.4:8095</code></td>
             <td><strong>Worker Node 2 (gpu2)</strong></td>
             <td>Weight = 3 (37.5%)</td>
-            <td>12 Workers</td>
+            <td>8 Workers</td>
             <td><code>max_fails=2 fail_timeout=5s</code></td>
             <td><span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 700;">● Active</span></td>
           </tr>

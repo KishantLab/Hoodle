@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hoodle Cloud IDE - {{ course.code }}: {{ problem.title }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/hoodle_icon.png') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/hoodle_mark.svg') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/hoodle_icon.png') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Hoodle Top Navbar */
+    header { background: #ffffff; border-bottom: 1px solid var(--border); height: 58px; display: flex; align-items: center; justify-content: space-between; padding: 0 1.25rem; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+    .brand-section { display: flex; align-items: center; gap: 0.85rem; text-decoration: none; }
+    .brand-logos { display: flex; align-items: center; gap: 0.45rem; }
+    .hoodle-badge { background: #2563eb; color: #fff; font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 1.15rem; padding: 2px 8px; border-radius: 6px; letter-spacing: -0.5px; }
+    .brand-divider { width: 1px; height: 22px; background: #cbd5e1; }
+    .brand-sub { font-size: 0.82rem; font-weight: 700; color: #475569; display: flex; align-items: center; gap: 0.4rem; }
+    .course-pill { background: #eff6ff; color: #1d4ed8; padding: 2px 7px; border-radius: 4px; font-size: 0.75rem; border: 1px solid #bfdbfe; font-weight: 700; }
+
+    /* Nav Actions */
+    .nav-actions { display: flex; align-items: center; gap: 0.75rem; }
+    .user-chip { display: flex; align-items: center; gap: 0.5rem; background: #f1f5f9; border: 1px solid var(--border); padding: 0.3rem 0.65rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; color: #334155; }
+    .user-avatar { width: 24px; height: 24px; background: #2563eb; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 800; }
+
+    /* Quota Meter */
+    .quota-card { display: flex; align-items: center; gap: 0.6rem; background: #ffffff; border: 1px solid var(--border); padding: 0.3rem 0.75rem; border-radius: 8px; font-size: 0.78rem; font-weight: 600; color: #475569; }
+    .quota-meter-bar { width: 80px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+    .quota-meter-fill { height: 100%; background: #10b981; transition: width 0.3s; }
+
+    /* Main Container (3-Pane Workspace) */
+    .workspace-container { flex: 1; display: flex; gap: 0.75rem; padding: 0.75rem 1rem; overflow: hidden; }
+
+    /* Left Pane: Problem Description & Files */
+    .left-pane { width: 360px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); flex-shrink: 0; }
+    .pane-tabs { display: flex; border-bottom: 1px solid var(--border); background: #f8fafc; }
+    .pane-tab { flex: 1; padding: 0.65rem 0.5rem; text-align: center; font-size: 0.82rem; font-weight: 700; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+    .pane-tab.active { color: var(--primary); border-bottom-color: var(--primary); background: #ffffff; }
+    .pane-content { flex: 1; overflow-y: auto; padding: 1rem; font-size: 0.88rem; line-height: 1.55; }
+    .pane-content h3 { font-size: 1.05rem; font-weight: 800; color: #0f172a; margin-bottom: 0.6rem; }
+    .pane-content pre { background: #0f172a; color: #f8fafc; padding: 0.65rem; border-radius: 6px; font-size: 0.8rem; overflow-x: auto; margin: 0.5rem 0; font-family: 'JetBrains Mono', monospace; }
+    .pane-content code { background: #e2e8f0; padding: 2px 5px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; }
+
+    /* File List */
+    .file-item { padding: 0.5rem 0.65rem; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; font-size: 0.84rem; font-weight: 600; color: #334155; cursor: pointer; margin-bottom: 0.25rem; }
+    .file-item:hover { background: #f1f5f9; }
+    .file-item.active { background: #eff6ff; color: var(--primary); font-weight: 700; }
+
+    /* Right Area: Monaco Editor + Console */
+    .right-pane { flex: 1; display: flex; flex-direction: column; gap: 0.75rem; overflow: hidden; }
+
+    /* Editor Card */
+    .editor-card { flex: 3; background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    
+    /* Editor Header & Tabs */
+    .editor-topbar { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0.85rem; border-bottom: 1px solid var(--border); background: #ffffff; flex-wrap: wrap; gap: 0.5rem; }
+    .editor-tabs { display: flex; gap: 0.35rem; align-items: center; overflow-x: auto; }
+    .editor-tab { padding: 0.35rem 0.85rem; border-radius: 6px; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 0.4rem; background: #f8fafc; border: 1px solid var(--border); }
+    .editor-tab.active { background: #eff6ff; color: var(--primary); border-color: #bfdbfe; font-weight: 700; }
+    .editor-tab .close-x:hover { color: var(--danger); }
+
+    /* Editor Action Buttons */
+    .action-group { display: flex; align-items: center; gap: 0.5rem; }
+    .btn { padding: 0.4rem 0.85rem; border-radius: 6px; font-size: 0.82rem; font-weight: 700; cursor: pointer; border: none; display: inline-flex; align-items: center; gap: 0.35rem; transition: all 0.15s; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-indigo { background: #4f46e5; color: #fff; }
+    .btn-indigo:hover { background: #4338ca; }
+    .btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid var(--border); }
+    .btn-secondary:hover { background: #e2e8f0; }
+
+    /* Blackbox Scheduler Tag */
+    .scheduler-pill { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.65rem; border-radius: 6px; display: flex; align-items: center; gap: 0.35rem; }
+
+    #monacoContainer { flex: 1; width: 100%; position: relative; }
+
+    /* Console / Results Card */
+    .console-card { flex: 2; min-height: 220px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .console-nav { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); background: #f8fafc; padding: 0 0.85rem; height: 38px; }
+    .console-tabs { display: flex; height: 100%; }
+    .c-tab { height: 100%; display: flex; align-items: center; gap: 0.35rem; padding: 0 0.85rem; font-size: 0.82rem; font-weight: 700; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+    .c-tab.active { color: var(--primary); border-bottom-color: var(--primary); background: #fff; }
+    .console-body { flex: 1; padding: 0.85rem 1rem; overflow-y: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.84rem; line-height: 1.5; color: #0f172a; white-space: pre-wrap; background: #fafafa; }
+
+    /* Badges */
+    .badge { padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; }
+    .badge-pass { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .badge-fail { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .badge-info { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+    /* Modals */
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(2px); z-index: 9999; justify-content: center; align-items: center; padding: 1.5rem; }
+    .modal-box { background: #ffffff; border-radius: 12px; max-width: 820px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); border: 1px solid var(--border); }
+    .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .modal-title { font-size: 1.15rem; font-weight: 800; color: #0f172a; }
+    .modal-body { padding: 1.25rem; overflow-y: auto; flex: 1; }
+    .modal-footer { padding: 0.85rem 1.25rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 0.5rem; background: #f8fafc; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+
+    /* Form Controls */
+    .form-group { margin-bottom: 1rem; }
+    .form-label { display: block; font-size: 0.82rem; font-weight: 700; color: #334155; margin-bottom: 0.35rem; }
+    .form-control { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; font-family: inherit; }
+    .form-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+  </style>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+</head>
+<body>
+
+  <!-- Hoodle Top Navbar -->
+  <header>
+    <div class="brand-section">
+      <!-- Back to Course Link -->
+      <a href="{{ url_for('course_classwork', course_id=course.id) }}" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.75rem; font-size: 0.82rem; font-weight: 700; text-decoration: none; border-radius: 8px;">
+        <i class="fa-solid fa-arrow-left"></i> <span>Back to {{ course.code }}</span>
+      </a>
+
+      <div class="brand-logos" style="margin-left: 0.5rem;">
+        <img src="{{ url_for('static', filename='images/hoodle_mark.svg') }}" alt="Hoodle" style="height: 30px; width: auto; object-fit: contain;">
+        <span class="hoodle-badge" style="font-size: 1.05rem;">Hoodle</span>
+        <div class="brand-divider"></div>
+        <span class="brand-sub">
+          <span class="course-pill">{{ course.code }}</span>
+          <span>Cloud IDE &amp; Lab</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="nav-actions">
+      <!-- Storage Quota Meter (Visible to All) -->
+      <div class="quota-card" title="Student Locker Storage Allocation">
+        <i class="fa-solid fa-hard-drive" style="color: var(--primary);"></i>
+        <span>Locker: <strong id="usedMbLabel">{{ used_mb }}</strong> MB / <strong id="quotaMbLabel">{{ quota_mb }}</strong> MB (<span id="quotaPctLabel">{{ quota_pct }}</span>%)</span>
+        <div class="quota-meter-bar">
+          <div class="quota-meter-fill" id="quotaMeterFill" style="width: {{ quota_pct }}%;"></div>
+        </div>
+      </div>
+
+      {% if is_teacher %}
+      <!-- Teacher-Only: Quota Adjustment -->
+      <button class="btn btn-secondary" onclick="openQuotaModal()" title="Instructors can increase quota up to 500MB (Admin for >500MB)">
+        <i class="fa-solid fa-sliders"></i> <span>Quota Controls</span>
+      </button>
+
+      <!-- Teacher-Only: Problem & Test Case Studio Trigger -->
+      <button class="btn btn-secondary" onclick="openTeacherStudioModal()" style="background: #fffbeb; border-color: #fde68a; color: #b45309;" title="Teacher Problem &amp; Test Case Studio">
+        <i class="fa-solid fa-pen-ruler"></i> <span>Teacher Studio</span>
+      </button>
+      {% endif %}
+
+      <!-- Dynamic Authenticated User Chip -->
+      <div class="user-chip">
+        <div class="user-avatar" style="text-transform: uppercase;">{{ (user.display_name or 'U')[0] }}</div>
+        <span style="font-weight: 700;">{{ user.display_name }}</span>
+        <span class="badge" style="background: {% if is_teacher %}#dcfce7; color: #15803d;{% else %}#eff6ff; color: #1d4ed8;{% endif %} font-size: 0.68rem; padding: 1px 6px; border-radius: 4px;">
+          {{ user.role|upper }}
+        </span>
+      </div>
+    </div>
+  </header>
+
+    {% if problem.is_exam and not is_teacher %}
+    <div id="examLockdownHeader" style="background: #fee2e2; border-bottom: 2px solid #ef4444; padding: 0.35rem 1rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; color: #991b1b; font-weight: 700;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span>🔒 STRICT LAB EXAM MODE</span>
+        <span>•</span>
+        <span>Strikes: <span id="examStrikeCount" style="color: #b91c1c; font-size: 0.95rem; font-weight: 800;">0 / 3</span></span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <span>Time Remaining: <strong id="examCountdownTimer" style="font-size: 1.05rem; font-family: monospace; color: #b91c1c;">--:--</strong></span>
+        <button class="btn btn-primary" onclick="submitExamFinal(true)" style="font-size: 0.75rem; padding: 0.2rem 0.6rem; background: #dc2626; border-color: #dc2626;">
+          Final Submit Exam
+        </button>
+      </div>
+    </div>
+    {% endif %}
+
+
+  <!-- Main Workspace -->
+  <div class="workspace-container">
+    
+    <!-- Left Pane: Problem Description & Files -->
+    <div class="left-pane">
+      <div class="pane-tabs">
+        <div class="pane-tab active" id="tabProblem" onclick="switchLeftTab('problem')">
+          <i class="fa-solid fa-book-open"></i> Problem Statement
+        </div>
+        <div class="pane-tab" id="tabLocker" onclick="switchLeftTab('locker')">
+          <i class="fa-solid fa-folder-closed"></i> Locker Files (<span id="fileCountBadge">{{ files|length }}</span>)
+        </div>
+      </div>
+
+      <!-- Problem Statement View -->
+      <div class="pane-content" id="paneProblemContent">
+        <h3 id="problemTitleHeader">{{ problem.title }}</h3>
+        <div id="problemDescriptionHtml" style="white-space: pre-wrap; color: #334155;">{{ problem.description }}</div>
+        
+        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+          <strong style="font-size: 0.85rem; color: #0f172a; display: block; margin-bottom: 0.5rem;">Evaluation Criteria &amp; Public Tests:</strong>
+          
+          <!-- Code Analysis Rubrics -->
+          {% if problem.code_checks %}
+            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.6rem 0.75rem; margin-bottom: 0.6rem; font-size: 0.8rem;">
+              <strong style="color: #1d4ed8; display: block; margin-bottom: 0.25rem;">🔍 Code Verification Rules:</strong>
+              {% if problem.code_checks.require_cuda_kernel %}
+                <div style="color: #1e3a8a;">• CUDA Kernel Launch Verification: <strong>+{{ problem.code_checks.cuda_kernel_points or 15 }} pts</strong></div>
+              {% endif %}
+              {% if problem.code_checks.check_memory_cleanup %}
+                <div style="color: #1e3a8a;">• Device Memory Cleanup (cudaFree): <strong>+{{ problem.code_checks.cleanup_points or 10 }} pts</strong></div>
+              {% endif %}
+            </div>
+          {% endif %}
+
+          {% for tc in problem.test_cases %}
+            {% if not tc.is_hidden %}
+              <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.45rem; font-size: 0.8rem;">
+                <div style="display: flex; justify-content: space-between; font-weight: 700; color: #1e293b;">
+                  <span>{{ tc.name }}</span>
+                  <span class="badge badge-info">{{ tc.points }} pts</span>
+                </div>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #64748b; margin-top: 0.25rem;">
+                  Expected: <code>{{ tc.expected_stdout }}</code>
+                </div>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Locker Files View -->
+      <div class="pane-content" id="paneLockerContent" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+          <span style="font-size: 0.8rem; font-weight: 700; color: #64748b;">My Private Files</span>
+          <button class="btn btn-secondary" onclick="promptCreateFile()" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">➕ New File</button>
+        </div>
+        <div id="fileListContainer">
+          {% for f in files %}
+            <div class="file-item {% if loop.first %}active{% endif %}" onclick="openFile('{{ f }}')">
+              <span><i class="fa-solid fa-file-code" style="color: var(--primary); margin-right: 0.4rem;"></i> {{ f }}</span>
+              <span onclick="deleteFile(event, '{{ f }}')" style="color: #94a3b8; font-size: 0.75rem;" title="Delete file">✕</span>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Pane: Monaco Editor & Console -->
+    <div class="right-pane">
+      
+      <!-- Editor Card -->
+      <div class="editor-card">
+        <div class="editor-topbar">
+          <div class="editor-tabs" id="editorTabs">
+            <!-- Populated via JS -->
+          </div>
+
+          <div class="action-group">
+            <div class="scheduler-pill" title="Hardware accelerator selected automatically based on cluster load">
+              <i class="fa-solid fa-bolt"></i>
+              <span>Cloud Accelerator: Dual RTX A6000 (1GB Cap)</span>
+            </div>
+
+            <button class="btn btn-primary" onclick="runCurrentCode()" id="runBtn" title="Compile and run in the isolated sandbox">
+              <i class="fa-solid fa-play"></i> <span>Run Code</span>
+            </button>
+
+            <button class="btn btn-indigo" onclick="runAutograder()" id="gradeBtn" title="Run against teacher test suites &amp; code analysis">
+              <i class="fa-solid fa-flask"></i> <span>Run Autograder</span>
+            </button>
+
+            <button class="btn btn-secondary" onclick="saveCurrentFile()" title="Save changes (Ctrl+S)">
+              <i class="fa-solid fa-floppy-disk"></i> <span>Save</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="monacoContainer"></div>
+      </div>
+
+      <!-- Console Card -->
+      <div class="console-card">
+        <div class="console-nav">
+          <div class="console-tabs">
+            <div class="c-tab active" id="tabTerminal" onclick="switchConsoleTab('terminal')">
+              <i class="fa-solid fa-terminal"></i> Execution Output
+            </div>
+            <div class="c-tab" id="tabInteractiveTerm" onclick="switchConsoleTab('interactive')">
+              <i class="fa-solid fa-square-binary"></i> Interactive Terminal (bash)
+            </div>
+            <div class="c-tab" id="tabAutograder" onclick="switchConsoleTab('autograder')">
+              <i class="fa-solid fa-square-check"></i> Autograder Scorecard
+            </div>
+            <div class="c-tab" id="tabStdin" onclick="switchConsoleTab('stdin')">
+              <i class="fa-solid fa-keyboard"></i> Custom Stdin
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span id="execStatsBadge" style="font-size: 0.75rem; font-weight: 700; color: #64748b;">Ready</span>
+            <button class="btn btn-secondary" onclick="clearConsole()" style="padding: 0.15rem 0.5rem; font-size: 0.72rem;">Clear</button>
+          </div>
+        </div>
+
+        <div class="console-body" id="consoleBody">Click "Run Code" or "Run Autograder" to execute your program in the isolated sandbox.</div>
+        <div class="console-body" id="autograderBody" style="display: none; background: #ffffff;"></div>
+        <div class="console-body" id="stdinBody" style="display: none; padding: 0.5rem; background: #ffffff;">
+          <textarea id="stdinInput" style="width: 100%; height: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; font-family: 'JetBrains Mono', monospace; font-size: 0.84rem;" placeholder="Enter custom stdin inputs for program execution here..."></textarea>
+                <div class="console-body" id="interactiveTermBody" style="display: none; padding: 0.35rem; background: #0f172a; height: 100%;">
+          <div id="xtermContainer" style="width: 100%; height: 100%;"></div>
+        </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  {% if is_teacher %}
+  <!-- Teacher Studio Modal -->
+  <div class="modal-backdrop" id="teacherStudioModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">📝 Teacher Studio: Problem &amp; Test Case Designer</div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <div style="display: inline-flex; border-radius: 6px; overflow: hidden; border: 1px solid #cbd5e1;">
+            <a href="{{ url_for('coding_ide.sample_problem_template', course_id=course.id, format='json') }}" class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.25rem 0.5rem; text-decoration: none; border: none; border-right: 1px solid #cbd5e1; background: #ffffff;" download title="Download JSON Assessment Template">
+              <i class="fa-solid fa-file-code"></i> JSON Template
+            </a>
+            <a href="{{ url_for('coding_ide.sample_problem_template', course_id=course.id, format='txt') }}" class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.25rem 0.5rem; text-decoration: none; border: none; background: #ffffff;" download title="Download Plain Text / Markdown Template">
+              <i class="fa-solid fa-file-lines"></i> TXT Template
+            </a>
+          </div>
+          <button class="btn btn-primary" onclick="triggerImportProblemModal()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; background: #059669; border-color: #059669;">
+            <i class="fa-solid fa-file-import"></i> Import PDF / JSON
+          </button>
+          <button class="btn btn-secondary" onclick="openPlagiarismModal()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; background: #fdf2f8; border-color: #fbcfe8; color: #9d174d;" title="Run automated MOSS-style code similarity analysis">
+            <i class="fa-solid fa-fingerprint"></i> Plagiarism Detector
+          </button>
+          <button class="btn btn-secondary" onclick="openPipModal()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; background: #f1f5f9;" title="Course Pip Package Manager">
+            <i class="fa-brands fa-python"></i> Pip Packages
+          </button>
+          <button class="btn btn-secondary" onclick="closeTeacherStudioModal()"  style="padding: 0.2rem 0.5rem;">✕</button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <!-- Quick File Import Dropzone -->
+        <div id="importDropzoneCard" style="display: none; background: #f0fdf4; border: 2px dashed #86efac; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; text-align: center;">
+          <input type="file" id="problemFileInput" accept=".json,.pdf,.txt,.md" style="display: none;" onchange="handleProblemFileUpload(this.files[0])">
+          <div style="font-size: 0.95rem; font-weight: 700; color: #166534; margin-bottom: 0.35rem;">
+            <i class="fa-solid fa-cloud-arrow-up"></i> Upload Assignment Document / Test Suite
+          </div>
+          <p style="font-size: 0.8rem; color: #15803d; margin-bottom: 0.6rem;">
+            Upload assignment <strong>.pdf</strong> (problem sheets, lab manuals), <strong>.json</strong> (structured suite), or <strong>.txt</strong>.
+          </p>
+          <div style="display: flex; gap: 0.5rem; justify-content: center;">
+            <button class="btn btn-primary" onclick="document.getElementById('problemFileInput').click()" style="font-size: 0.8rem; background: #16a34a; border-color: #16a34a;">
+              Browse File (.pdf, .json, .txt)
+            </button>
+            <button class="btn btn-secondary" onclick="document.getElementById('importDropzoneCard').style.display='none'" style="font-size: 0.8rem;">
+              Cancel
+            </button>
+          </div>
+          <div id="importStatusSpinner" style="display: none; margin-top: 0.6rem; font-size: 0.82rem; color: #15803d; font-weight: 600;">
+            <i class="fa-solid fa-spinner fa-spin"></i> Extracting problem &amp; test cases...
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Problem Title *</label>
+          <input type="text" id="teacherTitleInput" class="form-control" value="{{ problem.title }}">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Problem Statement &amp; Instructions *</label>
+          <textarea id="teacherDescInput" class="form-control" rows="4">{{ problem.description }}</textarea>
+        </div>
+
+        <!-- Automated Code Check Configuration Section -->
+        <div class="form-group" style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem;">
+          <label class="form-label" style="color: #0f172a; margin-bottom: 0.5rem;">
+            🔍 Automated Code Analysis &amp; Rubrics (Beyond Plain Output Matching)
+          </label>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; font-size: 0.82rem;">
+            <div>
+              <label style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700; color: #1e293b;">
+                <input type="checkbox" id="checkCudaKernel" {{ 'checked' if problem.code_checks.require_cuda_kernel else '' }}>
+                Verify CUDA GPU Kernel Launch
+              </label>
+              <div style="margin-top: 0.25rem; font-size: 0.75rem; color: #64748b;">
+                Checks for <code>__global__</code> &amp; <code>&lt;&lt;&lt;...&gt;&gt;&gt;</code>. Points:
+                <input type="number" id="ptsCudaKernel" value="{{ problem.code_checks.cuda_kernel_points or 15 }}" style="width: 50px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-weight: 700;">
+              </div>
+            </div>
+
+            <div>
+              <label style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700; color: #1e293b;">
+                <input type="checkbox" id="checkMemCleanup" {{ 'checked' if problem.code_checks.check_memory_cleanup else '' }}>
+                Check Device Memory Cleanup
+              </label>
+              <div style="margin-top: 0.25rem; font-size: 0.75rem; color: #64748b;">
+                Verifies <code>cudaFree()</code> for <code>cudaMalloc()</code>. Points:
+                <input type="number" id="ptsMemCleanup" value="{{ problem.code_checks.cleanup_points or 10 }}" style="width: 50px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-weight: 700;">
+              </div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.65rem; padding-top: 0.65rem; border-top: 1px solid #e2e8f0; font-size: 0.82rem;">
+            <div>
+              <label style="font-weight: 700; color: #1e293b; display: block; margin-bottom: 0.25rem;">Float Precision Tolerance (epsilon):</label>
+              <input type="number" step="0.0001" id="floatToleranceInput" value="{{ problem.code_checks.float_tolerance or 0.001 }}" class="form-control" style="font-size: 0.8rem; padding: 0.35rem 0.5rem;">
+            </div>
+            <div>
+              <label style="font-weight: 700; color: #1e293b; display: block; margin-bottom: 0.25rem;">Disallowed Libraries / Functions:</label>
+              <input type="text" id="bannedLibsInput" value="{{ problem.code_checks.disallowed_keywords | join(', ') if problem.code_checks.disallowed_keywords else 'cublas' }}" placeholder="e.g. cublas, curand" class="form-control" style="font-size: 0.8rem; padding: 0.35rem 0.5rem;">
+            </div>
+          </div>
+        </div>
+
+        <!-- Test Cases -->
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <label class="form-label" style="margin: 0;">Evaluation Test Cases (Input / Output)</label>
+            <button class="btn btn-secondary" onclick="addTestCaseRow()" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">➕ Add Test Case</button>
+          </div>
+          <div id="testCasesContainer" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Starter Code Template</label>
+          <textarea id="teacherStarterCodeInput" class="form-control" rows="4" style="font-family: 'JetBrains Mono', monospace; font-size: 0.82rem;">{{ problem.starter_code }}</textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 0.78rem; color: #64748b;">
+          💡 <strong>Draft mode</strong> keeps problem hidden from students until ready to publish.
+        </span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" onclick="closeTeacherStudioModal()">Cancel</button>
+          <button class="btn btn-secondary" onclick="saveTeacherStudioConfig(false)" style="background: #f1f5f9; font-weight: 700;">
+            📁 Save as Draft
+          </button>
+          <button class="btn btn-primary" onclick="saveTeacherStudioConfig(true)" style="background: #059669; border-color: #059669;">
+            🚀 Publish to Students
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quota Modal -->
+  <div class="modal-backdrop" id="quotaControlModal">
+    <div class="modal-box" style="max-width: 500px;">
+      <div class="modal-header">
+        <div class="modal-title">🗄️ Student Locker Quota Controls</div>
+        <button class="btn btn-secondary" onclick="closeQuotaModal()" style="padding: 0.2rem 0.5rem;">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1rem;">
+          Instructors &amp; TAs can increase an individual student's storage quota from <strong>200 MB up to 500 MB</strong>. Larger allocations require Administrator authorization.
+        </p>
+
+        <div class="form-group">
+          <label class="form-label">Active Role: <span class="badge badge-info">{% if is_admin %}System Administrator{% else %}Course Teacher / TA{% endif %}</span></label>
+          {% if is_admin %}
+          <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.4rem 0.6rem; font-size: 0.75rem; color: #334155; margin-bottom: 0.6rem;">
+            🛡️ <strong>Admin Authority:</strong> You can assign unlimited storage quota.
+          </div>
+          {% else %}
+          <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.4rem 0.6rem; font-size: 0.75rem; color: #1e40af; margin-bottom: 0.6rem;">
+            👨‍🏫 <strong>Instructor Authority:</strong> You can adjust student quota between <strong>200 MB and 500 MB</strong>.
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Storage Quota (MB): <strong id="quotaNumberDisplay">{{ quota_mb }} MB</strong></label>
+          <input type="range" min="200" max="{% if is_admin %}1000{% else %}500{% endif %}" step="50" value="{{ quota_mb }}" id="quotaSlider" class="form-control" oninput="updateQuotaDisplay(this.value)">
+          <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #94a3b8; margin-top: 0.25rem;">
+            <span>200 MB (Default)</span>
+            <span>500 MB ({% if is_admin %}Standard{% else %}Teacher Max{% endif %})</span>
+            {% if is_admin %}<span>1000 MB (Admin)</span>{% endif %}
+          </div>
+        </div>
+
+        <div id="quotaErrorBox" style="display: none; background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.8rem; margin-top: 0.5rem;"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeQuotaModal()">Close</button>
+        <button class="btn btn-primary" onclick="submitQuotaUpdate()">Apply Quota</button>
+      </div>
+    </div>
+  </div>
+  
+  
+  <!-- Plagiarism & Code Similarity Modal -->
+  <div class="modal-backdrop" id="plagiarismModal">
+    <div class="modal-box" style="max-width: 800px;">
+      <div class="modal-header">
+        <div class="modal-title">🔍 Code Plagiarism &amp; Similarity Detector (MOSS Engine)</div>
+        <button class="btn btn-secondary" onclick="closePlagiarismModal()" style="padding: 0.2rem 0.5rem;">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <p style="font-size: 0.85rem; color: #64748b; margin: 0;">
+              Pairwise AST &amp; Winnowing analysis across all student submissions. Starter code is automatically subtracted.
+            </p>
+          </div>
+          <button class="btn btn-primary" onclick="triggerPlagiarismScan()" id="btnTriggerPlagScan" style="background: #9d174d; border-color: #9d174d;">
+            ⚡ Run Background Similarity Scan
+          </button>
+        </div>
+
+        <div id="plagScanStatusBadge" style="display: none; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.82rem; margin-bottom: 1rem;"></div>
+
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;" id="plagiarismTable">
+            <thead>
+              <tr style="background: #f8fafc; border-bottom: 2px solid var(--border); text-align: left;">
+                <th style="padding: 0.5rem 0.75rem;">Student A</th>
+                <th style="padding: 0.5rem 0.75rem;">Student B</th>
+                <th style="padding: 0.5rem 0.75rem;">Similarity</th>
+                <th style="padding: 0.5rem 0.75rem;">Shared Fingerprints</th>
+                <th style="padding: 0.5rem 0.75rem; text-align: right;">Status</th>
+              </tr>
+            </thead>
+            <tbody id="plagiarismTableBody">
+              <tr>
+                <td colspan="5" style="text-align: center; color: #94a3b8; padding: 1.5rem;">
+                  Click "Run Background Similarity Scan" to analyze student submissions.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closePlagiarismModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Course Python Pip Packages Modal -->
+  <div class="modal-backdrop" id="pipManagerModal">
+    <div class="modal-box" style="max-width: 550px;">
+      <div class="modal-header">
+        <div class="modal-title">📦 Course Python Pip Package Manager</div>
+        <button class="btn btn-secondary" onclick="closePipModal()" style="padding: 0.2rem 0.5rem;">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.82rem; color: #64748b; margin-bottom: 0.85rem;">
+          Install custom Python libraries for this course without root/sudo. Modules will be mounted automatically inside all student sandboxes.
+        </p>
+
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+          <input type="text" id="pipPackageInput" placeholder="e.g. numpy, scipy, matplotlib, pandas, networkx" class="form-control" style="font-size: 0.84rem;">
+          <button class="btn btn-primary" onclick="installCoursePipPackage()" id="btnPipInstall" style="white-space: nowrap;">
+            ➕ Install Package
+          </button>
+        </div>
+
+        <div id="pipInstallStatus" style="display: none; margin-bottom: 0.85rem; padding: 0.5rem; border-radius: 6px; font-size: 0.8rem;"></div>
+
+        <label style="font-size: 0.8rem; font-weight: 700; color: #1e293b; display: block; margin-bottom: 0.4rem;">Currently Installed Course Packages:</label>
+        <div id="pipPackagesList" style="max-height: 180px; overflow-y: auto; background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; font-size: 0.82rem;">
+          Loading packages...
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closePipModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  {% endif %}
+
+  <script>
+        const basePrefix = window.location.pathname.startsWith("/lms") ? "/lms" : "";
+    const courseId = {{ course.id }};
+    let editor = null;
+    let activeFile = "{{ files[0] if files else 'vector_add.cu' }}";
+    let openTabs = [activeFile];
+    let simulatedRole = "{% if is_admin %}admin{% else %}teacher{% endif %}";
+    let testCasesData = {{ problem.test_cases | tojson }};
+    let codeChecksData = {{ problem.code_checks | tojson }};
+
+    require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
+    require(['vs/editor/editor.main'], function() {
+      editor = monaco.editor.create(document.getElementById('monacoContainer'), {
+        value: '// Loading...',
+        language: 'cpp',
+        theme: 'vs',
+        fontSize: 13,
+        automaticLayout: true,
+        minimap: { enabled: true },
+        bracketPairColorization: { enabled: true }
+      });
+
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, function() {
+        saveCurrentFile();
+      });
+
+      renderTabs();
+      openFile(activeFile);
+    });
+
+    function getLanguage(fn) {
+      if (fn.endsWith('.cu') || fn.endsWith('.cuh') || fn.endsWith('.cpp') || fn.endsWith('.c')) return 'cpp';
+      if (fn.endsWith('.py')) return 'python';
+      if (fn.endsWith('.java')) return 'java';
+      return 'plaintext';
+    }
+
+    async function openFile(filename) {
+      activeFile = filename;
+      if (!openTabs.includes(filename)) openTabs.push(filename);
+      renderTabs();
+
+      document.querySelectorAll('.file-item').forEach(el => {
+        el.classList.toggle('active', el.textContent.includes(filename));
+      });
+
+      try {
+        const res = await fetch(`${basePrefix}/courses/${courseId}/ide/api/files/read?filename=${encodeURIComponent(filename)}`);
+        const data = await res.json();
+        if (data.success && editor) {
+          const model = monaco.editor.createModel(data.content, getLanguage(filename));
+          editor.setModel(model);
+        }
+      } catch (e) {
+        console.error("Failed to read file:", e);
+      }
+    }
+
+    function renderTabs() {
+      const c = document.getElementById("editorTabs");
+      c.innerHTML = openTabs.map(t => `
+        <div class="editor-tab ${t === activeFile ? 'active' : ''}" onclick="openFile('${t}')">
+          <span><i class="fa-solid fa-file-code" style="color: var(--primary);"></i> ${t}</span>
+          <span class="close-x" onclick="closeTab(event, '${t}')">✕</span>
+        </div>
+      `).join('');
+    }
+
+    function closeTab(e, fn) {
+      e.stopPropagation();
+      openTabs = openTabs.filter(t => t !== fn);
+      if (activeFile === fn) {
+        activeFile = openTabs.length > 0 ? openTabs[openTabs.length - 1] : "";
+        if (activeFile) openFile(activeFile);
+        else if (editor) editor.setValue("");
+      }
+      renderTabs();
+    }
+
+    async function saveCurrentFile() {
+      if (!activeFile || !editor) return;
+      const content = editor.getValue();
+      const badge = document.getElementById("execStatsBadge");
+      badge.textContent = "Saving...";
+      badge.style.color = "#f59e0b";
+
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/files/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: activeFile, content })
+        });
+        const data = await res.json();
+        if (data.success) {
+          badge.textContent = "✓ Saved";
+          badge.style.color = "#10b981";
+          document.getElementById("usedMbLabel").textContent = data.used_mb;
+          document.getElementById("quotaPctLabel").textContent = data.quota_pct;
+          document.getElementById("quotaMeterFill").style.width = data.quota_pct + "%";
+        }
+      } catch (e) {
+        badge.textContent = "Save failed";
+        badge.style.color = "#ef4444";
+      }
+    }
+
+    async function promptCreateFile() {
+      const fn = prompt("Enter new filename (e.g. kernel.cu, main.cpp, script.py):");
+      if (!fn) return;
+      const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/files/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: fn.trim() })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await refreshFiles();
+        openFile(fn.trim());
+      } else {
+        alert(data.error);
+      }
+    }
+
+    async function deleteFile(e, fn) {
+      e.stopPropagation();
+      if (!confirm(`Delete ${fn}?`)) return;
+      const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/files/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: fn })
+      });
+      const data = await res.json();
+      if (data.success) {
+        closeTab(e, fn);
+        await refreshFiles();
+      }
+    }
+
+    async function refreshFiles() {
+      const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/files");
+      const data = await res.json();
+      document.getElementById("fileCountBadge").textContent = data.files.length;
+      document.getElementById("fileListContainer").innerHTML = data.files.map(f => `
+        <div class="file-item ${f.name === activeFile ? 'active' : ''}" onclick="openFile('${f.name}')">
+          <span><i class="fa-solid fa-file-code" style="color: var(--primary); margin-right: 0.4rem;"></i> ${f.name}</span>
+          <span onclick="deleteFile(event, '${f.name}')" style="color: #94a3b8; font-size: 0.75rem;" title="Delete file">✕</span>
+        </div>
+      `).join('');
+    }
+
+    function switchLeftTab(tab) {
+      document.getElementById("tabProblem").classList.toggle("active", tab === "problem");
+      document.getElementById("tabLocker").classList.toggle("active", tab === "locker");
+      document.getElementById("paneProblemContent").style.display = (tab === "problem") ? "block" : "none";
+      document.getElementById("paneLockerContent").style.display = (tab === "locker") ? "block" : "none";
+    }
+
+    function switchConsoleTab(tab) {
+      document.getElementById("tabTerminal").classList.toggle("active", tab === "terminal");
+      document.getElementById("tabAutograder").classList.toggle("active", tab === "autograder");
+      document.getElementById("tabStdin").classList.toggle("active", tab === "stdin");
+      document.getElementById("consoleBody").style.display = (tab === "terminal") ? "block" : "none";
+      document.getElementById("autograderBody").style.display = (tab === "autograder") ? "block" : "none";
+      document.getElementById("stdinBody").style.display = (tab === "stdin") ? "block" : "none";
+    }
+
+    function clearConsole() {
+      document.getElementById("consoleBody").textContent = "";
+      document.getElementById("autograderBody").innerHTML = "";
+    }
+
+    async function runCurrentCode() {
+      if (!activeFile) { alert("Please select a file to run."); return; }
+      await saveCurrentFile();
+      switchConsoleTab("terminal");
+
+      const runBtn = document.getElementById("runBtn");
+      const badge = document.getElementById("execStatsBadge");
+      const cBody = document.getElementById("consoleBody");
+      const stdin_input = document.getElementById("stdinInput").value;
+
+      runBtn.disabled = true;
+      runBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Executing...</span>';
+      badge.textContent = "Scheduling & executing...";
+      cBody.textContent = `[Hoodle IDE Runner] Dispatching ${activeFile} to GPU cluster (Strict 1GB VRAM limit)...\n`;
+
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: activeFile, stdin_input })
+        });
+        const data = await res.json();
+        runBtn.disabled = false;
+        runBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span>Run Code</span>';
+
+        if (data.compile_log) cBody.textContent += `=== COMPILER OUTPUT ===\n${data.compile_log}\n\n`;
+        if (data.stdout) cBody.textContent += `=== PROGRAM STDOUT ===\n${data.stdout}\n`;
+        if (data.stderr) cBody.textContent += `=== PROGRAM STDERR ===\n${data.stderr}\n`;
+        if (data.error) cBody.textContent += `\n❌ ${data.error}\n`;
+
+        badge.innerHTML = `<span class="badge ${data.success ? 'badge-pass' : 'badge-fail'}">${data.success ? 'SUCCESS (0)' : 'EXIT (' + data.exit_code + ')'}</span> | Compile: ${data.compile_time_ms || 0}ms | Run: ${data.duration_ms || 0}ms`;
+      } catch (e) {
+        runBtn.disabled = false;
+        runBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span>Run Code</span>';
+        cBody.textContent += `\n❌ Execution error: ${e.message}`;
+      }
+    }
+
+    async function runAutograder() {
+      if (!activeFile) { alert("Please select a file to autograde."); return; }
+      await saveCurrentFile();
+      switchConsoleTab("autograder");
+
+      const gradeBtn = document.getElementById("gradeBtn");
+      const badge = document.getElementById("execStatsBadge");
+      const aBody = document.getElementById("autograderBody");
+
+      gradeBtn.disabled = true;
+      gradeBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Evaluating...</span>';
+      aBody.innerHTML = `<div style="color: #2563eb; font-weight: 700;"><i class="fa-solid fa-spinner fa-spin"></i> Evaluating code structure &amp; running test suites against ${activeFile}...</div>`;
+
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/autograder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: activeFile })
+        });
+        const data = await res.json();
+        gradeBtn.disabled = false;
+        gradeBtn.innerHTML = '<i class="fa-solid fa-flask"></i> <span>Run Autograder</span>';
+
+        if (data.compile_error) {
+          aBody.innerHTML = `<div style="color: #b91c1c; font-weight: 800; margin-bottom: 0.5rem;">❌ Compilation Error:</div><pre style="background: #fef2f2; color: #991b1b; padding: 0.75rem; border-radius: 6px; border: 1px solid #fecaca;">${data.compile_error}</pre>`;
+          badge.innerHTML = `<span class="badge badge-fail">COMPILATION FAILED</span>`;
+          return;
+        }
+
+        let html = `<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 1rem;">
+          <h3 style="font-size: 1.15rem; color: #0f172a; font-weight: 800;">Autograder Scorecard: <strong style="color: ${data.total_points_earned === data.total_points_possible ? '#059669' : '#d97706'};">${data.total_points_earned} / ${data.total_points_possible} pts</strong></h3>
+          <span class="badge ${data.total_points_earned === data.total_points_possible ? 'badge-pass' : 'badge-fail'}">${data.overall_status}</span>
+        </div>`;
+
+        // Section 1: Code Structure & Architecture Checks
+        if (data.code_checks && data.code_checks.length > 0) {
+          html += `<div style="margin-bottom: 1rem;">
+            <strong style="font-size: 0.85rem; color: #1e293b; display: block; margin-bottom: 0.45rem;">🔍 Code Structure &amp; Architecture Checks:</strong>`;
+          data.code_checks.forEach(cc => {
+            const isPassed = cc.status === "PASSED";
+            html += `
+              <div style="background: #ffffff; border: 1px solid ${isPassed ? '#a7f3d0' : '#fecaca'}; border-radius: 8px; padding: 0.65rem 0.9rem; margin-bottom: 0.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <strong style="color: #0f172a; font-size: 0.85rem;">${cc.name}</strong>
+                  <span class="badge ${isPassed ? 'badge-pass' : 'badge-fail'}">${cc.status} (+${cc.points_earned}/${cc.points_possible} pts)</span>
+                </div>
+                <div style="font-size: 0.78rem; color: ${isPassed ? '#047857' : '#b91c1c'}; margin-top: 0.25rem;">${cc.details}</div>
+              </div>
+            `;
+          });
+          html += `</div>`;
+        }
+
+        // Section 2: Input / Output Test Cases
+        if (data.test_results && data.test_results.length > 0) {
+          html += `<div>
+            <strong style="font-size: 0.85rem; color: #1e293b; display: block; margin-bottom: 0.45rem;">🧪 Input / Output Test Cases:</strong>`;
+          data.test_results.forEach(tc => {
+            const isPassed = tc.status === "PASSED";
+            html += `
+              <div style="background: #ffffff; border: 1px solid ${isPassed ? '#a7f3d0' : '#fecaca'}; border-radius: 8px; padding: 0.65rem 0.9rem; margin-bottom: 0.5rem; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <strong style="color: #0f172a; font-size: 0.85rem;">${tc.name} ${tc.is_hidden ? '<span class="badge badge-info" style="font-size: 0.65rem;">Hidden Benchmark</span>' : ''}</strong>
+                  <span class="badge ${isPassed ? 'badge-pass' : 'badge-fail'}">${tc.status} (+${tc.points_earned}/${tc.points_possible} pts)</span>
+                </div>
+                <div style="font-size: 0.78rem; color: #64748b; margin-top: 0.25rem;">Execution Time: ${tc.time_ms} ms</div>
+                ${!tc.is_hidden && !isPassed ? `<div style="font-size: 0.78rem; color: #b91c1c; margin-top: 0.35rem; background: #fff5f5; padding: 0.35rem 0.5rem; border-radius: 4px;">Expected: <code>${tc.expected_stdout}</code> | Got: <code>${tc.actual_stdout}</code></div>` : ''}
+              </div>
+            `;
+          });
+          html += `</div>`;
+        }
+
+        aBody.innerHTML = html;
+        badge.innerHTML = `<span class="badge ${data.total_points_earned === data.total_points_possible ? 'badge-pass' : 'badge-fail'}">${data.total_points_earned}/${data.total_points_possible} PTS</span>`;
+      } catch (err) {
+        gradeBtn.disabled = false;
+        gradeBtn.innerHTML = '<i class="fa-solid fa-flask"></i> <span>Run Autograder</span>';
+        aBody.innerHTML = `<div style="color: #b91c1c;">Grading evaluation error: ${err.message}</div>`;
+      }
+    }
+
+    function openTeacherStudioModal() {
+      renderTestCaseRows();
+      document.getElementById("teacherStudioModal").style.display = "flex";
+    }
+
+    function closeTeacherStudioModal() {
+      document.getElementById("teacherStudioModal").style.display = "none";
+    }
+
+    function renderTestCaseRows() {
+      const container = document.getElementById("testCasesContainer");
+      container.innerHTML = testCasesData.map((tc, idx) => `
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; position: relative;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+            <strong>Test Case #${idx + 1}</strong>
+            <button class="btn btn-secondary" onclick="removeTestCaseRow(${idx})" style="padding: 0.15rem 0.4rem; color: #ef4444; font-size: 0.72rem;">✕ Remove</button>
+          </div>
+          <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0.5rem; margin-bottom: 0.4rem;">
+            <input type="text" placeholder="Test Name" value="${tc.name || ''}" onchange="testCasesData[${idx}].name = this.value" class="form-control" style="font-size: 0.78rem;">
+            <input type="number" placeholder="Points" value="${tc.points || 10}" onchange="testCasesData[${idx}].points = parseInt(this.value)" class="form-control" style="font-size: 0.78rem;">
+            <label style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; font-weight: 600; color: #475569;">
+              <input type="checkbox" ${tc.is_hidden ? 'checked' : ''} onchange="testCasesData[${idx}].is_hidden = this.checked"> Hidden
+            </label>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+            <div>
+              <label style="font-size: 0.72rem; font-weight: 700; color: #64748b;">Stdin Input:</label>
+              <textarea class="form-control" rows="2" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;" onchange="testCasesData[${idx}].stdin = this.value">${tc.stdin || ''}</textarea>
+            </div>
+            <div>
+              <label style="font-size: 0.72rem; font-weight: 700; color: #64748b;">Expected Stdout:</label>
+              <textarea class="form-control" rows="2" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;" onchange="testCasesData[${idx}].expected_stdout = this.value">${tc.expected_stdout || ''}</textarea>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function addTestCaseRow() {
+      testCasesData.push({
+        id: testCasesData.length + 1,
+        name: `Custom Test Case ${testCasesData.length + 1}`,
+        stdin: "",
+        expected_stdout: "",
+        points: 25,
+        timeout_sec: 5,
+        is_hidden: false
+      });
+      renderTestCaseRows();
+    }
+
+    function removeTestCaseRow(idx) {
+      testCasesData.splice(idx, 1);
+      renderTestCaseRows();
+    }
+
+    async function saveTeacherStudioConfig(isPublished = true) {
+      const title = document.getElementById("teacherTitleInput").value;
+      const description = document.getElementById("teacherDescInput").value;
+      const starter_code = document.getElementById("teacherStarterCodeInput").value;
+
+      const code_checks = {
+        require_cuda_kernel: document.getElementById("checkCudaKernel").checked,
+        cuda_kernel_points: parseInt(document.getElementById("ptsCudaKernel").value) || 15,
+        check_memory_cleanup: document.getElementById("checkMemCleanup").checked,
+        cleanup_points: parseInt(document.getElementById("ptsMemCleanup").value) || 10,
+        float_tolerance: parseFloat(document.getElementById("floatToleranceInput").value) || 0.001,
+        disallowed_keywords: document.getElementById("bannedLibsInput").value.split(',').map(s => s.strip ? s.strip() : s.trim()).filter(s => s)
+      };
+
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/teacher/save-assignment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, description, starter_code, test_cases: testCasesData, code_checks, is_published: isPublished ? 1 : 0 })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert("✅ Problem statement, code rubrics & test cases updated successfully!");
+          document.getElementById("problemTitleHeader").textContent = title;
+          document.getElementById("problemDescriptionHtml").textContent = description;
+          closeTeacherStudioModal();
+          location.reload();
+        }
+      } catch (e) {
+        alert("Failed to save teacher configuration: " + e.message);
+      }
+    }
+
+    function triggerImportProblemModal() {
+      const dropzone = document.getElementById("importDropzoneCard");
+      dropzone.style.display = (dropzone.style.display === "none" || !dropzone.style.display) ? "block" : "none";
+    }
+
+    async function handleProblemFileUpload(file) {
+      if (!file) return;
+      const spinner = document.getElementById("importStatusSpinner");
+      spinner.style.display = "block";
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/teacher/import-problem", {
+          method: "POST",
+          body: formData
+        });
+        const result = await res.json();
+        spinner.style.display = "none";
+
+        if (result.success && result.data) {
+          const d = result.data;
+          if (d.title) document.getElementById("teacherTitleInput").value = d.title;
+          if (d.description) document.getElementById("teacherDescInput").value = d.description;
+          if (d.starter_code) document.getElementById("teacherStarterCodeInput").value = d.starter_code;
+
+          if (d.code_checks) {
+            if (d.code_checks.require_cuda_kernel !== undefined) {
+              document.getElementById("checkCudaKernel").checked = d.code_checks.require_cuda_kernel;
+            }
+            if (d.code_checks.cuda_kernel_points !== undefined) {
+              document.getElementById("ptsCudaKernel").value = d.code_checks.cuda_kernel_points;
+            }
+            if (d.code_checks.check_memory_cleanup !== undefined) {
+              document.getElementById("checkMemCleanup").checked = d.code_checks.check_memory_cleanup;
+            }
+            if (d.code_checks.cleanup_points !== undefined) {
+              document.getElementById("ptsMemCleanup").value = d.code_checks.cleanup_points;
+            }
+            if (d.code_checks.float_tolerance !== undefined) {
+              document.getElementById("floatToleranceInput").value = d.code_checks.float_tolerance;
+            }
+            if (d.code_checks.disallowed_keywords) {
+              document.getElementById("bannedLibsInput").value = d.code_checks.disallowed_keywords.join(", ");
+            }
+          }
+
+          if (d.test_cases && d.test_cases.length > 0) {
+            testCasesData = d.test_cases;
+            renderTestCaseRows();
+          }
+
+          document.getElementById("importDropzoneCard").style.display = "none";
+          alert(`✅ Successfully imported "${d.title}" with ${d.test_cases ? d.test_cases.length : 0} test cases! Review the extracted fields below and click "Save Problem".`);
+        } else {
+          alert("Import failed: " + (result.error || "Unknown error"));
+        }
+      } catch (err) {
+        spinner.style.display = "none";
+        alert("Upload error: " + err.message);
+      }
+    }
+
+    function openQuotaModal() {
+      document.getElementById("quotaErrorBox").style.display = "none";
+      document.getElementById("quotaControlModal").style.display = "flex";
+    }
+
+    function closeQuotaModal() {
+      document.getElementById("quotaControlModal").style.display = "none";
+    }
+
+    function setRoleSim(role) {
+      simulatedRole = role;
+      document.getElementById("activeRoleBadge").textContent = (role === 'teacher') ? 'Teacher / TA' : 'Administrator';
+      document.getElementById("btnRoleTeacher").style.background = (role === 'teacher') ? '#eff6ff' : '#f1f5f9';
+      document.getElementById("btnRoleTeacher").style.borderColor = (role === 'teacher') ? '#2563eb' : 'var(--border)';
+      document.getElementById("btnRoleTeacher").style.color = (role === 'teacher') ? '#2563eb' : '#334155';
+
+      document.getElementById("btnRoleAdmin").style.background = (role === 'admin') ? '#eff6ff' : '#f1f5f9';
+      document.getElementById("btnRoleAdmin").style.borderColor = (role === 'admin') ? '#2563eb' : 'var(--border)';
+      document.getElementById("btnRoleAdmin").style.color = (role === 'admin') ? '#2563eb' : '#334155';
+    }
+
+    function updateQuotaDisplay(val) {
+      document.getElementById("quotaNumberDisplay").textContent = val + " MB";
+    }
+
+    async function submitQuotaUpdate() {
+      const quotaVal = parseInt(document.getElementById("quotaSlider").value);
+      const errBox = document.getElementById("quotaErrorBox");
+      errBox.style.display = "none";
+
+      try {
+        const res = await fetch("/api/teacher/quota", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: simulatedRole, quota_mb: quotaVal })
+        });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById("quotaMbLabel").textContent = data.quota_mb;
+          document.getElementById("quotaPctLabel").textContent = data.quota_pct;
+          document.getElementById("quotaMeterFill").style.width = data.quota_pct + "%";
+          alert(`✅ Student locker quota successfully updated to ${data.quota_mb} MB.`);
+          closeQuotaModal();
+        } else {
+          errBox.textContent = data.error;
+          errBox.style.display = "block";
+        }
+      } catch (e) {
+        errBox.textContent = e.message;
+        errBox.style.display = "block";
+      }
+    }
+  
+    // -----------------------------------------------------------------
+    // Addon 1: Interactive Terminal (xterm.js + PTY inside bwrap)
+    // -----------------------------------------------------------------
+    let term = null;
+    let fitAddon = null;
+    let termPollInterval = null;
+
+    function initInteractiveTerminal() {
+      if (term) return;
+      const container = document.getElementById("xtermContainer");
+      if (!container) return;
+
+      term = new Terminal({
+        cursorBlink: true,
+        fontSize: 13,
+        fontFamily: "'JetBrains Mono', monospace",
+        theme: {
+          background: "#0f172a",
+          foreground: "#f8fafc",
+          cursor: "#38bdf8"
+        }
+      });
+      fitAddon = new FitAddon.FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(container);
+      fitAddon.fit();
+
+      // Initialize session on server
+      fetch(basePrefix + "/courses/" + courseId + "/ide/api/terminal/init", {
+        method: "POST"
+      }).then(r => r.json()).then(d => {
+        if (d.success) {
+          startTerminalPolling();
+        }
+      });
+
+      term.onData(data => {
+        fetch(basePrefix + "/courses/" + courseId + "/ide/api/terminal/write", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: data })
+        });
+      });
+    }
+
+    function startTerminalPolling() {
+      if (termPollInterval) clearInterval(termPollInterval);
+      termPollInterval = setInterval(async () => {
+        try {
+          const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/terminal/read");
+          const data = await res.json();
+          if (data.output && term) {
+            term.write(data.output);
+          }
+        } catch(e) {}
+      }, 150);
+    }
+
+    // -----------------------------------------------------------------
+    // Addon 2: Course Pip Package Manager
+    // -----------------------------------------------------------------
+    function openPipModal() {
+      document.getElementById("pipManagerModal").style.display = "flex";
+      loadCoursePipPackages();
+    }
+
+    function closePipModal() {
+      document.getElementById("pipManagerModal").style.display = "none";
+    }
+
+    async function loadCoursePipPackages() {
+      const listDiv = document.getElementById("pipPackagesList");
+      listDiv.innerHTML = "Loading...";
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/pip/list");
+        const data = await res.json();
+        if (data.packages && data.packages.length > 0) {
+          listDiv.innerHTML = data.packages.map(p => `
+            <div style="display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid #e2e8f0;">
+              <strong>${p.name}</strong>
+              <span class="badge badge-info" style="font-size: 0.72rem;">${p.version}</span>
+            </div>
+          `).join('');
+        } else {
+          listDiv.innerHTML = "<span style='color: #94a3b8;'>No extra pip packages installed yet for this course.</span>";
+        }
+      } catch (e) {
+        listDiv.innerHTML = "<span style='color: #ef4444;'>Failed to load packages.</span>";
+      }
+    }
+
+    async function installCoursePipPackage() {
+      const pkgInput = document.getElementById("pipPackageInput");
+      const pkg = pkgInput.value.trim();
+      if (!pkg) return;
+
+      const btn = document.getElementById("btnPipInstall");
+      const statusDiv = document.getElementById("pipInstallStatus");
+      btn.disabled = true;
+      btn.textContent = "Installing...";
+      statusDiv.style.display = "block";
+      statusDiv.style.background = "#eff6ff";
+      statusDiv.style.color = "#1d4ed8";
+      statusDiv.textContent = `Installing '${pkg}' into course environment...`;
+
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/pip/install", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ package_name: pkg })
+        });
+        const data = await res.json();
+        btn.disabled = false;
+        btn.textContent = "➕ Install Package";
+
+        if (data.success) {
+          statusDiv.style.background = "#f0fdf4";
+          statusDiv.style.color = "#15803d";
+          statusDiv.textContent = `✅ ${data.message}`;
+          pkgInput.value = "";
+          loadCoursePipPackages();
+        } else {
+          statusDiv.style.background = "#fef2f2";
+          statusDiv.style.color = "#b91c1c";
+          statusDiv.textContent = `❌ ${data.error || "Installation error"}`;
+        }
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = "➕ Install Package";
+        statusDiv.style.background = "#fef2f2";
+        statusDiv.style.color = "#b91c1c";
+        statusDiv.textContent = "Error: " + e.message;
+      }
+    }
+
+    // Update switchConsoleTab to handle interactive terminal
+    const origSwitchConsoleTab = switchConsoleTab;
+    switchConsoleTab = function(tab) {
+      document.getElementById("tabTerminal").classList.toggle("active", tab === "terminal");
+      const iTab = document.getElementById("tabInteractiveTerm");
+      if (iTab) iTab.classList.toggle("active", tab === "interactive");
+      document.getElementById("tabAutograder").classList.toggle("active", tab === "autograder");
+      document.getElementById("tabStdin").classList.toggle("active", tab === "stdin");
+
+      document.getElementById("consoleBody").style.display = (tab === "terminal") ? "block" : "none";
+      const iBody = document.getElementById("interactiveTermBody");
+      if (iBody) iBody.style.display = (tab === "interactive") ? "block" : "none";
+      document.getElementById("autograderBody").style.display = (tab === "autograder") ? "block" : "none";
+      document.getElementById("stdinBody").style.display = (tab === "stdin") ? "block" : "none";
+
+      if (tab === "interactive") {
+        initInteractiveTerminal();
+        setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 100);
+      }
+    };
+
+
+    // -----------------------------------------------------------------
+    // Addon 3: Timed Lab Examination Lockdown Shield
+    // -----------------------------------------------------------------
+    const IS_EXAM_MODE = {{ 1 if problem.is_exam and not is_teacher else 0 }};
+    const EXAM_DURATION_MIN = {{ problem.duration_minutes or 60 }};
+    let examTimeLeftSec = EXAM_DURATION_MIN * 60;
+    let examTimerInterval = null;
+    let examStrikes = 0;
+    let examSubmitted = false;
+
+    if (IS_EXAM_MODE) {
+      document.addEventListener("DOMContentLoaded", () => {
+        initExamShield();
+      });
+    }
+
+    function initExamShield() {
+      // 1. Fullscreen request prompt
+      const enterFs = () => {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+      };
+      window.addEventListener("click", enterFs, { once: true });
+
+      // 2. Tab switch / Defocus detection (Strikes)
+      window.addEventListener("blur", () => {
+        if (!examSubmitted) handleExamViolation("Window lost focus / Tab switched");
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden && !examSubmitted) {
+          handleExamViolation("Navigated away from examination tab");
+        }
+      });
+
+      // 3. Start timer
+      startExamTimer();
+    }
+
+    function startExamTimer() {
+      const timerDisplay = document.getElementById("examCountdownTimer");
+      examTimerInterval = setInterval(() => {
+        if (examTimeLeftSec <= 0) {
+          clearInterval(examTimerInterval);
+          timerDisplay.textContent = "00:00 (EXPIRED)";
+          alert("⏰ Exam time has expired! Your code is now being submitted automatically.");
+          submitExamFinal(false);
+          return;
+        }
+        examTimeLeftSec--;
+        const mins = String(Math.floor(examTimeLeftSec / 60)).padStart(2, '0');
+        const secs = String(examTimeLeftSec % 60).padStart(2, '0');
+        if (timerDisplay) timerDisplay.textContent = `${mins}:${secs}`;
+      }, 1000);
+    }
+
+    async function handleExamViolation(reason) {
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/exam/strike", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignment_id: {{ problem.id or 0 }}, reason: reason })
+        });
+        const data = await res.json();
+        if (data.success) {
+          examStrikes = data.strikes;
+          const sLabel = document.getElementById("examStrikeCount");
+          if (sLabel) sLabel.textContent = `${examStrikes} / 3`;
+
+          if (data.is_locked) {
+            alert("❌ STRIKE 3: Anti-Cheat Violation Threshold Reached. Exam is locked and submitting automatically.");
+            submitExamFinal(false);
+          } else {
+            alert(`⚠️ EXAM STRIKE ${examStrikes}/3 RECORDED! Reason: ${reason}. Switching tabs or exiting fullscreen is prohibited.`);
+          }
+        }
+      } catch(e) {}
+    }
+
+    async function submitExamFinal(promptConfirm = true) {
+      if (examSubmitted) return;
+      if (promptConfirm && !confirm("Are you sure you want to finalize your exam submission? Your workspace will be frozen.")) return;
+
+      examSubmitted = true;
+      if (examTimerInterval) clearInterval(examTimerInterval);
+      if (editor) editor.updateOptions({ readOnly: true });
+
+      await saveCurrentFile();
+
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/exam/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignment_id: {{ problem.id or 0 }} })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert("✅ " + data.message);
+          window.location.href = basePrefix + "/courses/" + courseId + "/classwork";
+        }
+      } catch(e) {
+        alert("Submission completed.");
+      }
+    }
+
+
+    // -----------------------------------------------------------------
+    // Addon 4: Plagiarism & Code Similarity Client Handlers
+    // -----------------------------------------------------------------
+    function openPlagiarismModal() {
+      document.getElementById("plagiarismModal").style.display = "flex";
+      loadPlagiarismReport();
+    }
+
+    function closePlagiarismModal() {
+      document.getElementById("plagiarismModal").style.display = "none";
+    }
+
+    async function loadPlagiarismReport() {
+      const tbody = document.getElementById("plagiarismTableBody");
+      const badge = document.getElementById("plagScanStatusBadge");
+      const assignId = {{ problem.id or 1 }};
+
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/assignments/" + assignId + "/plagiarism");
+        const data = await res.json();
+
+        if (data.status === "processing") {
+          badge.style.display = "block";
+          badge.style.background = "#fef3c7";
+          badge.style.color = "#b45309";
+          badge.innerHTML = "⏳ Plagiarism scan is currently executing in the background. Auto-refreshing in 3 seconds...";
+          setTimeout(loadPlagiarismReport, 3000);
+          return;
+        } else if (data.status === "completed") {
+          badge.style.display = "block";
+          badge.style.background = "#f0fdf4";
+          badge.style.color = "#15803d";
+          badge.innerHTML = `✅ Similarity scan completed for "${data.assignment_title}". ${data.count} matched pairs evaluated.`;
+        }
+
+        if (data.matches && data.matches.length > 0) {
+          tbody.innerHTML = data.matches.map(m => `
+            <tr style="border-bottom: 1px solid var(--border); ${m.is_flagged ? 'background: #fff1f2;' : ''}">
+              <td style="padding: 0.5rem 0.75rem; font-weight: 700;">${m.user1_name} (${m.user1_roll || 'ID: ' + m.user1_id})</td>
+              <td style="padding: 0.5rem 0.75rem; font-weight: 700;">${m.user2_name} (${m.user2_roll || 'ID: ' + m.user2_id})</td>
+              <td style="padding: 0.5rem 0.75rem;">
+                <strong style="color: ${m.similarity_pct >= 70 ? '#b91c1c' : (m.similarity_pct >= 40 ? '#d97706' : '#059669')};">
+                  ${m.similarity_pct}%
+                </strong>
+              </td>
+              <td style="padding: 0.5rem 0.75rem;">${m.shared_fingerprints_count} blocks</td>
+              <td style="padding: 0.5rem 0.75rem; text-align: right;">
+                <span class="badge ${m.is_flagged ? 'badge-fail' : 'badge-pass'}">
+                  ${m.is_flagged ? 'FLAGGED PLAGIARISM' : 'OK'}
+                </span>
+              </td>
+            </tr>
+          `).join('');
+        } else if (data.status === "completed") {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #059669; padding: 1.5rem;">🎉 Zero suspicious similarity matches detected across all student submissions!</td></tr>';
+        }
+      } catch(e) {}
+    }
+
+    async function triggerPlagiarismScan() {
+      const btn = document.getElementById("btnTriggerPlagScan");
+      const assignId = {{ problem.id or 1 }};
+      btn.disabled = true;
+      btn.textContent = "Initiating background scan...";
+
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/assignments/" + assignId + "/plagiarism/scan", {
+          method: "POST"
+        });
+        const data = await res.json();
+        btn.disabled = false;
+        btn.textContent = "⚡ Run Background Similarity Scan";
+        if (data.success) {
+          alert("✅ Plagiarism scan started in the background with low CPU priority. You can monitor the progress right here.");
+          loadPlagiarismReport();
+        } else {
+          alert("Failed to start scan: " + (data.error || "Unknown error"));
+        }
+      } catch(e) {
+        btn.disabled = false;
+        btn.textContent = "⚡ Run Background Similarity Scan";
+        alert("Scan request failed: " + e.message);
+      }
+    }
+
+</script>
+</body>
+</html>

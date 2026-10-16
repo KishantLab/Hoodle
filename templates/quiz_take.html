@@ -1,0 +1,637 @@
+{% extends "base.html" %}
+
+{% block title %}Exam: {{ quiz.title }} - Hoodle{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Exam Mode Clean Focus Styles */
+  body.exam-lockdown-active {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .exam-top-bar {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    background: #0f172a;
+    color: white;
+    padding: 0.75rem 1.5rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .timer-badge {
+    font-size: 1.25rem;
+    font-weight: 800;
+    font-family: 'Consolas', monospace;
+    background: #1e293b;
+    color: #38bdf8;
+    padding: 0.35rem 0.85rem;
+    border-radius: 8px;
+    border: 1px solid #334155;
+    letter-spacing: 1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .timer-badge.urgent {
+    background: #7f1d1d;
+    color: #fca5a5;
+    border-color: #ef4444;
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+  .question-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: border-color 0.2s ease;
+  }
+  .question-card.answered {
+    border-left: 5px solid #10b981;
+  }
+  .opt-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #f8fafc;
+    transition: all 0.15s ease;
+    margin-bottom: 0.5rem;
+  }
+  .opt-card:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+  }
+  .opt-card.selected {
+    background: #eff6ff;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 1px #2563eb;
+  }
+  .opt-card input {
+    margin: 0;
+    cursor: pointer;
+  }
+  /* Lockout Overlay Modal */
+  .strike-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.95);
+    z-index: 99999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 1.5rem;
+  }
+  .strike-box {
+    background: white;
+    border-radius: 16px;
+    max-width: 520px;
+    width: 100%;
+    padding: 2rem;
+    text-align: center;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Fullscreen Entry Gate Modal (Shown if Exam Lockdown is enabled and not fullscreen) -->
+{% if quiz.exam_lockdown %}
+<div id="lockdownGateModal" class="strike-overlay" style="display: flex;">
+  <div class="strike-box">
+    <div style="font-size: 3.5rem; margin-bottom: 0.5rem;">🔒</div>
+    <h2 style="font-size: 1.4rem; font-weight: 800; color: #0f172a; margin-bottom: 0.5rem;">
+      Strict Exam Lockdown Active
+    </h2>
+    <p style="font-size: 0.92rem; color: #475569; line-height: 1.5; margin-bottom: 1.5rem;">
+      This assessment enforces automated anti-cheat supervision. Fullscreen mode is mandatory.
+      <br><br>
+      <strong style="color: #b91c1c;">⚠️ Warning:</strong> Tab switching, minimizing the browser window, or switching desktop applications will trigger an <strong>Exam Strike</strong>. On 3 strikes, your exam will be automatically locked and submitted.
+    </p>
+    <button type="button" id="gateStartBtn" onclick="enterFullscreenExam()" class="btn btn-primary" style="font-size: 1rem; font-weight: 800; padding: 0.75rem 2rem; border-radius: 8px; background: #2563eb; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);">
+      🚀 Enter Fullscreen &amp; Start Exam
+    </button>
+  </div>
+</div>
+{% endif %}
+
+<!-- Strike Warning Modal (Dynamic popup on tab-switch/blur) -->
+<div id="strikeModal" class="strike-overlay" style="display: none;">
+  <div class="strike-box" id="strikeBox">
+    <div id="strikeIcon" style="font-size: 3.5rem; margin-bottom: 0.5rem;">⚠️</div>
+    <h2 id="strikeTitle" style="font-size: 1.4rem; font-weight: 800; color: #b91c1c; margin-bottom: 0.5rem;">
+      Exam Strike Warning
+    </h2>
+    <p id="strikeMessage" style="font-size: 0.95rem; color: #334155; line-height: 1.5; margin-bottom: 1.5rem;">
+      Violation detected.
+    </p>
+    <button type="button" id="strikeDismissBtn" onclick="dismissStrikeModal()" class="btn btn-primary" style="font-size: 0.95rem; font-weight: 700; padding: 0.65rem 1.8rem; border-radius: 8px;">
+      Return to Exam
+    </button>
+  </div>
+</div>
+
+<!-- Sticky Top Bar -->
+<div class="exam-top-bar">
+  <div>
+    <h2 style="font-size: 1.1rem; font-weight: 800; margin: 0; color: white;">
+      {{ quiz.title }}
+    </h2>
+    <div style="font-size: 0.78rem; color: #94a3b8; margin-top: 0.2rem;">
+      {{ course.code }} • {{ current_user.display_name }} ({{ current_user.roll_number or 'Student' }})
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+    <!-- Autosave Status -->
+    <div id="autosaveStatus" style="font-size: 0.82rem; color: #86efac; display: flex; align-items: center; gap: 0.3rem;">
+      ☁️ All changes saved
+    </div>
+
+    <!-- Strike Indicator (if lockdown) -->
+    {% if quiz.exam_lockdown %}
+      <div id="strikeBadge" style="background: {% if attempt.strikes > 0 %}#7f1d1d{% else %}#1e293b{% endif %}; color: {% if attempt.strikes > 0 %}#fca5a5{% else %}#cbd5e1{% endif %}; border: 1px solid #334155; border-radius: 6px; padding: 0.35rem 0.75rem; font-size: 0.82rem; font-weight: 700;">
+        Strikes: <span id="strikeCountDisplay">{{ attempt.strikes or 0 }}</span> / 3
+      </div>
+    {% endif %}
+
+    <!-- Live Timer -->
+    <div id="timerBadge" class="timer-badge">
+      ⏱️ <span id="timeRemainingDisplay">--:--</span>
+    </div>
+
+    <!-- Top Submit Button -->
+    <button type="button" onclick="confirmSubmitExam()" class="btn" style="background: #10b981; color: white; font-size: 0.85rem; font-weight: 700; padding: 0.45rem 1rem; border-radius: 6px;">
+      ✅ Submit Exam
+    </button>
+  </div>
+</div>
+
+<!-- Main Question Paper Container -->
+<div class="container-responsive" style="max-width: 900px; margin: 2rem auto 5rem auto; padding: 0 1rem;">
+  
+  <form id="quizForm" action="{{ url_for('quizzes.submit_quiz', course_id=course.id, quiz_id=quiz.id) }}" method="POST">
+    <input type="hidden" name="attempt_id" value="{{ attempt.id }}">
+
+    {% for q in questions %}
+      <div class="question-card {% if q.saved_answer %}answered{% endif %}" id="q_card_{{ q.id }}">
+        
+        <!-- Question Header -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; gap: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span style="background: #2563eb; color: white; font-weight: 800; font-size: 0.8rem; padding: 2px 8px; border-radius: 4px;">
+              Question {{ loop.index }}
+            </span>
+            <span style="font-size: 0.8rem; font-weight: 700; color: #64748b;">
+              ⭐ {{ q.points }} pt{% if q.points != 1 %}s{% endif %}
+            </span>
+          </div>
+
+          <div style="font-size: 0.78rem; font-weight: 600; color: #94a3b8;">
+            {% if q.question_type == 'mcq' %}Single Choice
+            {% elif q.question_type == 'msq' %}Multiple Select
+            {% elif q.question_type == 'fitb' %}Fill in Blank
+            {% elif q.question_type == 'mcq_justification' %}Choice + Reasoning
+            {% elif q.question_type == 'code_predict' %}Predict Output
+            {% elif q.question_type == 'code_blank' %}Complete Code
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Question Prompt -->
+        <div style="font-size: 1rem; font-weight: 600; color: #1e293b; line-height: 1.5; margin-bottom: 1rem; white-space: pre-wrap;">{{ q.prompt }}</div>
+
+        <!-- Code Snippet Display -->
+        {% if q.code_snippet %}
+          <div style="background: #0f172a; color: #f8fafc; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.88rem; overflow-x: auto; line-height: 1.45; border: 1px solid #1e293b;">
+            <div style="font-size: 0.7rem; color: #94a3b8; border-bottom: 1px solid #334155; padding-bottom: 0.25rem; margin-bottom: 0.5rem; text-transform: uppercase;">
+              Language: {{ q.code_language }}
+            </div>
+            <pre style="margin: 0; font-family: inherit; white-space: pre;">{{ q.code_snippet }}</pre>
+          </div>
+        {% endif %}
+
+        <!-- Interactive Question Controls -->
+        <!-- 1. MCQ (Single Choice) -->
+        {% if q.question_type == 'mcq' %}
+          <div>
+            {% for opt in q.options %}
+              {% set opt_letter = ('A', 'B', 'C', 'D', 'E', 'F')[loop.index0] if loop.index0 < 6 else '?' %}
+              <label class="opt-card {% if q.saved_answer == opt_letter %}selected{% endif %}" onclick="selectSingleOption('{{ q.id }}', '{{ opt_letter }}', this)">
+                <input type="radio" name="ans_{{ q.id }}" value="{{ opt_letter }}" {% if q.saved_answer == opt_letter %}checked{% endif %}>
+                <strong style="color: #2563eb; min-width: 20px;">{{ opt_letter }}.</strong>
+                <span style="color: #1e293b; font-size: 0.92rem;">{{ opt }}</span>
+              </label>
+            {% endfor %}
+          </div>
+
+        <!-- 2. MSQ (Multiple Select) -->
+        {% if False %}{% endif %}
+        {% elif q.question_type == 'msq' %}
+          <div>
+            {% set saved_set = q.saved_answer.split(',') if q.saved_answer else [] %}
+            {% for opt in q.options %}
+              {% set opt_letter = ('A', 'B', 'C', 'D', 'E', 'F')[loop.index0] if loop.index0 < 6 else '?' %}
+              {% set is_sel = (opt_letter in saved_set) %}
+              <label class="opt-card {% if is_sel %}selected{% endif %}" onclick="toggleMsqOption('{{ q.id }}', '{{ opt_letter }}', this)">
+                <input type="checkbox" name="msq_{{ q.id }}[]" value="{{ opt_letter }}" {% if is_sel %}checked{% endif %}>
+                <strong style="color: #6d28d9; min-width: 20px;">{{ opt_letter }}.</strong>
+                <span style="color: #1e293b; font-size: 0.92rem;">{{ opt }}</span>
+              </label>
+            {% endfor %}
+          </div>
+
+        <!-- 3. MCQ with Justification -->
+        {% elif q.question_type == 'mcq_justification' %}
+          <div>
+            <div style="margin-bottom: 0.75rem;">
+              {% for opt in q.options %}
+                {% set opt_letter = ('A', 'B', 'C', 'D', 'E', 'F')[loop.index0] if loop.index0 < 6 else '?' %}
+                <label class="opt-card {% if q.saved_answer == opt_letter %}selected{% endif %}" onclick="selectSingleOption('{{ q.id }}', '{{ opt_letter }}', this)">
+                  <input type="radio" name="ans_{{ q.id }}" value="{{ opt_letter }}" {% if q.saved_answer == opt_letter %}checked{% endif %}>
+                  <strong style="color: #c2410c; min-width: 20px;">{{ opt_letter }}.</strong>
+                  <span style="color: #1e293b; font-size: 0.92rem;">{{ opt }}</span>
+                </label>
+              {% endfor %}
+            </div>
+
+            <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 0.85rem;">
+              <label style="display: block; font-weight: 700; font-size: 0.85rem; color: #92400e; margin-bottom: 0.4rem;">
+                📝 Reasoning / Justification (Mandatory for TA Review):
+              </label>
+              <textarea name="just_{{ q.id }}" id="just_{{ q.id }}" class="form-control" rows="3" placeholder="Explain your answer and technical rationale clearly..." oninput="triggerAutosave('{{ q.id }}')" style="font-size: 0.88rem;">{{ q.saved_justification }}</textarea>
+            </div>
+          </div>
+
+        <!-- 4. Fill in the Blank / Code Output / Code Blank -->
+        {% elif q.question_type in ('fitb', 'code_predict', 'code_blank') %}
+          <div>
+            <label style="display: block; font-weight: 700; font-size: 0.85rem; color: #334155; margin-bottom: 0.4rem;">
+              {% if q.question_type == 'code_predict' %}Type Exact Console Output:
+              {% elif q.question_type == 'code_blank' %}Enter Missing Syntax / Token:
+              {% else %}Enter Answer:
+              {% endif %}
+            </label>
+            <input type="text" name="ans_{{ q.id }}" id="ans_{{ q.id }}" class="form-control" value="{{ q.saved_answer }}" placeholder="Type your answer here..." oninput="triggerAutosave('{{ q.id }}')" style="font-family: 'Consolas', 'Monaco', monospace; font-size: 0.95rem; padding: 0.65rem 0.85rem;">
+          </div>
+        {% endif %}
+
+      </div>
+    {% endfor %}
+
+    <!-- Bottom Submit Button -->
+    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-top: 2rem;">
+      <h3 style="font-size: 1.1rem; font-weight: 700; color: #1e293b; margin-bottom: 0.5rem;">
+        Finished with your assessment?
+      </h3>
+      <p style="font-size: 0.88rem; color: #64748b; margin-bottom: 1.25rem;">
+        All your answers have been continuously autosaved. You can review your answers above before final submission.
+      </p>
+      <button type="button" onclick="confirmSubmitExam()" class="btn btn-primary" style="font-size: 1rem; font-weight: 800; padding: 0.75rem 2.5rem; border-radius: 8px; background: #10b981;">
+        🚀 Final Submit Assessment
+      </button>
+    </div>
+
+  </form>
+</div>
+
+<!-- Submit Confirmation Modal -->
+<div id="confirmSubmitModal" class="modal-backdrop">
+  <div class="modal-content" style="max-width: 440px; text-align: center;">
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">📤</div>
+    <h3 style="font-size: 1.25rem; font-weight: 800; color: #1e293b; margin-bottom: 0.5rem;">
+      Ready to Submit?
+    </h3>
+    <p style="font-size: 0.9rem; color: #64748b; line-height: 1.4; margin-bottom: 1.5rem;">
+      Once submitted, your responses will be evaluated and your attempt will be concluded.
+    </p>
+    <div style="display: flex; justify-content: center; gap: 0.75rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('confirmSubmitModal')" style="padding: 0.6rem 1.2rem;">
+        Continue Reviewing
+      </button>
+      <button type="button" onclick="doFinalSubmit()" class="btn btn-primary" style="background: #10b981; padding: 0.6rem 1.5rem; font-weight: 700;">
+        Yes, Submit Now
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+const QUIZ_ID = {{ quiz.id }};
+const ATTEMPT_ID = {{ attempt.id }};
+const EXAM_LOCKDOWN = {{ 1 if quiz.exam_lockdown else 0 }};
+const AUTOSAVE_URL = "{{ url_for('quizzes.api_quiz_autosave', quiz_id=quiz.id) }}";
+const STRIKE_URL = "{{ url_for('quizzes.api_quiz_strike', quiz_id=quiz.id) }}";
+
+let remainingSeconds = {{ remaining_sec }};
+let isSubmitted = false;
+let strikes = {{ attempt.strikes or 0 }};
+let lastStrikeTime = 0;
+let autosaveDebounceTimer = null;
+
+// ==========================================
+// 1. COUNTDOWN TIMER ENGINE
+// ==========================================
+function updateTimerDisplay() {
+  const timerBadge = document.getElementById("timerBadge");
+  const timeDisplay = document.getElementById("timeRemainingDisplay");
+
+  if (remainingSeconds <= 0) {
+    timeDisplay.textContent = "00:00";
+    timerBadge.classList.add("urgent");
+    if (!isSubmitted) {
+      alert("⏱️ Time Expired! Your exam is being automatically submitted.");
+      doFinalSubmit();
+    }
+    return;
+  }
+
+  const mins = Math.floor(remainingSeconds / 60);
+  const secs = remainingSeconds % 60;
+  timeDisplay.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+  if (remainingSeconds <= 300) {
+    timerBadge.classList.add("urgent");
+  } else {
+    timerBadge.classList.remove("urgent");
+  }
+
+  remainingSeconds--;
+}
+setInterval(updateTimerDisplay, 1000);
+updateTimerDisplay();
+
+
+// ==========================================
+// 2. CONTINUOUS AUTOSAVE ENGINE
+// ==========================================
+function selectSingleOption(qid, letter, cardEl) {
+  const container = cardEl.parentElement;
+  container.querySelectorAll(".opt-card").forEach(c => c.classList.remove("selected"));
+  cardEl.classList.add("selected");
+  const radio = cardEl.querySelector("input[type=radio]");
+  if (radio) radio.checked = true;
+  triggerAutosave(qid);
+}
+
+function toggleMsqOption(qid, letter, cardEl) {
+  setTimeout(() => {
+    const cb = cardEl.querySelector("input[type=checkbox]");
+    if (cb.checked) {
+      cardEl.classList.add("selected");
+    } else {
+      cardEl.classList.remove("selected");
+    }
+    triggerAutosave(qid);
+  }, 10);
+}
+
+function triggerAutosave(qid) {
+  document.getElementById(`q_card_${qid}`).classList.add("answered");
+  const statusEl = document.getElementById("autosaveStatus");
+  statusEl.style.color = "#fef08a";
+  statusEl.textContent = "💾 Saving...";
+
+  clearTimeout(autosaveDebounceTimer);
+  autosaveDebounceTimer = setTimeout(() => {
+    saveQuestionAnswer(qid);
+  }, 350);
+}
+
+function saveQuestionAnswer(qid) {
+  let answer = "";
+  // Check radio
+  const radios = document.querySelectorAll(`input[name="ans_${qid}"]:checked`);
+  if (radios.length > 0) {
+    answer = radios[0].value;
+  } else {
+    // Check MSQ
+    const msqs = document.querySelectorAll(`input[name="msq_${qid}[]"]:checked`);
+    if (msqs.length > 0) {
+      answer = Array.from(msqs).map(cb => cb.value).sort().join(",");
+    } else {
+      // Text answer
+      const textInput = document.getElementById(`ans_${qid}`);
+      if (textInput) {
+        answer = textInput.value;
+      }
+    }
+  }
+
+  const justEl = document.getElementById(`just_${qid}`);
+  const justification = justEl ? justEl.value : "";
+
+  fetch(AUTOSAVE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      attempt_id: ATTEMPT_ID,
+      question_id: parseInt(qid),
+      answer: answer,
+      justification: justification
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    const statusEl = document.getElementById("autosaveStatus");
+    if (data.success) {
+      const d = new Date();
+      statusEl.style.color = "#86efac";
+      statusEl.textContent = `☁️ Saved at ${d.toLocaleTimeString()}`;
+    } else {
+      statusEl.style.color = "#f87171";
+      statusEl.textContent = "⚠️ Save retry pending...";
+    }
+  })
+  .catch(err => {
+    const statusEl = document.getElementById("autosaveStatus");
+    statusEl.style.color = "#f87171";
+    statusEl.textContent = "⚠️ Network offline...";
+  });
+}
+
+
+// ==========================================
+// 3. EXAM LOCKDOWN & ANTI-CHEAT ENGINE
+// ==========================================
+function isFullscreenActive() {
+  return !!(
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement
+  );
+}
+
+function enterFullscreenExam() {
+  const elem = document.documentElement;
+  const req = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.mozRequestFullScreen || elem.msRequestFullscreen;
+  if (req) {
+    req.call(elem).then(() => {
+      const gate = document.getElementById("lockdownGateModal");
+      if (gate) gate.style.display = "none";
+      document.body.classList.add("exam-lockdown-active");
+    }).catch(err => {
+      console.log("Fullscreen request:", err);
+      // Still hide gate if user allowed
+      const gate = document.getElementById("lockdownGateModal");
+      if (gate) gate.style.display = "none";
+      document.body.classList.add("exam-lockdown-active");
+    });
+  } else {
+    const gate = document.getElementById("lockdownGateModal");
+    if (gate) gate.style.display = "none";
+  }
+}
+
+function dismissStrikeModal() {
+  document.getElementById("strikeModal").style.display = "none";
+  if (!isFullscreenActive() && EXAM_LOCKDOWN && !isSubmitted) {
+    enterFullscreenExam();
+  }
+}
+
+function recordStrikeViolation(reason) {
+  if (isSubmitted || !EXAM_LOCKDOWN) return;
+  const now = Date.now();
+  // Cooldown 1500ms between strikes to prevent multiple duplicate events
+  if (now - lastStrikeTime < 1500) return;
+  lastStrikeTime = now;
+
+  fetch(STRIKE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      attempt_id: ATTEMPT_ID,
+      reason: reason
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.strikes !== undefined) {
+      strikes = data.strikes;
+      const strikeDisp = document.getElementById("strikeCountDisplay");
+      if (strikeDisp) strikeDisp.textContent = strikes;
+
+      const strikeBadge = document.getElementById("strikeBadge");
+      if (strikeBadge) {
+        strikeBadge.style.background = "#7f1d1d";
+        strikeBadge.style.color = "#fca5a5";
+      }
+
+      const modal = document.getElementById("strikeModal");
+      const title = document.getElementById("strikeTitle");
+      const msg = document.getElementById("strikeMessage");
+      const icon = document.getElementById("strikeIcon");
+      const btn = document.getElementById("strikeDismissBtn");
+
+      if (data.locked || strikes >= 3) {
+        isSubmitted = true;
+        icon.textContent = "🛑";
+        title.textContent = "STRIKE 3 / 3: EXAM LOCKED";
+        msg.innerHTML = "<strong>Maximum violations reached.</strong><br>Your exam has been locked and automatically submitted due to integrity policy violations.";
+        btn.style.display = "none";
+        modal.style.display = "flex";
+        setTimeout(() => {
+          doFinalSubmit();
+        }, 1800);
+      } else if (strikes === 2) {
+        icon.textContent = "🚨";
+        title.textContent = "STRIKE 2 / 3: FINAL WARNING!";
+        msg.innerHTML = `<strong>${reason}</strong><br><br><span style="color: #b91c1c; font-weight: bold;">One more violation will immediately lock and submit your exam with zero recourse.</span>`;
+        modal.style.display = "flex";
+      } else if (strikes === 1) {
+        icon.textContent = "⚠️";
+        title.textContent = "STRIKE 1 / 3: VIOLATION DETECTED";
+        msg.innerHTML = `<strong>${reason}</strong><br><br>Please stay focused on the assessment window in fullscreen mode.`;
+        modal.style.display = "flex";
+      }
+    }
+  })
+  .catch(err => console.error("Strike report error:", err));
+}
+
+if (EXAM_LOCKDOWN) {
+  function handleFullscreenExit() {
+    if (!isFullscreenActive() && !isSubmitted) {
+      recordStrikeViolation("Exited Fullscreen Exam Mode (Esc / Window Change)");
+      const gate = document.getElementById("lockdownGateModal");
+      if (gate) {
+        gate.style.display = "flex";
+        const btn = document.getElementById("gateStartBtn");
+        if (btn) btn.textContent = "⚠️ Re-enter Fullscreen Mode to Continue";
+      }
+    }
+  }
+
+  // 1. Fullscreen change events across all browsers
+  document.addEventListener("fullscreenchange", handleFullscreenExit);
+  document.addEventListener("webkitfullscreenchange", handleFullscreenExit);
+  document.addEventListener("mozfullscreenchange", handleFullscreenExit);
+  document.addEventListener("MSFullscreenChange", handleFullscreenExit);
+
+  // 2. Escape key detection
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" || e.keyCode === 27) {
+      if (!isSubmitted) {
+        recordStrikeViolation("Pressed ESC key during assessment");
+        const gate = document.getElementById("lockdownGateModal");
+        if (gate) {
+          gate.style.display = "flex";
+          const btn = document.getElementById("gateStartBtn");
+          if (btn) btn.textContent = "⚠️ Re-enter Fullscreen Mode to Continue";
+        }
+      }
+    }
+  });
+
+  // 3. Tab switch or window minimized
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && !isSubmitted) {
+      recordStrikeViolation("Tab switch or browser minimized");
+    }
+  });
+
+  // 4. Window blur (switching desktop app / developer tools)
+  window.addEventListener("blur", () => {
+    if (!isSubmitted) {
+      recordStrikeViolation("Switched window / application blur");
+    }
+  });
+
+  // 5. Disable context menu & copy shortcuts
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+  document.addEventListener("copy", (e) => e.preventDefault());
+  document.addEventListener("cut", (e) => e.preventDefault());
+}
+
+
+// ==========================================
+// 4. FINAL SUBMISSION
+// ==========================================
+function confirmSubmitExam() {
+  openModal("confirmSubmitModal");
+}
+
+function doFinalSubmit() {
+  isSubmitted = true;
+  document.getElementById("quizForm").submit();
+}
+</script>
+{% endblock %}

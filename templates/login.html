@@ -45,8 +45,8 @@
     <form id="signInForm" action="{{ url_for('login') }}" method="POST" style="display: {% if register_active %}none{% else %}block{% endif %};">
       <input type="hidden" name="join_code" value="{{ request.args.get('join', session.get('pending_join_code', '')) }}">
       <div class="form-group">
-        <label class="form-label" for="identifier">Roll Number</label>
-        <input type="text" id="identifier" name="identifier" class="form-control" placeholder="B26DS001" required autofocus>
+        <label class="form-label" for="identifier">Email / Roll Number</label>
+        <input type="text" id="identifier" name="identifier" class="form-control" placeholder="name@iitbhilai.ac.in or B26DS001" required autofocus>
       </div>
 
       <div class="form-group">
@@ -62,7 +62,14 @@
         </div>
       </div>
 
-      <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; margin-top: 0.5rem;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.15rem; margin-top: 0.4rem;">
+        <label style="display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.86rem; color: var(--text-main); cursor: pointer; user-select: none; margin-bottom: 0;">
+          <input type="checkbox" name="remember_me" id="remember_me" value="1" checked style="width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer;">
+          <span>Remember me (Keep me signed in)</span>
+        </label>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; margin-top: 0.25rem;">
         Sign In to Classroom
       </button>
     </form>
@@ -71,22 +78,22 @@
     <form id="registerForm" action="{{ url_for('register') }}" method="POST" style="display: {% if register_active %}block{% else %}none{% endif %};">
       <input type="hidden" name="join_code" value="{{ request.args.get('join', session.get('pending_join_code', '')) }}">
       <div class="form-group">
-        <label class="form-label" for="full_name">Full Name</label>
+        <label class="form-label" for="full_name">Full Name *</label>
         <input type="text" id="full_name" name="full_name" class="form-control" placeholder="e.g. Aarav Sharma" required>
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="roll_number">Roll Number</label>
-        <input type="text" id="roll_number" name="roll_number" class="form-control" placeholder="B26DS001" style="text-transform: uppercase;" required>
+        <label class="form-label" for="roll_number">Roll Number *</label>
+        <input type="text" id="roll_number" name="roll_number" class="form-control" placeholder="e.g. B26DS001" style="text-transform: uppercase;" required>
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="email">Institute Email</label>
-        <input type="email" id="email" name="email" class="form-control" placeholder="name@iitbhilai.ac.in">
+        <label class="form-label" for="email">Institute / Student Email *</label>
+        <input type="email" id="email" name="email" class="form-control" placeholder="e.g. student@iitbhilai.ac.in" required>
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="reg_password">Password</label>
+        <label class="form-label" for="reg_password">Password *</label>
         <div class="password-input-wrap">
           <input type="password" id="reg_password" name="password" class="form-control" placeholder="At least 6 characters" required>
           <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('reg_password', this)" title="Show password" aria-label="Show password">
@@ -96,7 +103,7 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="confirm_password">Confirm Password</label>
+        <label class="form-label" for="confirm_password">Confirm Password *</label>
         <div class="password-input-wrap">
           <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="Re-enter password" required>
           <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('confirm_password', this)" title="Show password" aria-label="Show password">
@@ -110,7 +117,21 @@
       <button type="submit" class="btn btn-success" style="width: 100%; padding: 0.75rem; margin-top: 0.5rem;">
         Create Student Account
       </button>
+
+      <div style="margin-top: 1rem; text-align: center; padding-top: 0.75rem; border-top: 1px dashed var(--border);">
+        <span style="font-size: 0.82rem; color: var(--text-muted);">Faculty or Instructor?</span>
+        <a href="{{ url_for('teacher_register') }}" style="font-size: 0.82rem; font-weight: 700; color: var(--primary); margin-left: 0.35rem; text-decoration: none;">
+          Register as Teacher &rarr;
+        </a>
+      </div>
     </form>
+  </div>
+
+  <!-- Quick Links (Contact & Handbook) -->
+  <div style="margin-top: 1rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
+    <a href="{{ url_for('contact_page') }}" style="color: var(--text-muted); text-decoration: none; margin-right: 0.75rem;">📬 Contact Us</a>
+    <span>•</span>
+    <a href="{{ url_for('usage_guide') }}" style="color: var(--text-muted); text-decoration: none; margin-left: 0.75rem;">📖 Student Handbook</a>
   </div>
 
   <!-- Network Access Switcher (Campus Intranet vs Internet) -->

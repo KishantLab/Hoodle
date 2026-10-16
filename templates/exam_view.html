@@ -87,8 +87,8 @@
     <h2 class="card-title" style="font-size: 1.15rem; color: #b91c1c; display: flex; align-items: center; gap: 0.5rem;">
       <span>📋</span> Examination Instructions & Guidelines
     </h2>
-    <div style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main); margin-top: 0.75rem; white-space: pre-wrap; word-break: break-word;">
-      {{ exam.description | nl2br if exam.description else 'Complete all required practical programming problems. Compress all source files into a single .zip archive.' }}
+    <div class="rich-text-content" style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main); margin-top: 0.75rem; word-break: break-word;">
+      {{ exam.description | rich_text if exam.description else 'Complete all required practical programming problems. Compress all source files into a single .zip archive.' }}
     </div>
 
     <div style="margin-top: 1.25rem; padding: 0.85rem 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-md); font-size: 0.85rem; color: #991b1b; line-height: 1.5;">

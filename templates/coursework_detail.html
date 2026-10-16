@@ -32,6 +32,9 @@
             <button type="button" class="btn btn-secondary btn-sm" onclick="openModal('editCourseworkModal')" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600;">
               <span>✏️ Edit</span>
             </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="openPlagiarismModal()" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600; color: #6d28d9; background: #f5f3ff; border: 1.5px solid #c4b5fd;" title="Check pairwise plagiarism and code similarity across student submissions">
+              <span>🔍 Plagiarism Check</span>
+            </button>
             <button type="button" class="btn btn-secondary btn-sm" onclick="openModal('bulkSolutionModal')" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600;" title="Upload pendrive/offline student solutions in batch">
               <span>📦 Upload Solutions (ZIP)</span>
             </button>
@@ -1017,9 +1020,482 @@ document.addEventListener("DOMContentLoaded", () => {
 </div>
 
 <script>
-  if (window.location.hash === '#edit') {
-    openModal('editCourseworkModal');
+  document.addEventListener("DOMContentLoaded", function() {
+    if (window.location.hash === '#edit') {
+      openModal('editCourseworkModal');
+    } else if (window.location.hash === '#plagiarism') {
+      setTimeout(function() {
+        if (typeof openPlagiarismModal === 'function') openPlagiarismModal();
+      }, 100);
+    }
+  });
+  window.addEventListener("hashchange", function() {
+    if (window.location.hash === '#plagiarism') {
+      if (typeof openPlagiarismModal === 'function') openPlagiarismModal();
+    }
+  });
+</script>
+
+<!-- Plagiarism & Code Similarity Modal -->
+<div id="plagiarismModal" class="modal-backdrop" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; background: rgba(15, 23, 42, 0.72); backdrop-filter: blur(6px); align-items: center; justify-content: center; padding: 1.25rem; box-sizing: border-box;">
+  <div class="modal-content" style="max-width: 1050px; width: 100%; max-height: 90vh; background: #ffffff; border-radius: 16px; box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.4); display: flex; flex-direction: column; padding: 1.5rem 1.75rem; border: 1px solid #cbd5e1; box-sizing: border-box; overflow: hidden;">
+    
+    <!-- Modal Header -->
+    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #e2e8f0; padding-bottom: 1rem; margin-bottom: 1rem;">
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <div style="width: 44px; height: 44px; border-radius: 12px; background: #f5f3ff; border: 1.5px solid #ddd6fe; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0;">
+          🔍
+        </div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <h2 style="font-size: 1.25rem; font-weight: 800; margin: 0; color: #1e3a8a;">
+              Plagiarism &amp; Code Similarity Detector
+            </h2>
+            <span class="badge" style="background: #ede9fe; color: #6d28d9; font-weight: 800; font-size: 0.72rem; padding: 2px 8px; border-radius: 9999px;">MOSS / JPlag Engine</span>
+          </div>
+          <div style="font-size: 0.82rem; color: #64748b; margin-top: 0.2rem;">
+            Assignment: <strong>{{ cw.title }}</strong> &bull; Pairwise AST normalization &amp; Winnowing n-gram analysis
+          </div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closePlagiarismModal()" style="font-size: 1.35rem; line-height: 1; padding: 4px 10px; border-radius: 8px; cursor: pointer;" title="Close">&times;</button>
+    </div>
+
+    <!-- Scan Actions & Status Bar -->
+    <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 0.85rem 1.15rem; margin-bottom: 0.85rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+      <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+        <button id="btnRunPlagScan" type="button" class="btn btn-primary btn-sm" onclick="triggerPlagiarismScan()" style="font-weight: 800; background: #6d28d9; border-color: #6d28d9; display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.5rem 1rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(109, 40, 217, 0.25); cursor: pointer;">
+          <span id="plagScanIcon">⚡</span>
+          <span id="plagScanBtnText">Run Background Scan</span>
+        </button>
+        <span id="plagStatusBadge" class="badge" style="background: #e2e8f0; color: #475569; font-weight: 700; padding: 4px 10px;">Checking status...</span>
+        <span id="plagLastScannedText" style="font-size: 0.8rem; color: #64748b; font-weight: 500;"></span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+        <input type="text" id="plagSearchInput" class="form-control" placeholder="Search student or roll..." oninput="filterPlagRows()" style="padding: 5px 12px; font-size: 0.82rem; width: 190px; border-radius: 6px;">
+        <label style="font-size: 0.82rem; font-weight: 700; color: #374151; display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; margin: 0; user-select: none;">
+          <input type="checkbox" id="chkFlaggedOnly" onchange="filterPlagRows()">
+          <span>Show High Risk (&ge;70%)</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Active Background Progress Bar Banner -->
+    <div id="plagProgressBarBox" style="display: none; background: #fdf4ff; border: 1.5px solid #f0abfc; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 0.85rem; box-shadow: 0 4px 14px rgba(192, 38, 211, 0.1);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.65rem;">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <span style="display: inline-block; width: 14px; height: 14px; border: 2.5px solid #a855f7; border-right-color: transparent; border-radius: 50%; animation: plagSpin 0.7s linear infinite;"></span>
+          <span id="plagProgressStageTitle" style="font-weight: 800; font-size: 0.9rem; color: #86198f;">
+            Background Analysis In Progress...
+          </span>
+        </div>
+        <span id="plagProgressPct" style="font-weight: 900; font-size: 0.95rem; color: #7e22ce; font-family: monospace;">25%</span>
+      </div>
+      <div style="height: 12px; background: #fae8ff; border-radius: 9999px; overflow: hidden; position: relative; border: 1px solid #f5d0fe;">
+        <div id="plagProgressFill" style="height: 100%; width: 25%; background: linear-gradient(90deg, #9333ea, #c026d3, #7e22ce); border-radius: 9999px; transition: width 0.35s ease; background-size: 30px 30px; background-image: linear-gradient(45deg, rgba(255,255,255,0.2) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.2) 75%, transparent 75%, transparent); animation: plagStripe 1s linear infinite;"></div>
+      </div>
+      <div id="plagProgressSubtitle" style="font-size: 0.78rem; color: #701a75; margin-top: 0.45rem; font-weight: 600;">
+        🔍 Phase 1: Unpacking student submission files &amp; code snapshots...
+      </div>
+    </div>
+
+    <!-- Summary Metrics Cards -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 0.85rem;">
+      <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 0.75rem 1.15rem;">
+        <div style="font-size: 0.72rem; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.03em;">Submissions Analyzed</div>
+        <div id="statTotalSubs" style="font-size: 1.55rem; font-weight: 900; color: #0f172a; margin-top: 0.2rem;">0</div>
+      </div>
+      <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 0.75rem 1.15rem;">
+        <div style="font-size: 0.72rem; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.03em;">Pairwise Comparisons</div>
+        <div id="statTotalPairs" style="font-size: 1.55rem; font-weight: 900; color: #2563eb; margin-top: 0.2rem;">0</div>
+      </div>
+      <div style="background: #fff1f2; border: 1.5px solid #fecdd3; border-radius: 10px; padding: 0.75rem 1.15rem;">
+        <div style="font-size: 0.72rem; font-weight: 800; text-transform: uppercase; color: #be123c; letter-spacing: 0.03em;">High Risk Flagged (&ge;70%)</div>
+        <div id="statFlaggedPairs" style="font-size: 1.55rem; font-weight: 900; color: #b91c1c; margin-top: 0.2rem;">0</div>
+      </div>
+    </div>
+
+    <!-- Comparison Table Container -->
+    <div style="flex: 1; overflow-y: auto; border: 1.5px solid #e2e8f0; border-radius: 10px; background: #ffffff; min-height: 250px;">
+      <table id="plagResultsTable" style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+        <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0; position: sticky; top: 0; z-index: 2;">
+          <tr>
+            <th style="padding: 10px 14px; text-align: left; font-weight: 800; color: #334155;">Student A</th>
+            <th style="padding: 10px 14px; text-align: left; font-weight: 800; color: #334155;">Student B</th>
+            <th style="padding: 10px 14px; text-align: left; font-weight: 800; color: #334155; width: 220px;">Similarity %</th>
+            <th style="padding: 10px 14px; text-align: center; font-weight: 800; color: #334155; width: 140px;">Risk Level</th>
+            <th style="padding: 10px 14px; text-align: right; font-weight: 800; color: #334155; width: 120px;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="plagTableBody">
+          <tr>
+            <td colspan="5" style="padding: 3rem 1rem; text-align: center; color: #64748b;">
+              <div style="font-size: 2rem; margin-bottom: 0.5rem;">📂</div>
+              <div style="font-weight: 700; color: #334155; font-size: 0.95rem;">No Similarity Scan Run Yet</div>
+              <div style="font-size: 0.82rem; color: #94a3b8; margin-top: 0.25rem;">
+                Click <strong>"Run Background Scan"</strong> above to analyze student submissions for this assignment.
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Modal Footer -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 0.75rem;">
+      <span style="font-size: 0.75rem; color: #94a3b8;">Runs in background with low CPU priority (nice +10)</span>
+      <button type="button" class="btn btn-secondary" onclick="closePlagiarismModal()" style="font-weight: 700; padding: 0.45rem 1.25rem;">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Side-by-Side Code Inspection Modal -->
+<div id="plagInspectModal" class="modal-backdrop" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 100000; background: rgba(15, 23, 42, 0.78); backdrop-filter: blur(6px); align-items: center; justify-content: center; padding: 1.25rem; box-sizing: border-box;">
+  <div class="modal-content" style="max-width: 1150px; width: 100%; max-height: 92vh; background: #ffffff; border-radius: 16px; box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; padding: 1.5rem; border: 1px solid #cbd5e1; box-sizing: border-box; overflow: hidden;">
+    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 0.85rem;">
+      <div>
+        <h3 style="margin: 0; font-size: 1.2rem; font-weight: 800; color: #1e3a8a;">
+          Code Comparison &amp; Similarity Inspection
+        </h3>
+        <div id="inspectSubtitle" style="font-size: 0.82rem; color: #64748b; margin-top: 0.2rem; font-weight: 600;"></div>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeInspectModal()" style="font-size: 1.35rem; line-height: 1; padding: 3px 9px;">&times;</button>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; flex: 1; overflow: hidden; min-height: 420px;">
+      <!-- Student 1 Box -->
+      <div style="display: flex; flex-direction: column; border: 1.5px solid #cbd5e1; border-radius: 10px; overflow: hidden; background: #f8fafc;">
+        <div style="background: #eff6ff; padding: 8px 14px; border-bottom: 1.5px solid #bfdbfe; font-size: 0.88rem; font-weight: 800; color: #1e40af; display: flex; justify-content: space-between; align-items: center;">
+          <span id="inspectStu1Title">Student 1</span>
+          <span id="inspectStu1File" style="font-size: 0.75rem; font-family: monospace; color: #3b82f6;"></span>
+        </div>
+        <pre id="inspectCode1" style="flex: 1; margin: 0; padding: 14px; overflow: auto; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.82rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all; background: #ffffff; color: #0f172a;"></pre>
+      </div>
+
+      <!-- Student 2 Box -->
+      <div style="display: flex; flex-direction: column; border: 1.5px solid #cbd5e1; border-radius: 10px; overflow: hidden; background: #f8fafc;">
+        <div style="background: #eff6ff; padding: 8px 14px; border-bottom: 1.5px solid #bfdbfe; font-size: 0.88rem; font-weight: 800; color: #1e40af; display: flex; justify-content: space-between; align-items: center;">
+          <span id="inspectStu2Title">Student 2</span>
+          <span id="inspectStu2File" style="font-size: 0.75rem; font-family: monospace; color: #3b82f6;"></span>
+        </div>
+        <pre id="inspectCode2" style="flex: 1; margin: 0; padding: 14px; overflow: auto; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.82rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all; background: #ffffff; color: #0f172a;"></pre>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; margin-top: 0.85rem; border-top: 1px solid #e2e8f0; padding-top: 0.75rem;">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeInspectModal()" style="font-weight: 700; padding: 0.4rem 1rem;">Back to Report</button>
+    </div>
+  </div>
+</div>
+
+<style>
+@keyframes plagSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes plagStripe {
+  0% { background-position: 0 0; }
+  100% { background-position: 30px 0; }
+}
+</style>
+
+<script>
+let allPlagMatches = [];
+let plagPollInterval = null;
+let simulatedProgress = 20;
+
+function getPlagBasePrefix() {
+  return window.location.pathname.startsWith('/lms') ? '/lms' : '';
+}
+
+window.openPlagiarismModal = openPlagiarismModal;
+window.closePlagiarismModal = closePlagiarismModal;
+function openPlagiarismModal() {
+  const modal = document.getElementById('plagiarismModal');
+  if (modal) {
+    modal.style.display = 'flex';
   }
+  loadPlagiarismReport();
+}
+
+function closePlagiarismModal() {
+  const modal = document.getElementById('plagiarismModal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+  if (plagPollInterval) {
+    clearInterval(plagPollInterval);
+    plagPollInterval = null;
+  }
+}
+
+function closeInspectModal() {
+  const modal = document.getElementById('plagInspectModal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
+async function loadPlagiarismReport() {
+  const url = `${getPlagBasePrefix()}/courses/{{ course.id }}/coursework/{{ cw.id }}/plagiarism`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("HTTP error " + res.status);
+    const data = await res.json();
+    renderPlagiarismData(data);
+  } catch (err) {
+    console.error("Failed to load plagiarism report:", err);
+    const badge = document.getElementById("plagStatusBadge");
+    if (badge) {
+      badge.textContent = "Error loading";
+      badge.style.background = "#fee2e2";
+      badge.style.color = "#b91c1c";
+    }
+  }
+}
+
+function renderPlagiarismData(data) {
+  const badge = document.getElementById("plagStatusBadge");
+  const lastScanned = document.getElementById("plagLastScannedText");
+  const btn = document.getElementById("btnRunPlagScan");
+  const icon = document.getElementById("plagScanIcon");
+  const btnText = document.getElementById("plagScanBtnText");
+  const progressBox = document.getElementById("plagProgressBarBox");
+
+  if (data.status === 'running') {
+    badge.textContent = "Analyzing in background...";
+    badge.style.background = "#fef3c7";
+    badge.style.color = "#92400e";
+    btn.disabled = true;
+    icon.textContent = "⏳";
+    btnText.textContent = "Scanning...";
+
+    // Show Progress Bar
+    if (progressBox) progressBox.style.display = "block";
+    updateProgressUI(simulatedProgress);
+    simulatedProgress = Math.min(92, simulatedProgress + Math.floor(Math.random() * 12) + 5);
+
+    // Start polling if not already
+    if (!plagPollInterval) {
+      plagPollInterval = setInterval(loadPlagiarismReport, 1800);
+    }
+    return;
+  }
+
+  // Stop polling if done
+  if (plagPollInterval) {
+    clearInterval(plagPollInterval);
+    plagPollInterval = null;
+  }
+
+  // Hide Progress Bar on complete
+  if (progressBox) {
+    if (data.status === 'completed' && simulatedProgress > 0) {
+      updateProgressUI(100);
+      setTimeout(() => {
+        progressBox.style.display = "none";
+        simulatedProgress = 20;
+      }, 700);
+    } else {
+      progressBox.style.display = "none";
+      simulatedProgress = 20;
+    }
+  }
+
+  btn.disabled = false;
+  icon.textContent = "⚡";
+  btnText.textContent = "Run Background Scan";
+
+  if (data.status === 'none') {
+    badge.textContent = "No Scans Run";
+    badge.style.background = "#e2e8f0";
+    badge.style.color = "#475569";
+    return;
+  }
+
+  if (data.status === 'failed') {
+    badge.textContent = "Scan Failed";
+    badge.style.background = "#fee2e2";
+    badge.style.color = "#b91c1c";
+    alert("Plagiarism scan failed: " + (data.error || "Unknown"));
+    return;
+  }
+
+  if (data.status === 'completed') {
+    badge.textContent = "Completed";
+    badge.style.background = "#dcfce7";
+    badge.style.color = "#166534";
+    lastScanned.textContent = "Last scanned: " + (data.updated_at || "Just now");
+
+    const report = data.report || {};
+    allPlagMatches = report.matches || [];
+
+    document.getElementById("statTotalSubs").textContent = report.total_submissions || 0;
+    document.getElementById("statTotalPairs").textContent = allPlagMatches.length;
+    document.getElementById("statFlaggedPairs").textContent = report.flagged_matches_count || 0;
+
+    renderPlagTable();
+  }
+}
+
+function updateProgressUI(pct) {
+  const fill = document.getElementById("plagProgressFill");
+  const pctText = document.getElementById("plagProgressPct");
+  const subtitle = document.getElementById("plagProgressSubtitle");
+
+  if (fill) fill.style.width = pct + "%";
+  if (pctText) pctText.textContent = pct + "%";
+
+  if (subtitle) {
+    if (pct < 35) {
+      subtitle.textContent = "🔍 Phase 1: Unpacking student submission files & code snapshots...";
+    } else if (pct < 65) {
+      subtitle.textContent = "⚡ Phase 2: Normalizing AST grammar tokens & stripping boilerplate...";
+    } else if (pct < 90) {
+      subtitle.textContent = "🧬 Phase 3: Winnowing polynomial hash fingerprints & comparing pairwise...";
+    } else {
+      subtitle.textContent = "📊 Phase 4: Compiling similarity scores & flagging suspicious matches...";
+    }
+  }
+}
+
+async function triggerPlagiarismScan() {
+  const url = `${getPlagBasePrefix()}/courses/{{ course.id }}/coursework/{{ cw.id }}/plagiarism/scan`;
+  const btn = document.getElementById("btnRunPlagScan");
+  btn.disabled = true;
+  document.getElementById("plagScanIcon").textContent = "⏳";
+  document.getElementById("plagScanBtnText").textContent = "Starting...";
+
+  // Immediately display progress bar
+  simulatedProgress = 25;
+  const progressBox = document.getElementById("plagProgressBarBox");
+  if (progressBox) progressBox.style.display = "block";
+  updateProgressUI(simulatedProgress);
+
+  try {
+    const res = await fetch(url, { method: "POST" });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById("plagStatusBadge").textContent = "Analyzing in background...";
+      document.getElementById("plagStatusBadge").style.background = "#fef3c7";
+      document.getElementById("plagStatusBadge").style.color = "#92400e";
+      if (!plagPollInterval) {
+        plagPollInterval = setInterval(loadPlagiarismReport, 1500);
+      }
+    } else {
+      alert("Failed to start scan: " + (data.error || "Unknown"));
+      btn.disabled = false;
+      if (progressBox) progressBox.style.display = "none";
+    }
+  } catch (err) {
+    alert("Error triggering scan: " + err);
+    btn.disabled = false;
+    if (progressBox) progressBox.style.display = "none";
+  }
+}
+
+function renderPlagTable() {
+  const tbody = document.getElementById("plagTableBody");
+  tbody.innerHTML = "";
+
+  const query = (document.getElementById("plagSearchInput").value || "").toLowerCase().trim();
+  const flaggedOnly = document.getElementById("chkFlaggedOnly").checked;
+
+  let filtered = allPlagMatches.filter(m => {
+    if (flaggedOnly && !m.is_flagged) return false;
+    if (query) {
+      const s1 = `${m.user1_name} ${m.user1_roll}`.toLowerCase();
+      const s2 = `${m.user2_name} ${m.user2_roll}`.toLowerCase();
+      if (!s1.includes(query) && !s2.includes(query)) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" style="padding: 2.5rem 1rem; text-align: center; color: #64748b;">
+      ${allPlagMatches.length === 0 ? "No student submissions or similarity detected." : "No records match your filter criteria."}
+    </td></tr>`;
+    return;
+  }
+
+  filtered.forEach(m => {
+    const tr = document.createElement("tr");
+    tr.style.borderBottom = "1px solid #e2e8f0";
+    if (m.is_flagged) {
+      tr.style.background = "#fff1f2";
+    }
+
+    const sim = m.similarity_pct || 0;
+    let barColor = "#22c55e";
+    let riskBadge = '<span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 800;">Low Risk</span>';
+
+    if (sim >= 70) {
+      barColor = "#ef4444";
+      riskBadge = '<span class="badge" style="background: #fee2e2; color: #b91c1c; font-weight: 800;">🚩 HIGH RISK</span>';
+    } else if (sim >= 40) {
+      barColor = "#f59e0b";
+      riskBadge = '<span class="badge" style="background: #fef3c7; color: #b45309; font-weight: 800;">⚠️ Moderate</span>';
+    }
+
+    tr.innerHTML = `
+      <td style="padding: 10px 14px;">
+        <div style="font-weight: 800; color: #1e3a8a;">${m.user1_name}</div>
+        <div style="font-family: monospace; font-size: 0.78rem; color: #64748b;">${m.user1_roll}</div>
+      </td>
+      <td style="padding: 10px 14px;">
+        <div style="font-weight: 800; color: #1e3a8a;">${m.user2_name}</div>
+        <div style="font-family: monospace; font-size: 0.78rem; color: #64748b;">${m.user2_roll}</div>
+      </td>
+      <td style="padding: 10px 14px;">
+        <div style="display: flex; align-items: center; gap: 0.65rem;">
+          <div style="flex: 1; height: 10px; background: #e2e8f0; border-radius: 9999px; overflow: hidden;">
+            <div style="width: ${sim}%; height: 100%; background: ${barColor}; border-radius: 9999px;"></div>
+          </div>
+          <span style="font-weight: 900; font-family: monospace; font-size: 0.9rem; color: ${sim >= 70 ? '#b91c1c' : '#334155'};">${sim}%</span>
+        </div>
+      </td>
+      <td style="padding: 10px 14px; text-align: center;">
+        ${riskBadge}
+      </td>
+      <td style="padding: 10px 14px; text-align: right;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="inspectPair(${m.user1_sub_id}, ${m.user2_sub_id}, '${encodeURIComponent(m.user1_name)}', '${encodeURIComponent(m.user2_name)}', ${sim})" style="font-weight: 700; padding: 4px 10px; font-size: 0.8rem; background: #ffffff; border: 1.5px solid #cbd5e1; cursor: pointer;">
+          Inspect &rarr;
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function filterPlagRows() {
+  renderPlagTable();
+}
+
+async function inspectPair(sub1, sub2, name1Enc, name2Enc, sim) {
+  const name1 = decodeURIComponent(name1Enc);
+  const name2 = decodeURIComponent(name2Enc);
+  document.getElementById("inspectSubtitle").textContent = `${name1} vs ${name2} (${sim}% Similarity)`;
+  document.getElementById("inspectStu1Title").textContent = name1;
+  document.getElementById("inspectStu2Title").textContent = name2;
+  document.getElementById("inspectCode1").textContent = "Loading source code...";
+  document.getElementById("inspectCode2").textContent = "Loading source code...";
+
+  const modal = document.getElementById("plagInspectModal");
+  if (modal) modal.style.display = "flex";
+
+  const url = `${getPlagBasePrefix()}/courses/{{ course.id }}/coursework/{{ cw.id }}/plagiarism/compare/${sub1}/${sub2}`;
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    document.getElementById("inspectCode1").textContent = data.student1?.code || "No source code found";
+    document.getElementById("inspectCode2").textContent = data.student2?.code || "No source code found";
+    document.getElementById("inspectStu1File").textContent = data.student1?.filename || "";
+    document.getElementById("inspectStu2File").textContent = data.student2?.filename || "";
+  } catch (err) {
+    document.getElementById("inspectCode1").textContent = "Error loading code: " + err;
+    document.getElementById("inspectCode2").textContent = "Error loading code: " + err;
+  }
+}
 </script>
 {% endif %}
 {% endblock %}

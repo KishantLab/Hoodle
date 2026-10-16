@@ -1,0 +1,415 @@
+{% extends "base.html" %}
+
+{% block title %}Submissions & Proctoring: {{ quiz.title }} - Hoodle{% endblock %}
+
+{% block content %}
+<div class="container-responsive" style="max-width: 1100px; margin: 1.5rem auto 4rem auto; padding: 0 1rem;">
+  
+  <!-- Breadcrumb & Top Bar -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+      <a href="{{ url_for('quizzes.course_quizzes', course_id=course.id) }}" style="color: #2563eb; text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 0.3rem;">
+        ← Back to Quizzes
+      </a>
+      <span style="color: #94a3b8;">/</span>
+      <span style="color: #64748b; font-weight: 600;">{{ course.code }}</span>
+      <span style="color: #94a3b8;">/</span>
+      <span style="color: #1e293b; font-weight: 700;">Submissions &amp; Proctoring</span>
+    </div>
+
+    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+      <a href="{{ url_for('quizzes.edit_quiz', course_id=course.id, quiz_id=quiz.id) }}" class="btn btn-secondary" style="font-size: 0.82rem; padding: 0.45rem 0.85rem; font-weight: 700;">
+        ✏️ Edit Questions
+      </a>
+
+      <!-- Autograde All Submissions Button -->
+      <form action="{{ url_for('quizzes.autograde_all_submissions', course_id=course.id, quiz_id=quiz.id) }}" method="POST" style="display: inline-block;">
+        <button type="submit" class="btn" style="background: #4f46e5; color: white; font-size: 0.82rem; padding: 0.45rem 0.85rem; font-weight: 700; border-radius: 6px; cursor: pointer;" title="Automatically evaluate all submitted answers against the question answer keys">
+          🤖 Autograde All
+        </button>
+      </form>
+
+      <!-- Toggle Release Grades to Students -->
+      {% if quiz.grades_released %}
+        <form action="{{ url_for('quizzes.toggle_release_grades', course_id=course.id, quiz_id=quiz.id) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Hide grades from students? Their scorecards will show Under Review.');">
+          <input type="hidden" name="release" value="0">
+          <button type="submit" class="btn btn-secondary" style="font-size: 0.82rem; padding: 0.45rem 0.85rem; font-weight: 700;" title="Hide scores from student scorecards">
+            🔒 Hide Grades
+          </button>
+        </form>
+      {% else %}
+        <form action="{{ url_for('quizzes.toggle_release_grades', course_id=course.id, quiz_id=quiz.id) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Release grades to students? Scores and pass/fail evaluations will immediately appear in the course Grades table and on student scorecards.');">
+          <input type="hidden" name="release" value="1">
+          <button type="submit" class="btn" style="background: #10b981; color: white; font-size: 0.82rem; padding: 0.45rem 0.85rem; font-weight: 700; border-radius: 6px; cursor: pointer;" title="Make scores and pass/fail badges visible to students and sync to course Grades">
+            📢 Release Grades
+          </button>
+        </form>
+      {% endif %}
+
+      <!-- Live Data Auto-Refresh Status Indicator -->
+      <div id="autoRefreshIndicator" style="display: flex; align-items: center; gap: 0.4rem; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 700;">
+        <span style="display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%;"></span>
+        <span>Live Updates in <strong id="refreshTimerCountdown">10</strong>s</span>
+      </div>
+
+      <button id="toggleAutoRefreshBtn" onclick="toggleAutoRefresh()" class="btn btn-secondary" style="font-size: 0.82rem; padding: 0.45rem 0.8rem; font-weight: 700;">
+        ⏸️ Pause
+      </button>
+
+      <button id="refreshNowBtn" onclick="triggerImmediateRefresh()" class="btn btn-primary" style="font-size: 0.82rem; padding: 0.45rem 0.9rem; font-weight: 700;">
+        🔄 Refresh Now
+      </button>
+    </div>
+  </div>
+
+  <style>
+    @keyframes locationChangePulse {
+      0% {
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.45);
+        background-color: rgba(236, 253, 245, 0.7);
+      }
+      50% {
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.25);
+        background-color: rgba(236, 253, 245, 0.35);
+      }
+      100% {
+        box-shadow: none;
+        background-color: transparent;
+      }
+    }
+    .flash-location-change {
+      animation: locationChangePulse 2.2s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 12px;
+    }
+  </style>
+
+  <!-- Quiz Meta & Stats Summary -->
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <h1 style="font-size: 1.35rem; font-weight: 800; color: #0f172a; margin: 0 0 0.4rem 0;">
+          {{ quiz.title }}
+        </h1>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.85rem; color: #64748b; align-items: center; margin-top: 0.35rem;">
+          <span>⏱️ Duration: <strong>{{ quiz.duration_minutes }}</strong> mins</span>
+          <span>🏆 Total Possible: <strong>{{ quiz.total_marks }}</strong> pts</span>
+          <span>🎯 Pass Threshold: <strong>{{ quiz.pass_marks }}</strong> pts</span>
+          {% if quiz.grades_released %}
+            <span class="badge" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 800; font-size: 0.78rem; padding: 2px 8px; border-radius: 6px;">
+              📢 Grades Released to Students &amp; Synced to Gradebook
+            </span>
+          {% else %}
+            <span class="badge" style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; font-weight: 800; font-size: 0.78rem; padding: 2px 8px; border-radius: 6px;">
+              🔒 Grades Hidden (Under Instructor Review)
+            </span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Quick Stats Badges -->
+      <div id="liveQuickStats" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.5rem 1rem; text-align: center;">
+          <div style="font-size: 1.25rem; font-weight: 800; color: #0f172a;">{{ attempts|length }}</div>
+          <div style="font-size: 0.72rem; color: #64748b; text-transform: uppercase; font-weight: 700;">Total Attempts</div>
+        </div>
+        <div style="background: {% if pending_approvals %}#fffbeb{% else %}#f8fafc{% endif %}; border: 1px solid {% if pending_approvals %}#fde68a{% else %}#e2e8f0{% endif %}; border-radius: 8px; padding: 0.5rem 1rem; text-align: center;">
+          <div style="font-size: 1.25rem; font-weight: 800; color: {% if pending_approvals %}#b45309{% else %}#0f172a{% endif %};">{{ pending_approvals|length }}</div>
+          <div style="font-size: 0.72rem; color: {% if pending_approvals %}#b45309{% else %}#64748b{% endif %}; text-transform: uppercase; font-weight: 700;">Pending Approval</div>
+        </div>
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 0.5rem 1rem; text-align: center;">
+          <div style="font-size: 1.25rem; font-weight: 800; color: #1d4ed8;">{{ active_attempts|length }}</div>
+          <div style="font-size: 0.72rem; color: #1d4ed8; text-transform: uppercase; font-weight: 700;">In Progress</div>
+        </div>
+        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 0.5rem 1rem; text-align: center;">
+          <div style="font-size: 1.25rem; font-weight: 800; color: #047857;">{{ completed_attempts|length }}</div>
+          <div style="font-size: 0.72rem; color: #047857; text-transform: uppercase; font-weight: 700;">Completed</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 1: REMOTE APPROVAL REQUESTS GATE -->
+  <div id="pendingApprovalsContainer">
+  {% if pending_approvals %}
+    <div style="background: #fffbeb; border: 2px solid #fde68a; border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 2rem;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+        <h3 style="font-size: 1.1rem; font-weight: 800; color: #92400e; margin: 0; display: flex; align-items: center; gap: 0.4rem;">
+          🛡️ Remote Access Requests Requiring Approval ({{ pending_approvals|length }})
+        </h3>
+        <span style="font-size: 0.8rem; color: #b45309;">Students connecting via mobile app or public internet</span>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table class="table-responsive" style="width: 100%; border-collapse: collapse; font-size: 0.88rem; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+          <thead>
+            <tr style="background: #fef3c7; color: #92400e; text-align: left; border-bottom: 1px solid #fde68a;">
+              <th style="padding: 0.75rem 1rem; font-weight: 800;">Roll Number</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 800;">Student Name</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 800;">Requested At</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 800; text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in pending_approvals %}
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 0.75rem 1rem; font-weight: 700; color: #0f172a;">{{ a.roll_number or 'N/A' }}</td>
+                <td style="padding: 0.75rem 1rem; color: #334155;">{{ a.display_name }} ({{ a.email }})</td>
+                <td style="padding: 0.75rem 1rem; color: #64748b; font-size: 0.82rem;">{{ a.started_at }}</td>
+                <td style="padding: 0.75rem 1rem; text-align: right;">
+                  <form action="{{ url_for('quizzes.approve_remote_student', course_id=course.id, quiz_id=quiz.id, attempt_id=a.id) }}" method="POST" style="display: inline-block;">
+                    <button type="submit" class="btn" style="background: #10b981; color: white; font-weight: 700; font-size: 0.82rem; padding: 0.4rem 0.9rem; border-radius: 6px; cursor: pointer;">
+                      ✅ Approve Student
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+  </div>
+
+  <!-- SECTION 2: LIVE IN-PROGRESS ATTEMPTS -->
+  <div id="activeAttemptsContainer" style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 2rem; transition: background-color 0.4s ease;">
+    <h3 style="font-size: 1.1rem; font-weight: 800; color: #1e293b; margin: 0 0 1rem 0; display: flex; align-items: center; gap: 0.4rem;">
+      ⚡ Active In-Progress Students ({{ active_attempts|length }})
+    </h3>
+
+    {% if not active_attempts %}
+      <p style="color: #64748b; font-size: 0.88rem; margin: 0;">No students are actively taking this quiz right now.</p>
+    {% else %}
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+          <thead>
+            <tr style="background: #f8fafc; color: #475569; text-align: left; border-bottom: 1px solid #e2e8f0;">
+              <th style="padding: 0.75rem 1rem; font-weight: 700;">Roll Number</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 700;">Student Name</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 700;">Started At</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 700;">Strikes</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 700; text-align: right;">Reopen / Extra Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in active_attempts %}
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 0.75rem 1rem; font-weight: 700; color: #0f172a;">{{ a.roll_number or 'N/A' }}</td>
+                <td style="padding: 0.75rem 1rem; color: #334155;">{{ a.display_name }}</td>
+                <td style="padding: 0.75rem 1rem; color: #64748b; font-size: 0.82rem;">{{ a.started_at }}</td>
+                <td style="padding: 0.75rem 1rem;">
+                  <span class="badge" style="background: {% if a.strikes > 0 %}#fee2e2{% else %}#f1f5f9{% endif %}; color: {% if a.strikes > 0 %}#b91c1c{% else %}#475569{% endif %}; font-weight: 800; font-size: 0.8rem; padding: 2px 7px; border-radius: 4px;">
+                    {{ a.strikes or 0 }} / 3
+                  </span>
+                </td>
+                <td style="padding: 0.75rem 1rem; text-align: right;">
+                  <form action="{{ url_for('quizzes.reopen_student_exam', course_id=course.id, quiz_id=quiz.id, attempt_id=a.id) }}" method="POST" style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                    <select name="extra_minutes" style="padding: 0.25rem 0.5rem; font-size: 0.78rem; border-radius: 4px; border: 1px solid #cbd5e1;">
+                      <option value="5">+5 mins</option>
+                      <option value="10" selected>+10 mins</option>
+                      <option value="20">+20 mins</option>
+                    </select>
+                    <button type="submit" class="btn" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 0.78rem; padding: 0.3rem 0.65rem; font-weight: 700; border-radius: 4px;">
+                      ⏱️ Add Time
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- SECTION 3: COMPLETED SUBMISSIONS & REOPEN WORKFLOW -->
+  <div id="completedAttemptsContainer" style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.25rem 1.5rem; transition: background-color 0.4s ease;">
+    <h3 style="font-size: 1.1rem; font-weight: 800; color: #1e293b; margin: 0 0 1rem 0; display: flex; align-items: center; gap: 0.4rem;">
+      📊 Completed &amp; Evaluated Submissions ({{ completed_attempts|length }})
+    </h3>
+
+    {% if not completed_attempts %}
+      <p style="color: #64748b; font-size: 0.88rem; margin: 0;">No completed submissions yet.</p>
+    {% else %}
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+          <thead>
+            <tr style="background: #f8fafc; color: #475569; text-align: left; border-bottom: 1px solid #e2e8f0;">
+              <th style="padding: 0.75rem 1rem; font-weight: 700;">Roll Number</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 700;">Student Name</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 700;">Score / {{ quiz.total_marks }}</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 700;">Status</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 700;">Submitted At</th>
+              <th style="padding: 0.75rem 1rem; font-weight: 700; text-align: right;">Instructor Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in completed_attempts %}
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 0.75rem 1rem; font-weight: 700; color: #0f172a;">{{ a.roll_number or 'N/A' }}</td>
+                <td style="padding: 0.75rem 1rem; color: #334155;">{{ a.display_name }}</td>
+                <td style="padding: 0.75rem 1rem;">
+                  <strong style="color: {% if a.is_passed %}#047857{% else %}#b91c1c{% endif %}; font-size: 0.95rem;">
+                    {{ a.score }} pts
+                  </strong>
+                  <span class="badge" style="background: {% if a.is_passed %}#ecfdf5{% else %}#fef2f2{% endif %}; color: {% if a.is_passed %}#047857{% else %}#b91c1c{% endif %}; font-size: 0.7rem; padding: 1px 5px; border-radius: 3px; margin-left: 0.25rem;">
+                    {% if a.is_passed %}PASS{% else %}FAIL{% endif %}
+                  </span>
+                </td>
+                <td style="padding: 0.75rem 1rem;">
+                  {% if a.status == 'auto_submitted_violation' %}
+                    <span class="badge" style="background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; font-weight: 800; font-size: 0.72rem; padding: 2px 6px; border-radius: 4px;">
+                      🛑 Auto-Submitted (Strike 3)
+                    </span>
+                  {% else %}
+                    <span class="badge" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 800; font-size: 0.72rem; padding: 2px 6px; border-radius: 4px;">
+                      ✓ Submitted Normally
+                    </span>
+                  {% endif %}
+                </td>
+                <td style="padding: 0.75rem 1rem; color: #64748b; font-size: 0.82rem;">{{ a.submitted_at or 'N/A' }}</td>
+                <td style="padding: 0.75rem 1rem; text-align: right; white-space: nowrap;">
+                  <!-- Inspect & Justification Grading Action -->
+                  <a href="{{ url_for('quizzes.inspect_submission', course_id=course.id, quiz_id=quiz.id, attempt_id=a.id) }}" class="btn btn-primary" style="background: #2563eb; color: white; font-size: 0.78rem; padding: 0.35rem 0.75rem; font-weight: 700; border-radius: 4px; text-decoration: none; margin-right: 0.35rem; display: inline-flex; align-items: center; gap: 0.25rem;">
+                    🔍 Inspect &amp; Grade
+                  </a>
+
+                  <!-- Reopen Exam Action -->
+                  <form action="{{ url_for('quizzes.reopen_student_exam', course_id=course.id, quiz_id=quiz.id, attempt_id=a.id) }}" method="POST" onsubmit="return confirm('Reopen exam for {{ a.display_name }}? Strikes will reset to 0, extra time will be granted, and all previously autosaved answers remain intact.');" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+                    <select name="extra_minutes" style="padding: 0.25rem 0.5rem; font-size: 0.78rem; border-radius: 4px; border: 1px solid #cbd5e1;">
+                      <option value="5">+5 mins</option>
+                      <option value="10" selected>+10 mins</option>
+                      <option value="15">+15 mins</option>
+                    </select>
+                    <button type="submit" class="btn" style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; font-size: 0.78rem; padding: 0.3rem 0.65rem; font-weight: 700; border-radius: 4px; cursor: pointer;">
+                      🔓 Reopen Exam
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<script>
+let autoRefreshSec = 10;
+let refreshCountdown = autoRefreshSec;
+let isPaused = false;
+let isRefreshing = false;
+
+function tickRefresh() {
+  if (isPaused || isRefreshing) return;
+  refreshCountdown--;
+  const cdEl = document.getElementById("refreshTimerCountdown");
+  if (cdEl) cdEl.textContent = refreshCountdown;
+  if (refreshCountdown <= 0) {
+    performAjaxRefresh(false);
+  }
+}
+
+function flashUpdatedLocation(el) {
+  if (!el) return;
+  el.classList.remove("flash-location-change");
+  void el.offsetWidth; // Force CSS DOM reflow to re-trigger animation
+  el.classList.add("flash-location-change");
+}
+
+async function performAjaxRefresh(isManual = false) {
+  if (isRefreshing) return;
+  isRefreshing = true;
+
+  const btn = document.getElementById("refreshNowBtn");
+  if (btn && isManual) {
+    btn.innerHTML = '🔄 <span style="font-size:0.75rem;">Updating...</span>';
+    btn.disabled = true;
+  }
+
+  try {
+    const res = await fetch(window.location.href, {
+      headers: {
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      cache: "no-cache"
+    });
+
+    if (res.ok) {
+      const htmlText = await res.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlText, "text/html");
+
+      // Containers to compare and update targeted in-place
+      const targets = [
+        "liveQuickStats",
+        "pendingApprovalsContainer",
+        "activeAttemptsContainer",
+        "completedAttemptsContainer"
+      ];
+
+      targets.forEach(id => {
+        const currentEl = document.getElementById(id);
+        const newEl = doc.getElementById(id);
+
+        if (currentEl && newEl) {
+          // Normalize whitespace and compare HTML
+          const currentHtml = currentEl.innerHTML.replace(/\s+/g, " ").trim();
+          const newHtml = newEl.innerHTML.replace(/\s+/g, " ").trim();
+
+          if (currentHtml !== newHtml) {
+            // Check if teacher/TA currently has focus on an input/select inside this container
+            const activeElem = document.activeElement;
+            const isEditingInside = activeElem && currentEl.contains(activeElem) && ["INPUT", "SELECT", "TEXTAREA"].includes(activeElem.tagName);
+
+            if (!isEditingInside) {
+              currentEl.innerHTML = newEl.innerHTML;
+              flashUpdatedLocation(currentEl);
+            }
+          }
+        }
+      });
+    }
+  } catch (err) {
+    console.error("Live submissions DOM refresh error:", err);
+  } finally {
+    isRefreshing = false;
+    refreshCountdown = autoRefreshSec;
+    const cdEl = document.getElementById("refreshTimerCountdown");
+    if (cdEl) cdEl.textContent = refreshCountdown;
+    if (btn) {
+      btn.innerHTML = '🔄 Refresh Now';
+      btn.disabled = false;
+    }
+  }
+}
+
+function triggerImmediateRefresh() {
+  performAjaxRefresh(true);
+}
+
+function toggleAutoRefresh() {
+  isPaused = !isPaused;
+  const btn = document.getElementById("toggleAutoRefreshBtn");
+  const indicator = document.getElementById("autoRefreshIndicator");
+  if (isPaused) {
+    btn.textContent = "▶️ Resume";
+    indicator.style.background = "#f1f5f9";
+    indicator.style.borderColor = "#cbd5e1";
+    indicator.style.color = "#64748b";
+    indicator.innerHTML = "<span>⏸️ Auto-refresh paused</span>";
+  } else {
+    btn.textContent = "⏸️ Pause";
+    refreshCountdown = autoRefreshSec;
+    indicator.style.background = "#ecfdf5";
+    indicator.style.borderColor = "#a7f3d0";
+    indicator.style.color = "#065f46";
+    indicator.innerHTML = '<span style="display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%;"></span> <span>Live Updates in <strong id="refreshTimerCountdown">' + refreshCountdown + '</strong>s</span>';
+  }
+}
+
+setInterval(tickRefresh, 1000);
+</script>
+{% endblock %}

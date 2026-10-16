@@ -1,0 +1,1022 @@
+{% extends "base.html" %}
+
+{% block title %}Hoodle - Accelerated Classroom &amp; Lab Learning Platform | hoodle.in{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Home / Landing Page Styling */
+  .home-wrapper {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1rem 4rem 1rem;
+  }
+
+  /* Hero Section */
+  .hero-container {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%);
+    border-radius: var(--radius-xl, 20px);
+    color: #ffffff;
+    padding: 3.5rem 2.5rem;
+    margin-top: 1rem;
+    margin-bottom: 2.5rem;
+    box-shadow: 0 20px 40px -15px rgba(37, 99, 235, 0.35);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero-container::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, rgba(37, 99, 235, 0) 70%);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr;
+    gap: 2.5rem;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+  }
+
+  .hero-badge-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .hero-pill-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 0.35rem 0.85rem;
+    border-radius: 9999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .hero-pill-badge.live-indicator {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #a7f3d0;
+  }
+
+  .hero-pill-badge.live-indicator .pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    animation: livePulse 2s infinite;
+  }
+
+  @keyframes livePulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  }
+
+  .hero-title {
+    font-family: var(--font-display, 'Outfit', sans-serif);
+    font-size: 3rem;
+    font-weight: 900;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+    margin-bottom: 1rem;
+  }
+
+  .hero-title .gradient-text {
+    background: linear-gradient(135deg, #60a5fa 0%, #a5b4fc 50%, #ffffff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .hero-lead {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: #e2e8f0;
+    margin-bottom: 2rem;
+    max-width: 580px;
+    font-weight: 400;
+  }
+
+  .hero-cta-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .btn-hero-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: #ffffff;
+    color: #1e3a8a;
+    font-weight: 800;
+    font-size: 1rem;
+    padding: 0.85rem 1.75rem;
+    border-radius: 12px;
+    text-decoration: none;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s ease;
+  }
+
+  .btn-hero-primary:hover {
+    background: #f8fafc;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+    color: #1d4ed8;
+  }
+
+  .btn-hero-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    color: #ffffff;
+    border: 1.5px solid rgba(255, 255, 255, 0.35);
+    font-weight: 700;
+    font-size: 1rem;
+    padding: 0.85rem 1.65rem;
+    border-radius: 12px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+
+  .btn-hero-secondary:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: #ffffff;
+    transform: translateY(-2px);
+    color: #ffffff;
+  }
+
+  .btn-hero-apk {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #10b981;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 0.92rem;
+    padding: 0.85rem 1.4rem;
+    border-radius: 12px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  }
+
+  .btn-hero-apk:hover {
+    background: #059669;
+    transform: translateY(-2px);
+    color: #ffffff;
+  }
+
+  /* Hero Showcase Preview Mockup */
+  .hero-preview-frame {
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(12px);
+  }
+
+  .preview-top-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: rgba(30, 41, 59, 0.8);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .preview-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .dot-red { background: #ef4444; }
+  .dot-yellow { background: #f59e0b; }
+  .dot-green { background: #10b981; }
+
+  .preview-address-bar {
+    flex: 1;
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: 6px;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.78rem;
+    color: #94a3b8;
+    text-align: center;
+    font-family: monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+  }
+
+  .preview-body {
+    padding: 1.25rem;
+  }
+
+  .preview-card-highlight {
+    background: rgba(30, 41, 59, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+  }
+
+  /* Stats Bar */
+  .stats-bar-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+    margin-bottom: 3.5rem;
+  }
+
+  .stat-card {
+    background: #ffffff;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: var(--radius-lg, 16px);
+    padding: 1.5rem;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .stat-value {
+    font-family: var(--font-display, 'Outfit', sans-serif);
+    font-size: 2.25rem;
+    font-weight: 800;
+    color: var(--primary, #2563eb);
+    line-height: 1.1;
+    margin-bottom: 0.35rem;
+  }
+
+  .stat-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  /* Section Headers */
+  .section-header-block {
+    text-align: center;
+    max-width: 720px;
+    margin: 0 auto 2.5rem auto;
+  }
+
+  .section-eyebrow {
+    display: inline-block;
+    background: var(--primary-light, #eff6ff);
+    color: var(--primary, #2563eb);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.3rem 0.85rem;
+    border-radius: 9999px;
+    margin-bottom: 0.75rem;
+  }
+
+  .section-title {
+    font-family: var(--font-display, 'Outfit', sans-serif);
+    font-size: 2.25rem;
+    font-weight: 800;
+    color: var(--text-main, #0f172a);
+    margin-bottom: 0.75rem;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+  }
+
+  .section-desc {
+    font-size: 1.05rem;
+    color: var(--text-muted, #64748b);
+    line-height: 1.6;
+  }
+
+  /* Feature Cards Grid */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    margin-bottom: 3.5rem;
+  }
+
+  .feature-card {
+    background: #ffffff;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: var(--radius-lg, 16px);
+    padding: 2rem 1.75rem;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .feature-card:hover {
+    transform: translateY(-4px);
+    border-color: #93c5fd;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .feature-icon-wrap {
+    width: 54px;
+    height: 54px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.75rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .icon-blue { background: #eff6ff; color: #2563eb; }
+  .icon-emerald { background: #ecfdf5; color: #059669; }
+  .icon-purple { background: #f5f3ff; color: #7c3aed; }
+  .icon-amber { background: #fffbeb; color: #d97706; }
+  .icon-rose { background: #fff1f2; color: #e11d48; }
+  .icon-sky { background: #f0f9ff; color: #0284c7; }
+
+  .feature-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text-main, #0f172a);
+    margin-bottom: 0.6rem;
+  }
+
+  .feature-text {
+    font-size: 0.92rem;
+    color: var(--text-muted, #64748b);
+    line-height: 1.55;
+    flex: 1;
+    margin-bottom: 1.25rem;
+  }
+
+  .feature-tags-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .feature-tag-chip {
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: #f1f5f9;
+    color: #475569;
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+
+  /* Visual Tour / Screenshot Showcase */
+  .tour-section {
+    background: #ffffff;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: var(--radius-xl, 20px);
+    padding: 2.5rem;
+    margin-bottom: 3.5rem;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .tour-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2rem;
+    align-items: center;
+  }
+
+  .tour-item-card {
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #f8fafc;
+    transition: transform 0.2s ease;
+  }
+
+  .tour-item-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .tour-item-img {
+    width: 100%;
+    height: 220px;
+    object-fit: cover;
+    object-position: top;
+    display: block;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+  }
+
+  .tour-item-caption {
+    padding: 1rem 1.25rem;
+  }
+
+  .tour-item-title {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text-main, #0f172a);
+    margin-bottom: 0.25rem;
+  }
+
+  .tour-item-sub {
+    font-size: 0.85rem;
+    color: var(--text-muted, #64748b);
+    line-height: 1.4;
+  }
+
+  /* Quick Start Steps */
+  .steps-container {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+    margin-bottom: 3.5rem;
+  }
+
+  .step-card {
+    background: #ffffff;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: var(--radius-lg, 16px);
+    padding: 1.75rem 1.25rem;
+    position: relative;
+  }
+
+  .step-num-bubble {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--primary, #2563eb);
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
+
+  .step-card-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.4rem;
+    color: var(--text-main, #0f172a);
+  }
+
+  .step-card-desc {
+    font-size: 0.86rem;
+    color: var(--text-muted, #64748b);
+    line-height: 1.5;
+  }
+
+  /* Bottom CTA Banner */
+  .cta-banner {
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+    border-radius: var(--radius-xl, 20px);
+    color: #ffffff;
+    padding: 3rem 2rem;
+    text-align: center;
+    box-shadow: 0 15px 30px -10px rgba(37, 99, 235, 0.3);
+  }
+
+  .cta-banner h2 {
+    font-family: var(--font-display, 'Outfit', sans-serif);
+    font-size: 2.2rem;
+    font-weight: 800;
+    margin-bottom: 0.75rem;
+  }
+
+  .cta-banner p {
+    font-size: 1.05rem;
+    opacity: 0.92;
+    max-width: 620px;
+    margin: 0 auto 1.75rem auto;
+  }
+
+  .cta-banner-buttons {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  /* Network Access Box */
+  .net-access-card {
+    background: #f8fafc;
+    border: 1.5px dashed #cbd5e1;
+    border-radius: var(--radius-lg, 16px);
+    padding: 1.5rem;
+    margin-bottom: 3.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  /* Responsive Rules */
+  @media (max-width: 992px) {
+    .hero-grid {
+      grid-template-columns: 1fr;
+      text-align: center;
+    }
+    .hero-lead {
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .hero-cta-buttons {
+      justify-content: center;
+    }
+    .hero-badge-wrap {
+      justify-content: center;
+    }
+    .features-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .stats-bar-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .steps-container {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .tour-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .hero-container {
+      padding: 2.25rem 1.25rem;
+    }
+    .hero-title {
+      font-size: 2.15rem;
+    }
+    .features-grid {
+      grid-template-columns: 1fr;
+    }
+    .stats-bar-grid {
+      grid-template-columns: 1fr;
+    }
+    .steps-container {
+      grid-template-columns: 1fr;
+    }
+    .btn-hero-primary, .btn-hero-secondary, .btn-hero-apk {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="home-wrapper">
+
+  <!-- ========================================== -->
+  <!-- HERO SECTION                               -->
+  <!-- ========================================== -->
+  <section class="hero-container">
+    <div class="hero-grid">
+      <div>
+        <div class="hero-badge-wrap">
+          <span class="hero-pill-badge live-indicator">
+            <span class="pulse-dot"></span>
+            Hoodle v2.0 Live
+          </span>
+          <span class="hero-pill-badge">🌐 hoodle.in</span>
+          <span class="hero-pill-badge">⚡ ACCL Lab • IIT Bhilai</span>
+          <span class="hero-pill-badge">💻 Cloud IDE &amp; Lab Assessments</span>
+        </div>
+
+        <h1 class="hero-title">
+          Next-Generation <br>
+          <span class="gradient-text">Classroom &amp; Lab</span> Platform
+        </h1>
+
+        <p class="hero-lead">
+          Built specifically for rigorous, high-velocity engineering coursework at IIT Bhilai. Instant anti-proxy attendance, assignment lockers, real-time discussions, and resilient classroom infrastructure.
+        </p>
+
+        <div class="hero-cta-buttons">
+          <a href="{{ url_for('login') }}" class="btn-hero-primary">
+            <span>Sign In to Classroom</span>
+            <span style="font-size: 1.15rem;">→</span>
+          </a>
+          <a href="{{ url_for('login', tab='register') }}" class="btn-hero-secondary">
+            <span>🎓 Student Register</span>
+          </a>
+          <a href="{{ url_for('download_apk') }}" class="btn-hero-apk" title="Download Official Android App APK">
+            <span>📱 Download App (.apk)</span>
+            <span style="background: rgba(255,255,255,0.25); font-size: 0.72rem; padding: 2px 6px; border-radius: 9999px;">v1.2</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Live Mockup / Visual Frame -->
+      <div class="hero-preview-frame">
+        <div class="preview-top-bar">
+          <div class="preview-dot dot-red"></div>
+          <div class="preview-dot dot-yellow"></div>
+          <div class="preview-dot dot-green"></div>
+          <div class="preview-address-bar">
+            <span>🔒</span> https://hoodle.in/courses
+          </div>
+        </div>
+        <div class="preview-body">
+          <div class="preview-card-highlight">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <span style="font-size: 0.75rem; font-weight: 700; color: #60a5fa; text-transform: uppercase;">Active Class Attendance</span>
+              <span style="background: #10b981; color: white; font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 9999px;">20m Geofenced</span>
+            </div>
+            <div style="font-size: 0.95rem; font-weight: 700; color: white; margin-bottom: 0.25rem;">CSL100: Introduction to Computer Science</div>
+            <div style="font-size: 0.78rem; color: #94a3b8;">Rotating Dynamic QR Code • Smart Refresh • Anti-Proxy Protection</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div style="background: rgba(30, 41, 59, 0.7); border-radius: 8px; padding: 0.75rem; border: 1px solid rgba(255,255,255,0.06);">
+              <div style="font-size: 0.72rem; color: #94a3b8;">High-Availability</div>
+              <div style="font-weight: 800; font-size: 1.1rem; color: #34d399;">Active</div>
+              <div style="font-size: 0.68rem; color: #64748b;">Zero-Lag Classrooms</div>
+            </div>
+            <div style="background: rgba(30, 41, 59, 0.7); border-radius: 8px; padding: 0.75rem; border: 1px solid rgba(255,255,255,0.06);">
+              <div style="font-size: 0.72rem; color: #94a3b8;">Submission Locker</div>
+              <div style="font-weight: 800; font-size: 1.1rem; color: #60a5fa;">SHA-256</div>
+              <div style="font-size: 0.68rem; color: #64748b;">Cryptographic Receipts</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- STATS OVERVIEW                             -->
+  <!-- ========================================== -->
+  <div class="stats-bar-grid">
+    <div class="stat-card">
+      <div class="stat-value">100%</div>
+      <div class="stat-label">Anti-Proxy Geofencing</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">&lt;10ms</div>
+      <div class="stat-label">Ultra-Low Latency</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">SHA-256</div>
+      <div class="stat-label">Tamper-Proof Receipts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">Instant</div>
+      <div class="stat-label">Live Evaluation &amp; Stream</div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- CORE CAPABILITIES (FEATURES GRID)          -->
+  <!-- ========================================== -->
+  <div class="section-header-block">
+    <span class="section-eyebrow">Enterprise-Grade Classroom Capabilities</span>
+    <h2 class="section-title">Engineered for Academic Excellence</h2>
+    <p class="section-desc">
+      Hoodle replaces legacy, sluggish LMS portals with a blazing-fast, distributed system purpose-built for computer science classrooms and intensive coding laboratories.
+    </p>
+  </div>
+
+  <div class="features-grid">
+    <!-- Feature 1: Anti-Proxy QR Attendance -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-blue">📍</div>
+      <h3 class="feature-title">Smart Anti-Proxy Attendance</h3>
+      <p class="feature-text">
+        Eliminates proxy attendance through 20-meter venue geofencing, hardware device fingerprinting, and cryptographic QR codes rotating every 5 seconds. Includes 1-click teacher bulk-present and excused day exclusions.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">20m Venue Geofence</span>
+        <span class="feature-tag-chip">5s Dynamic QR</span>
+        <span class="feature-tag-chip">Hardware Lock</span>
+        <span class="feature-tag-chip">Multi-Venue</span>
+      </div>
+    </div>
+
+    <!-- Feature 2: Assignment Lockers -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-emerald">📁</div>
+      <h3 class="feature-title">Coursework &amp; Exam Lockers</h3>
+      <p class="feature-text">
+        Streamlined lab exam submission lockers with strict countdown timers, automatic ZIP archive validation, zero-delay ingestion, and tamper-proof SHA-256 digital submission receipts.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">SHA-256 Receipts</span>
+        <span class="feature-tag-chip">Auto ZIP Validation</span>
+        <span class="feature-tag-chip">Exam Timers</span>
+        <span class="feature-tag-chip">Git Lockers</span>
+      </div>
+    </div>
+
+    <!-- Feature 3: Real-Time Communication -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-purple">💬</div>
+      <h3 class="feature-title">Real-Time Course Stream</h3>
+      <p class="feature-text">
+        Instant announcement feeds, classroom notifications, and TA-student discussion threads. Never miss a lab deadline, venue shift, or assignment clarification.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">Broadcast Stream</span>
+        <span class="feature-tag-chip">TA Consultation</span>
+        <span class="feature-tag-chip">Instant Alerts</span>
+      </div>
+    </div>
+
+    <!-- Feature 4: High-Concurrency Resilience -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-amber">⚡</div>
+      <h3 class="feature-title">High-Concurrency Resilience</h3>
+      <p class="feature-text">
+        Engineered for simultaneous lecture-wide load, sustaining hundreds of concurrent student scans, live countdowns, and real-time submissions with zero latency spikes or bottlenecks.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">High Concurrency</span>
+        <span class="feature-tag-chip">Sub-Second Sync</span>
+        <span class="feature-tag-chip">Failover Ready</span>
+      </div>
+    </div>
+
+    <!-- Feature 5: Dedicated Android App -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-rose">📱</div>
+      <h3 class="feature-title">Native Mobile Application</h3>
+      <p class="feature-text">
+        Custom Android application featuring camera-accelerated QR scanning, haptic feedback, and a seamless one-tap switcher between Campus Wi-Fi and Public Internet.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">Camera QR Scanner</span>
+        <span class="feature-tag-chip">Campus &amp; Internet Switcher</span>
+        <span class="feature-tag-chip">Offline Sync</span>
+      </div>
+    </div>
+
+    <!-- Feature 6: Visual Analytics & Gradebook -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-sky">📊</div>
+      <h3 class="feature-title">Gradebook &amp; Analytics</h3>
+      <p class="feature-text">
+        Real-time grade distribution charts, mandatory 75% attendance quota warnings, and 1-click comprehensive CSV exports for instructors and academic coordinators.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">75% Quota Warning</span>
+        <span class="feature-tag-chip">Visual Histograms</span>
+        <span class="feature-tag-chip">CSV Export</span>
+      </div>
+    </div>
+
+    <!-- Feature 7: Interactive Quizzes & Automated Assessment Engine -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-blue">🎯</div>
+      <h3 class="feature-title">Interactive Quizzes &amp; Assessments</h3>
+      <p class="feature-text">
+        Auto-graded assessments supporting 6 question formats (MCQ, MSQ with partial grading, blanks, justifications, and C/CUDA/Python code output predictions). Features anti-cheat lockdown, continuous autosave, and 1-click bulk import from PDF, JSON, or Aiken formats.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">Anti-Cheat Lockdown</span>
+        <span class="feature-tag-chip">1-Click PDF/JSON Import</span>
+        <span class="feature-tag-chip">CUDA/C/Python Predict</span>
+        <span class="feature-tag-chip">Continuous Autosave</span>
+      </div>
+    </div>
+
+    <!-- Feature 8: Cloud IDE & Interactive Terminal -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-purple">💻</div>
+      <h3 class="feature-title">Cloud Monaco IDE &amp; Interactive Terminal</h3>
+      <p class="feature-text">
+        Modern, browser-based coding studio with syntax highlighting, file explorer, and live compilation for C, C++, CUDA, and Python. Includes an in-browser interactive terminal session directly in the student's personal course workspace.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">Browser Monaco IDE</span>
+        <span class="feature-tag-chip">Interactive Terminal</span>
+        <span class="feature-tag-chip">CUDA / C / Python</span>
+        <span class="feature-tag-chip">Isolated Workspaces</span>
+      </div>
+    </div>
+
+    <!-- Feature 9: Plagiarism & Code Similarity Detector -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-rose">🔍</div>
+      <h3 class="feature-title">Plagiarism &amp; Code Similarity Detector</h3>
+      <p class="feature-text">
+        Advanced pairwise code similarity analysis for programming assignments and lab exams. Features structural grammar normalization, starter template subtraction to prevent false positives, and side-by-side code diff inspection for instructors.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">Pairwise Analysis</span>
+        <span class="feature-tag-chip">AST Normalization</span>
+        <span class="feature-tag-chip">Template Filtering</span>
+        <span class="feature-tag-chip">Side-by-Side Diff</span>
+      </div>
+    </div>
+
+    <!-- Feature 10: Timed Lab Examination Lockdown Shield -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-amber">🛡️</div>
+      <h3 class="feature-title">Timed Lab Exam Lockdown Shield</h3>
+      <p class="feature-text">
+        Dedicated proctored environment for practical examinations featuring full-screen enforcement, active tab-switch detection, synchronized countdown timers, and automatic workspace freezing and submission at deadline expiration.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">Fullscreen Lockdown</span>
+        <span class="feature-tag-chip">Tab-Switch Tracking</span>
+        <span class="feature-tag-chip">Clean Exam Workspace</span>
+        <span class="feature-tag-chip">Auto-Submit at 00:00</span>
+      </div>
+    </div>
+
+    <!-- Feature 11: Smart Problem & Test Case Importer -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-emerald">📄</div>
+      <h3 class="feature-title">Smart PDF &amp; JSON Question Importer</h3>
+      <p class="feature-text">
+        Rapidly import lab problem statements, starter code templates, sample inputs, and autograding test cases directly from lab sheet PDFs or structured JSON files with single-click sample template downloads.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">PDF Lab Sheet Parser</span>
+        <span class="feature-tag-chip">JSON Test Cases</span>
+        <span class="feature-tag-chip">Autograding Rubrics</span>
+        <span class="feature-tag-chip">1-Click Template</span>
+      </div>
+    </div>
+
+    <!-- Feature 12: Course Python Package Manager -->
+    <div class="feature-card">
+      <div class="feature-icon-wrap icon-sky">📦</div>
+      <h3 class="feature-title">Course Python Package Manager</h3>
+      <p class="feature-text">
+        Empowers instructors to install and maintain specialized Python libraries and tools per course. Packages are automatically available in all student coding sessions and terminal environments without requiring individual setup.
+      </p>
+      <div class="feature-tags-list">
+        <span class="feature-tag-chip">Course-Isolated Packages</span>
+        <span class="feature-tag-chip">Instructor Dashboard</span>
+        <span class="feature-tag-chip">Instant Student Availability</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- VISUAL TOUR (PORTAL SCREENSHOTS)           -->
+  <!-- ========================================== -->
+  <div class="tour-section">
+    <div class="section-header-block" style="margin-bottom: 2rem;">
+      <span class="section-eyebrow">Visual Platform Tour</span>
+      <h2 class="section-title">Designed for Intuitive Efficiency</h2>
+      <p class="section-desc">
+        Take a look inside the Hoodle interface used daily by students, teaching assistants, and professors.
+      </p>
+    </div>
+
+    <div class="tour-grid">
+      <!-- Screenshot 1: In-Class QR Attendance Scanner -->
+      <div class="tour-item-card">
+        <img src="{{ url_for('static', filename='images/guide/04_attendance_scanner.png') }}" alt="QR Attendance Scanner" class="tour-item-img">
+        <div class="tour-item-caption">
+          <div class="tour-item-title">📷 High-Speed QR Attendance Scanner</div>
+          <div class="tour-item-sub">Real-time live video camera scanner with instant geolocation verification and tamper detection.</div>
+        </div>
+      </div>
+
+      <!-- Screenshot 2: Coursework & Lab Stream -->
+      <div class="tour-item-card">
+        <img src="{{ url_for('static', filename='images/guide/03_course_stream.png') }}" alt="Course Stream & Labs" class="tour-item-img">
+        <div class="tour-item-caption">
+          <div class="tour-item-title">📢 Course Stream &amp; Material Hub</div>
+          <div class="tour-item-sub">Access lecture notes, lab problem sets, and faculty announcements in one organized timeline.</div>
+        </div>
+      </div>
+
+      <!-- Screenshot 3: Timed Exam Locker -->
+      <div class="tour-item-card">
+        <img src="{{ url_for('static', filename='images/guide/06_exam_interface.png') }}" alt="Lab Exam Interface" class="tour-item-img">
+        <div class="tour-item-caption">
+          <div class="tour-item-title">🔒 Timed Lab Exam Lockdown Portal</div>
+          <div class="tour-item-sub">Integrated countdown timers, strict submission enforcement, and automated file validation.</div>
+        </div>
+      </div>
+
+      <!-- Screenshot 4: SHA-256 Digital Receipts -->
+      <div class="tour-item-card">
+        <img src="{{ url_for('static', filename='images/guide/07_submission_receipt.png') }}" alt="SHA-256 Submission Receipt" class="tour-item-img">
+        <div class="tour-item-caption">
+          <div class="tour-item-title">🧾 Cryptographic Submission Receipts</div>
+          <div class="tour-item-sub">Immutable cryptographic proof of code submission timestamp and byte checksum for every student.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- 4-STEP GETTING STARTED GUIDE               -->
+  <!-- ========================================== -->
+  <div class="section-header-block">
+    <span class="section-eyebrow">Quick Onboarding</span>
+    <h2 class="section-title">Getting Started in 4 Simple Steps</h2>
+    <p class="section-desc">
+      Everything you need to join classes and submit lab assignments in under two minutes.
+    </p>
+  </div>
+
+  <div class="steps-container">
+    <div class="step-card">
+      <div class="step-num-bubble">1</div>
+      <h4 class="step-card-title">Sign In or Register</h4>
+      <p class="step-card-desc">
+        Use your IIT Bhilai roll number (e.g. <code>B26CS021</code>) to sign in, or click Register to create your student account.
+      </p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num-bubble">2</div>
+      <h4 class="step-card-title">Join Your Classroom</h4>
+      <p class="step-card-desc">
+        Use your professor's 6-character class code or direct short link to enroll in your courses with a single click.
+      </p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num-bubble">3</div>
+      <h4 class="step-card-title">Install Android App</h4>
+      <p class="step-card-desc">
+        Download the official APK to scan the rotating dynamic QR code in lecture halls and mark attendance without delay.
+      </p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num-bubble">4</div>
+      <h4 class="step-card-title">Submit &amp; Excel</h4>
+      <p class="step-card-desc">
+        Submit lab code archives before the countdown timer expires and get your cryptographic receipt instantly.
+      </p>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- NETWORK ACCESS MODES                       -->
+  <!-- ========================================== -->
+  <div class="net-access-card">
+    <div style="font-size: 2.2rem; background: #ffffff; padding: 0.75rem; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: var(--shadow-sm);">
+      🌐
+    </div>
+    <div style="flex: 1; min-width: 280px;">
+      <h4 style="font-size: 1.1rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.25rem;">
+        Dual Access Architecture: Internet &amp; Campus Wi-Fi
+      </h4>
+      <p style="font-size: 0.88rem; color: var(--text-muted); margin: 0; line-height: 1.5;">
+        You can access Hoodle seamlessly from anywhere: use <strong>https://hoodle.in</strong> on mobile data (Jio, Airtel) or outside campus, or connect directly to <strong>http://10.10.14.104/lms/</strong> while on IIT Bhilai campus Wi-Fi for ultra-low latency.
+      </p>
+    </div>
+    <div>
+      <a href="{{ url_for('usage_guide') }}" class="btn btn-outline" style="font-weight: 700; font-size: 0.88rem;">
+        📖 Read Full Student Handbook →
+      </a>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- BOTTOM CALL TO ACTION                      -->
+  <!-- ========================================== -->
+  <section class="cta-banner">
+    <h2>Ready to Access Your Classroom?</h2>
+    <p>
+      Sign in now to access your active courses, check your attendance quota, review upcoming lab deadlines, and download course materials.
+    </p>
+    <div class="cta-banner-buttons">
+      <a href="{{ url_for('login') }}" class="btn-hero-primary">
+        <span>Sign In with Roll Number</span>
+        <span style="font-size: 1.15rem;">→</span>
+      </a>
+      <a href="{{ url_for('login', tab='register') }}" class="btn-hero-secondary">
+        <span>Create Student Account</span>
+      </a>
+      <a href="{{ url_for('download_apk') }}" class="btn-hero-apk">
+        <span>📱 Download Android App (.apk)</span>
+      </a>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

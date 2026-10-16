@@ -3407,3 +3407,38 @@ body.is-android-app .lms-footer {
   }
 }
 
+/* Mobile & Android App Rich Text & Markdown Typography */
+strong, b, .rich-text-content strong, .rich-text-content b {
+  font-weight: 700 !important;
+  color: inherit;
+}
+
+em, i, .rich-text-content em, .rich-text-content i {
+  font-style: italic !important;
+}
+
+.rich-text-content ul, ul.rich-list {
+  list-style-type: disc !important;
+  padding-left: 1.5rem !important;
+  margin: 0.5rem 0 !important;
+}
+
+.rich-text-content ol, ol.rich-list {
+  list-style-type: decimal !important;
+  padding-left: 1.5rem !important;
+  margin: 0.5rem 0 !important;
+}
+
+.rich-text-content li {
+  display: list-item !important;
+  margin-bottom: 0.25rem !important;
+  line-height: 1.5;
+}
+
+.rich-text-content h1, .rich-text-content h2, .rich-text-content h3 {
+  font-weight: 800 !important;
+  margin-top: 0.75rem !important;
+  margin-bottom: 0.35rem !important;
+}
+
+

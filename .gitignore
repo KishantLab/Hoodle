@@ -43,3 +43,10 @@ android/app/build/
 android/local.properties
 android/.idea/
 
+
+# Git Credentials
+.git-credentials
+.git-credentials*
+*.bak*
+.gradle/
+local.properties

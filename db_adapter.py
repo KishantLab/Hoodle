@@ -17,6 +17,19 @@ logger = logging.getLogger("hoodle.db")
 # DATABASE_BACKEND can be 'postgres' or 'sqlite' (defaults to 'sqlite' for zero breaking changes)
 DATABASE_BACKEND = os.environ.get("DATABASE_BACKEND", "").lower().strip()
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    hoodle_env_path = "/etc/hoodle/hoodle.env"
+    if os.path.exists(hoodle_env_path):
+        try:
+            with open(hoodle_env_path, "r") as _ef:
+                for _line in _ef:
+                    _line = _line.strip()
+                    if _line.startswith("DATABASE_URL="):
+                        DATABASE_URL = _line.split("=", 1)[1].strip().strip('"').strip("'")
+                    elif _line.startswith("DATABASE_BACKEND=") and not DATABASE_BACKEND:
+                        DATABASE_BACKEND = _line.split("=", 1)[1].strip().strip('"').strip("'").lower()
+        except Exception:
+            pass
 
 if not DATABASE_BACKEND:
     if DATABASE_URL.startswith("postgres://") or DATABASE_URL.startswith("postgresql://"):

@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}Inspect Submission: {{ attempt.display_name }} - {{ quiz.title }}{% endblock %}
+
+{% block content %}
+<div class="container-responsive" style="max-width: 1050px; margin: 1.5rem auto 5rem auto; padding: 0 1rem;">
+
+  <!-- Breadcrumb Navigation -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+      <a href="{{ url_for('quizzes.quiz_submissions', course_id=course.id, quiz_id=quiz.id) }}" style="color: #2563eb; text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 0.3rem;">
+        ← Back to All Submissions
+      </a>
+      <span style="color: #94a3b8;">/</span>
+      <span style="color: #64748b; font-weight: 600;">{{ course.code }}</span>
+      <span style="color: #94a3b8;">/</span>
+      <span style="color: #1e293b; font-weight: 700;">{{ attempt.display_name }}</span>
+    </div>
+
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+      <a href="{{ url_for('quizzes.quiz_submissions', course_id=course.id, quiz_id=quiz.id) }}" class="btn btn-secondary" style="font-size: 0.85rem; font-weight: 700; padding: 0.45rem 1rem;">
+        ← Submissions List
+      </a>
+    </div>
+  </div>
+
+  <!-- Student & Attempt Overview Card -->
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.75rem; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1.25rem;">
+      <div>
+        <span style="font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">
+          Student Submission &amp; Justification Inspection
+        </span>
+        <h1 style="font-size: 1.4rem; font-weight: 800; color: #0f172a; margin: 0.2rem 0 0.35rem 0;">
+          {{ attempt.display_name }}
+        </h1>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.85rem; color: #475569;">
+          <span>🎓 Roll: <strong>{{ attempt.roll_number or 'N/A' }}</strong></span>
+          <span>📧 Email: <strong>{{ attempt.email }}</strong></span>
+          <span>📅 Submitted: <strong>{{ attempt.submitted_at or 'Auto-Submitted' }}</strong></span>
+          <span>⏱️ Started: <strong>{{ attempt.started_at }}</strong></span>
+        </div>
+      </div>
+
+      <!-- Scorecard Pill -->
+      <div style="display: flex; align-items: center; gap: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.75rem 1.25rem;">
+        <div style="text-align: right;">
+          <div style="font-size: 0.72rem; text-transform: uppercase; font-weight: 700; color: #64748b;">Current Attempt Score</div>
+          <div style="font-size: 1.7rem; font-weight: 900; color: {% if attempt.is_passed %}#047857{% else %}#0f172a{% endif %}; line-height: 1.1;">
+            {{ attempt.score }}
+            <span style="font-size: 0.95rem; font-weight: 600; color: #64748b;">/ {{ attempt.total_possible or quiz.total_marks }} pts</span>
+          </div>
+        </div>
+        <div>
+          <span class="badge" style="background: {% if attempt.is_passed %}#ecfdf5{% else %}#fee2e2{% endif %}; color: {% if attempt.is_passed %}#047857{% else %}#b91c1c{% endif %}; border: 1px solid {% if attempt.is_passed %}#a7f3d0{% else %}#fecaca{% endif %}; font-weight: 800; font-size: 0.82rem; padding: 4px 10px; border-radius: 9999px;">
+            {% if attempt.is_passed %}PASS{% else %}FAIL{% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Strike Warning (if any) -->
+    {% if attempt.strikes and attempt.strikes > 0 %}
+      <div style="margin-top: 1rem; padding: 0.75rem 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; font-size: 0.85rem; color: #991b1b;">
+        <strong>⚠️ Lockdown Integrity Notice:</strong> Student received {{ attempt.strikes }} strike(s) during exam mode.
+        {% if strike_log %}
+          <ul style="margin: 0.35rem 0 0 1.2rem; padding: 0;">
+            {% for s in strike_log %}
+              <li>Strike {{ s.strike }}: {{ s.reason }} ({{ s.time }})</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Questions, Answers & Justification Scoring Form -->
+  <form action="{{ url_for('quizzes.update_submission_score', course_id=course.id, quiz_id=quiz.id, attempt_id=attempt.id) }}" method="POST">
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h2 style="font-size: 1.15rem; font-weight: 800; color: #1e293b; margin: 0;">
+        📝 Question-by-Question Evaluation &amp; Points Adjustment
+      </h2>
+      <button type="submit" class="btn btn-primary" style="background: #10b981; font-weight: 700; padding: 0.5rem 1.25rem; font-size: 0.88rem; border-radius: 6px;">
+        💾 Save &amp; Recalculate Points
+      </button>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+      {% for q in questions %}
+        <div style="background: white; border: 1px solid {% if q.is_correct %}#cbd5e1{% else %}#fecaca{% endif %}; border-radius: 12px; padding: 1.25rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+          
+          <!-- Question Header -->
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.75rem; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span style="font-weight: 800; color: #0f172a; font-size: 1rem;">
+                Question #{{ loop.index }}
+              </span>
+              <span class="badge" style="background: #eff6ff; color: #1d4ed8; font-size: 0.72rem; padding: 2px 7px; border-radius: 4px; text-transform: uppercase; font-weight: 700;">
+                {{ q.question_type | replace('_', ' ') }}
+              </span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span style="font-size: 0.85rem; color: #64748b;">
+                Max Value: <strong>{{ q.points }} pts</strong>
+              </span>
+              {% if q.is_correct %}
+                <span class="badge" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 800; font-size: 0.75rem; padding: 2px 8px; border-radius: 9999px;">
+                  ✓ Correct
+                </span>
+              {% else %}
+                <span class="badge" style="background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; font-weight: 800; font-size: 0.75rem; padding: 2px 8px; border-radius: 9999px;">
+                  ✗ Incorrect
+                </span>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Prompt & Code Snippet -->
+          <div style="font-size: 0.95rem; color: #1e293b; font-weight: 600; line-height: 1.5; margin-bottom: 0.75rem;">
+            {{ q.prompt }}
+          </div>
+
+          {% if q.code_snippet %}
+            <pre style="background: #0f172a; color: #f8fafc; padding: 0.85rem 1rem; border-radius: 8px; font-family: monospace; font-size: 0.85rem; overflow-x: auto; margin-bottom: 1rem;"><code>{{ q.code_snippet }}</code></pre>
+          {% endif %}
+
+          <!-- Options Preview (if MCQ or MSQ) -->
+          {% if q.options %}
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.88rem;">
+              <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 0.4rem;">Options:</div>
+              <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+                {% for opt in q.options %}
+                  {% set opt_letter = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'][loop.index0] if loop.index0 < 8 else loop.index %}
+                  <div style="display: flex; align-items: baseline; gap: 0.5rem;">
+                    <strong style="color: #475569;">{{ opt_letter }}.</strong>
+                    <span>{{ opt }}</span>
+                    {% if opt_letter == q.correct_answer or opt == q.correct_answer or q.correct_answer in opt %}
+                      <span class="badge" style="background: #ecfdf5; color: #047857; font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; font-weight: 700;">
+                        ✓ Key / Correct
+                      </span>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
+
+          <!-- Comparison: Student Response vs Correct Answer -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; font-size: 0.88rem;">
+            <!-- Student Response -->
+            <div style="background: {% if q.is_correct %}#f0fdf4{% else %}#fef2f2{% endif %}; border: 1px solid {% if q.is_correct %}#bbf7d0{% else %}#fecaca{% endif %}; border-radius: 8px; padding: 0.75rem 1rem;">
+              <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: {% if q.is_correct %}#166534{% else %}#991b1b{% endif %}; margin-bottom: 0.25rem;">
+                Student Submitted Answer
+              </div>
+              <div style="font-weight: 800; font-size: 0.95rem; color: {% if q.is_correct %}#15803d{% else %}#b91c1c{% endif %}; word-break: break-word;">
+                {{ q.student_answer if q.student_answer else '— (No Answer Submitted) —' }}
+              </div>
+            </div>
+
+            <!-- Expected Correct Answer -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.75rem 1rem;">
+              <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 0.25rem;">
+                Official Answer Key
+              </div>
+              <div style="font-weight: 800; font-size: 0.95rem; color: #0f172a; word-break: break-word;">
+                {{ q.correct_answer }}
+                {% if q.variations %}
+                  <span style="font-size: 0.78rem; font-weight: normal; color: #64748b;">(Acceptable: {{ q.variations | join(', ') }})</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Highlighted Student Justification Box -->
+          <div style="background: #fffbeb; border: 2px solid #fde68a; border-radius: 8px; padding: 0.85rem 1.1rem; margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem;">
+              <span style="font-size: 0.78rem; font-weight: 800; text-transform: uppercase; color: #92400e; display: inline-flex; align-items: center; gap: 0.3rem;">
+                💬 Student Typed Justification / Reasoning
+              </span>
+              {% if q.justification %}
+                <span class="badge" style="background: #fef3c7; color: #92400e; font-size: 0.7rem; font-weight: 700; padding: 2px 6px; border-radius: 4px;">
+                  Justification Provided
+                </span>
+              {% endif %}
+            </div>
+            
+            {% if q.justification %}
+              <div style="color: #78350f; font-size: 0.92rem; line-height: 1.5; font-weight: 600; white-space: pre-wrap; background: white; padding: 0.65rem 0.85rem; border-radius: 6px; border: 1px solid #fde68a;">
+                {{ q.justification }}
+              </div>
+            {% else %}
+              <div style="color: #b45309; font-size: 0.85rem; font-style: italic;">
+                (No explanation or justification provided by the student for this question.)
+              </div>
+            {% endif %}
+          </div>
+
+          <!-- Granular Point Adjustment Input -->
+          <div style="background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+            <div style="font-size: 0.88rem; color: #334155;">
+              <strong>Instructor Override:</strong> Adjust points for this question after reviewing the student's justification:
+            </div>
+
+            <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
+              <label for="pts_{{ q.id }}" style="font-size: 0.85rem; font-weight: 700; color: #475569;">Points Awarded:</label>
+              <input type="number" step="0.25" min="0" max="{{ q.points }}" id="pts_{{ q.id }}" name="pts_{{ q.id }}" value="{{ q.points_awarded }}" style="width: 85px; padding: 0.35rem 0.5rem; font-size: 1rem; font-weight: 800; text-align: center; border: 2px solid #3b82f6; border-radius: 6px; color: #1e3a8a;" required>
+              <span style="font-size: 0.88rem; font-weight: 700; color: #64748b;">/ {{ q.points }} pts</span>
+            </div>
+          </div>
+
+        </div>
+      {% endfor %}
+    </div>
+
+    <!-- Sticky Bottom Bar -->
+    <div style="position: sticky; bottom: 1rem; margin-top: 2rem; background: white; border: 2px solid #2563eb; border-radius: 12px; padding: 1rem 1.5rem; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; z-index: 20;">
+      <div>
+        <div style="font-size: 0.8rem; font-weight: 700; color: #64748b; text-transform: uppercase;">Reviewing Submission For</div>
+        <div style="font-weight: 800; color: #0f172a; font-size: 1.1rem;">{{ attempt.display_name }} ({{ attempt.roll_number or 'N/A' }})</div>
+      </div>
+
+      <div style="display: flex; gap: 0.75rem; align-items: center;">
+        <a href="{{ url_for('quizzes.quiz_submissions', course_id=course.id, quiz_id=quiz.id) }}" class="btn btn-secondary" style="font-weight: 700; padding: 0.6rem 1.25rem;">
+          Cancel
+        </a>
+        <button type="submit" class="btn btn-primary" style="background: #10b981; font-weight: 800; font-size: 1rem; padding: 0.65rem 2rem; border-radius: 8px;">
+          💾 Save &amp; Recalculate Points
+        </button>
+      </div>
+    </div>
+
+  </form>
+
+</div>
+{% endblock %}

@@ -45,17 +45,47 @@
   </a>
 </nav>
 
-<!-- Teacher Action Bar -->
-{% if is_teacher_or_admin %}
-  <div class="classwork-actions-strip">
-    <button onclick="openModal('createCourseworkModal')" class="btn btn-primary">
-      ➕ Create Coursework
-    </button>
-    <button onclick="openModal('createTopicModal')" class="btn btn-secondary">
-      📁 Create Topic / Unit
-    </button>
-  </div>
-{% endif %}
+<!-- Classwork Action Strip -->
+<div class="classwork-actions-strip" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem;">
+  {% if is_teacher_or_admin %}
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+      <button onclick="openModal('createCourseworkModal')" class="btn btn-primary">
+        ➕ Create Coursework
+      </button>
+      <button onclick="openModal('createTopicModal')" class="btn btn-secondary">
+        📁 Create Topic / Unit
+      </button>
+      {% if not course.enable_cloud_ide %}
+      <button onclick="requestCourseAddon({{ course.id }}, 'cloud_ide')" id="btnRequestIde" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 700; background: #f8fafc; border: 1px dashed #2563eb; color: #2563eb;" title="Request GPU Cloud IDE and Student Lockers for this course">
+        {% if course.ide_request_status == 'requested' %}
+          <i class="fa-solid fa-clock"></i> <span>IDE Access Requested</span>
+        {% else %}
+          <i class="fa-solid fa-plus-circle"></i> <span>Request Cloud IDE Add-on</span>
+        {% endif %}
+      </button>
+      {% endif %}
+      {% if course.enable_cloud_ide %}
+      <a href="{{ url_for('coding_ide.open_ide', course_id=course.id) }}" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; font-weight: 700; background: #2563eb; border-color: #2563eb;">
+        💻 Cloud IDE &amp; Lab
+      </a>
+      {% endif %}
+      <a href="{{ url_for('quizzes.course_quizzes', course_id=course.id) }}" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; font-weight: 700;">
+        🎯 Quizzes
+      </a>
+    </div>
+  {% else %}
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-left: auto;">
+      <a href="{{ url_for('quizzes.course_quizzes', course_id=course.id) }}" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; font-weight: 700; background: white; border: 1px solid #cbd5e1; color: #1e293b;">
+        🎯 Quizzes &amp; Assessments
+      </a>
+      {% if course.enable_cloud_ide %}
+      <a href="{{ url_for('coding_ide.open_ide', course_id=course.id) }}" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; font-weight: 700; background: #2563eb; border-color: #2563eb;">
+        💻 Open Cloud IDE
+      </a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
 
 <!-- Topics & Coursework Listing -->
 <div style="display: flex; flex-direction: column; gap: 2rem;">
@@ -63,9 +93,21 @@
     {% if data.cw_items or is_teacher_or_admin %}
       <div>
         <div class="topic-header-row">
-          <h2 class="topic-title">
-            📁 {{ data.topic.name }}
-          </h2>
+          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+            <h2 class="topic-title" style="margin: 0;">
+              📁 {{ data.topic.name }}
+            </h2>
+            {% if is_teacher_or_admin and data.topic.id %}
+              <div class="topic-move-btns" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                <form action="{{ url_for('move_topic', course_id=course.id, topic_id=data.topic.id, direction='up') }}" method="POST" style="display: inline; margin: 0;">
+                  <button type="submit" class="btn btn-secondary btn-sm" title="Move Topic Up" style="padding: 2px 7px; font-size: 0.85rem; line-height: 1.2;" {% if loop.first %}disabled style="opacity: 0.35; cursor: not-allowed;"{% endif %}>⬆️</button>
+                </form>
+                <form action="{{ url_for('move_topic', course_id=course.id, topic_id=data.topic.id, direction='down') }}" method="POST" style="display: inline; margin: 0;">
+                  <button type="submit" class="btn btn-secondary btn-sm" title="Move Topic Down" style="padding: 2px 7px; font-size: 0.85rem; line-height: 1.2;" {% if loop.last or (loop.index == topics|length) %}disabled style="opacity: 0.35; cursor: not-allowed;"{% endif %}>⬇️</button>
+                </form>
+              </div>
+            {% endif %}
+          </div>
           {% if is_teacher_or_admin and data.topic.id %}
             <form action="{{ url_for('delete_topic', course_id=course.id, topic_id=data.topic.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove this topic?');">
               <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger);">
@@ -141,6 +183,11 @@
                       </form>
                     {% endif %}
 
+                    {% if is_teacher_or_admin and cw.type != 'material' %}
+                      <a href="{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}#plagiarism" class="btn btn-secondary btn-sm" title="Check Plagiarism" style="color: #6d28d9; background: #f5f3ff; border: 1.5px solid #c4b5fd; font-weight: 600;">
+                        🔍 Plagiarism
+                      </a>
+                    {% endif %}
                     <a href="{% if cw.is_exam_mode and not is_teacher_or_admin %}{{ url_for('exam_view', course_id=course.id, coursework_id=cw.id) }}{% else %}{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}{% endif %}" class="btn btn-secondary btn-sm">
                       View →
                     </a>
@@ -313,3 +360,31 @@ function adjustCourseworkFields(type) {
 </script>
 {% endif %}
 {% endblock %}
+<script>
+async function requestCourseAddon(courseId, feature) {
+  const btn = document.getElementById("btnRequestIde");
+  if (btn && btn.textContent.includes("Requested")) {
+    alert("Request already submitted to Administrator. It is currently under review.");
+    return;
+  }
+  if (!confirm("Submit request to Administrator to enable Cloud IDE & GPU accelerator for this course?")) return;
+  
+  const basePrefix = window.location.pathname.startsWith("/lms") ? "/lms" : "";
+  try {
+    const res = await fetch(`${basePrefix}/courses/${courseId}/request-feature`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ feature: feature })
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert("✅ " + data.message);
+      location.reload();
+    } else {
+      alert("Error: " + (data.error || "Failed to submit request"));
+    }
+  } catch (e) {
+    alert("Request error: " + e.message);
+  }
+}
+</script>

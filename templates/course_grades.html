@@ -112,9 +112,15 @@
                 {% set sc = student.cw_scores.get(cw.id) if student else None %}
                 <tr>
                   <td>
-                    <a href="{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}" style="font-weight: 700; color: #1e3a8a; text-decoration: none;">
-                      {{ cw.title }}
-                    </a>
+                    {% if cw.is_quiz %}
+                      <a href="{{ url_for('quizzes.take_quiz', course_id=course.id, quiz_id=cw.quiz_id) }}" style="font-weight: 700; color: #1e3a8a; text-decoration: none;">
+                        {{ cw.title }}
+                      </a>
+                    {% else %}
+                      <a href="{{ url_for('coursework_detail', course_id=course.id, coursework_id=cw.id) }}" style="font-weight: 700; color: #1e3a8a; text-decoration: none;">
+                        {{ cw.title }}
+                      </a>
+                    {% endif %}
                   </td>
                   <td>
                     <span class="role-badge" style="background: #eff6ff; color: #1e40af; font-size: 0.72rem;">
@@ -333,7 +339,11 @@
               {% for cw in coursework_list %}
                 <th style="text-align: center; min-width: 140px; background: #f8fafc;">
                   <div style="font-weight: 700; font-size: 0.82rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;" title="{{ cw.title }}">
-                    {{ cw.title }}
+                    {% if cw.is_quiz %}
+                      <a href="{{ url_for('quizzes.quiz_submissions', course_id=course.id, quiz_id=cw.quiz_id) }}" style="color: #2563eb; text-decoration: underline;" title="Inspect Quiz Submissions">{{ cw.title }}</a>
+                    {% else %}
+                      {{ cw.title }}
+                    {% endif %}
                   </div>
                   <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
                     {{ cw.points }} pts • <span style="color: #0284c7; font-weight: 600;">{{ cw.category_name or 'General' }}</span>
@@ -960,4 +970,3 @@
   </script>
 {% endif %}
 {% endblock %}
-

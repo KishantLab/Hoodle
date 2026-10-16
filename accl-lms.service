@@ -7,10 +7,10 @@ Type=simple
 User=kishan
 WorkingDirectory=/data/admin/ACCLLMS
 Nice=10
+EnvironmentFile=-/etc/hoodle/hoodle.env
 Environment="PORT=8095"
 Environment="HOST=0.0.0.0"
 Environment="STORAGE_DIR=/data/admin/ACCLLMS/storage"
-Environment="DATABASE_URL=postgresql://kishan_accl:HoodleLMS_Secure_2026@127.0.0.1:5432/accl_lms"
 Environment="DATABASE_BACKEND=postgres"
 Environment="CUDA_VISIBLE_DEVICES="
 Environment="GMAIL_SMTP_USER=hoodle.lms@gmail.com"

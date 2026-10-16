@@ -29,6 +29,9 @@ from email.utils import make_msgid, formatdate
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
+import math
+from rate_limiter import get_real_client_ip, check_rate_limit, record_failed_attempt, clear_rate_limit, init_rate_limiter_db
+from plagiarism_detector import run_coursework_plagiarism_scan, init_coursework_plagiarism_db, extract_code_from_file
 
 from flask import (
     Flask,
@@ -105,7 +108,22 @@ DB_PATH = Path(os.environ.get("DB_PATH", BASE_DIR / "accl_lms.db"))
 PORT = int(os.environ.get("PORT", 8095))
 HOST = os.environ.get("HOST", "0.0.0.0")
 MAX_CONTENT_LENGTH = 300 * 1024 * 1024  # 300 MB max upload limit
-SECRET_KEY = os.environ.get("SECRET_KEY", "accl_lms_classroom_secret_2026_super_secure")
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+if not SECRET_KEY:
+    hoodle_env_path = "/etc/hoodle/hoodle.env"
+    if os.path.exists(hoodle_env_path):
+        try:
+            with open(hoodle_env_path, "r") as _ef:
+                for _line in _ef:
+                    _line = _line.strip()
+                    if _line.startswith("SECRET_KEY="):
+                        SECRET_KEY = _line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+        except Exception:
+            pass
+if not SECRET_KEY:
+    SECRET_KEY = "accl_lms_classroom_secret_2026_super_secure"
+
 DEFAULT_LOCKER_QUOTA = 500 * 1024 * 1024  # 500 MB default private storage quota
 
 # Tailscale Network Configuration for Public and Mesh Google Sheet Feeds
@@ -134,6 +152,14 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=90)  # 90 days persist
 
 # Enable proper reverse-proxy handling (Nginx /lms/)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+# Feature #2: Interactive Quiz & Assessment System with Exam Lockdown
+from quizzes import quizzes_bp
+app.register_blueprint(quizzes_bp)
+
+# Feature #3: VS Code Monaco Cloud IDE, CUDA GPU Autograder & Student Lockers
+from coding_ide import coding_ide_bp
+app.register_blueprint(coding_ide_bp)
 
 
 @app.after_request
@@ -355,7 +381,169 @@ except ImportError:
                     except Exception:
                         pass
                 raise
-        raise last_err
+def ensure_feature_tables():
+    """
+    Safe additive-only table initializations for new platform capabilities.
+    Works seamlessly on both PostgreSQL and SQLite backends without schema mutation.
+    """
+    try:
+        conn = get_db()
+        # 1. Attendance Audit Log Table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS attendance_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id INTEGER NOT NULL,
+                original_log_id INTEGER,
+                student_id INTEGER NOT NULL,
+                roll_number TEXT NOT NULL,
+                student_name TEXT NOT NULL,
+                session_type TEXT NOT NULL,
+                attendance_date TEXT NOT NULL,
+                action TEXT NOT NULL,
+                snapshot_json TEXT NOT NULL,
+                reason TEXT DEFAULT '',
+                performed_by INTEGER NOT NULL,
+                performed_at TEXT NOT NULL,
+                restored_at TEXT DEFAULT NULL,
+                restored_by INTEGER DEFAULT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_att_audit_course_date ON attendance_audit_log (course_id, attendance_date, session_type)")
+
+        # 2. Teacher Registration System Table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS teacher_registrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                full_name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                department TEXT NOT NULL,
+                designation TEXT NOT NULL,
+                employee_id TEXT DEFAULT '',
+                otp_hash TEXT NOT NULL,
+                otp_expires_at TEXT NOT NULL,
+                otp_attempts INTEGER DEFAULT 0,
+                otp_sent_count INTEGER DEFAULT 1,
+                last_otp_sent_at TEXT NOT NULL,
+                email_verified_at TEXT DEFAULT NULL,
+                status TEXT NOT NULL DEFAULT 'pending_otp',
+                review_note TEXT DEFAULT '',
+                reviewed_by INTEGER DEFAULT NULL,
+                reviewed_at TEXT DEFAULT NULL,
+                created_user_id INTEGER DEFAULT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_teacher_reg_status ON teacher_registrations (status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_teacher_reg_email ON teacher_registrations (email)")
+
+        # 3. Interactive Quizzes & Assessments Table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS quizzes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id INTEGER NOT NULL,
+                topic_id INTEGER,
+                title TEXT NOT NULL,
+                description TEXT,
+                duration_minutes INTEGER DEFAULT 30,
+                pass_marks REAL DEFAULT 40.0,
+                total_marks REAL DEFAULT 100.0,
+                is_published INTEGER DEFAULT 1,
+                exam_lockdown INTEGER DEFAULT 1,
+                shuffle_questions INTEGER DEFAULT 1,
+                remote_approval_required INTEGER DEFAULT 1,
+                start_time TEXT,
+                end_time TEXT,
+                created_by INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+                FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE SET NULL,
+                FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_course ON quizzes (course_id)")
+
+        # 4. Quiz Questions Table (Supports 6 question formats)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                quiz_id INTEGER NOT NULL,
+                question_number INTEGER DEFAULT 1,
+                question_type TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                code_snippet TEXT DEFAULT '',
+                code_language TEXT DEFAULT 'python',
+                options_json TEXT DEFAULT '[]',
+                correct_answer TEXT NOT NULL,
+                acceptable_variations_json TEXT DEFAULT '[]',
+                points REAL DEFAULT 1.0,
+                explanation TEXT DEFAULT '',
+                FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_q_quiz ON quiz_questions (quiz_id)")
+
+        # 5. Quiz Attempts Table (Lockdown, strikes, extra time, remote approval)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                quiz_id INTEGER NOT NULL,
+                student_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'in_progress',
+                started_at TEXT NOT NULL,
+                submitted_at TEXT DEFAULT NULL,
+                score REAL DEFAULT 0.0,
+                total_possible REAL DEFAULT 0.0,
+                is_passed INTEGER DEFAULT 0,
+                extra_time_minutes INTEGER DEFAULT 0,
+                strikes INTEGER DEFAULT 0,
+                strike_log_json TEXT DEFAULT '[]',
+                is_remote INTEGER DEFAULT 0,
+                remote_approved INTEGER DEFAULT 0,
+                approved_by INTEGER DEFAULT NULL,
+                approved_at TEXT DEFAULT NULL,
+                FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE,
+                FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_att_quiz_stud ON quiz_attempts (quiz_id, student_id)")
+
+        # 6. Quiz Answers Table (Dynamic continuous autosave & justification)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_answers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attempt_id INTEGER NOT NULL,
+                question_id INTEGER NOT NULL,
+                student_answer TEXT DEFAULT '',
+                justification TEXT DEFAULT '',
+                is_correct INTEGER DEFAULT 0,
+                points_awarded REAL DEFAULT 0.0,
+                saved_at TEXT NOT NULL,
+                UNIQUE(attempt_id, question_id),
+                FOREIGN KEY (attempt_id) REFERENCES quiz_attempts(id) ON DELETE CASCADE,
+                FOREIGN KEY (question_id) REFERENCES quiz_questions(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_ans_att ON quiz_answers (attempt_id)")
+
+        # Migration: Add grades_released and category_id columns to quizzes table if not present
+        for col_stmt in [
+            "ALTER TABLE quizzes ADD COLUMN grades_released INTEGER DEFAULT 0",
+            "ALTER TABLE quizzes ADD COLUMN category_id INTEGER REFERENCES course_grading_categories(id) ON DELETE SET NULL"
+        ]:
+            try:
+                conn.execute(col_stmt)
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        app.logger.warning("ensure_feature_tables notice (safe fallback): %s", e)
 
 
 def init_db():
@@ -760,7 +948,7 @@ def init_db():
                 except Exception:
                     pass
     except Exception as e:
-        logger.warning(f"PostgreSQL courses column migration notice: {e}")
+        app.logger.warning(f"PostgreSQL courses column migration notice: {e}")
 
     # SQLite migration for Version 2 columns
     try:
@@ -1876,6 +2064,29 @@ def admin_required(f):
 
 # --- Strict Exam Mode Lockdown System ---
 
+def get_active_quiz_lockdown_for_student(user_id):
+    """
+    Checks if the student currently has an in-progress attempt for a quiz
+    where exam_lockdown=1. When active, students cannot browse materials, stream,
+    lockers, or other courses—they are strictly locked to the quiz until submitted.
+    """
+    conn = get_db(read_only=True)
+    try:
+        row = conn.execute("""
+            SELECT qa.id as attempt_id, qa.quiz_id, q.title as quiz_title, q.course_id, c.code as course_code
+            FROM quiz_attempts qa
+            JOIN quizzes q ON qa.quiz_id = q.id
+            JOIN courses c ON q.course_id = c.id
+            WHERE qa.student_id = ? AND qa.status = 'in_progress' AND q.exam_lockdown = 1
+            ORDER BY qa.id DESC LIMIT 1
+        """, (user_id,)).fetchone()
+        return dict(row) if row else None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
 def get_active_exam_lockdown_for_student(user_id):
     """
     Checks if the student is currently enrolled in any course where an Exam
@@ -1949,20 +2160,44 @@ def handle_reverse_proxy_prefixes():
 def enforce_exam_lockdown():
     """
     Global request hook:
-    If a logged-in student has an active Exam Mode lockdown in place:
+    If a logged-in student has an active Quiz Lockdown or Exam Mode in place:
     Block access to stream, classwork materials, locker, other courses, etc.,
-    and redirect them directly to the exam interface!
+    and redirect them directly to the active exam interface!
     """
     if "user_id" not in session or session.get("role") != "student":
         return
 
-    # Whitelisted endpoints during exam mode
     endpoint = request.endpoint or ""
+
+    # 1. Enforce Quiz Lockdown (Locks student strictly to active quiz)
+    active_quiz = get_active_quiz_lockdown_for_student(session["user_id"])
+    if active_quiz:
+        if request.path.startswith("/static/"):
+            return
+        allowed_quiz_endpoints = {
+            "quizzes.take_quiz", "quizzes.api_quiz_autosave", "quizzes.api_quiz_strike",
+            "quizzes.submit_quiz", "logout", "static", "login"
+        }
+        if endpoint not in allowed_quiz_endpoints:
+            flash(
+                f"🔒 STRICT EXAM LOCKDOWN ACTIVE for {active_quiz['course_code']}: {active_quiz['quiz_title']}. "
+                "Access to lecture materials, stream discussions, and your private locker is restricted until your quiz is submitted.",
+                "danger"
+            )
+            return redirect(url_for(
+                "quizzes.take_quiz",
+                course_id=active_quiz["course_id"],
+                quiz_id=active_quiz["quiz_id"]
+            ))
+        return
+
+    # 2. Enforce Coursework Exam Lockdown
     allowed_endpoints = {
         "exam_view", "exam_submit", "exam_receipt", "unsubmit_coursework", "logout", "static", "login",
-        "attend_scan_landing", "attend_submit", "course_attendance"
+        "attend_scan_landing", "attend_submit", "course_attendance",
+        "quizzes.course_quizzes", "quizzes.take_quiz", "quizzes.api_quiz_autosave",
+        "quizzes.api_quiz_strike", "quizzes.submit_quiz"
     }
-
 
     if endpoint in allowed_endpoints:
         return
@@ -2395,20 +2630,37 @@ def login():
         password = request.form.get("password", "")
 
         if not identifier or not password:
-            flash("Please provide your username/roll number and password.", "danger")
+            flash("Please provide your email / roll number and password.", "danger")
             return render_template("login.html")
 
         conn = get_db()
+        client_ip = get_real_client_ip()
+
+        # Check rate limits for IP and Account
+        ip_ok, ip_wait = check_rate_limit("login_ip", client_ip, conn)
+        if not ip_ok:
+            conn.close()
+            flash(f"Too many failed login attempts from this network. Access temporarily restricted. Please wait {math.ceil(ip_wait / 60)} minute(s) before trying again.", "danger")
+            return render_template("login.html")
+
+        user_ok, user_wait = check_rate_limit("login_user", identifier, conn)
+        if not user_ok:
+            conn.close()
+            flash(f"Account security lockout: too many failed sign-in attempts for this user. Please wait {math.ceil(user_wait / 60)} minute(s) before trying again.", "danger")
+            return render_template("login.html")
+
         user = conn.execute("""
             SELECT * FROM users
             WHERE LOWER(username) = LOWER(?)
                OR LOWER(roll_number) = LOWER(?)
                OR LOWER(email) = LOWER(?)
         """, (identifier, identifier, identifier)).fetchone()
-        conn.close()
 
         remember_me = request.form.get("remember_me")
         if user and verify_cached_password(user["id"], user["password_hash"], password):
+            clear_rate_limit("login_ip", client_ip, conn)
+            clear_rate_limit("login_user", identifier, conn)
+            conn.close()
             session.permanent = bool(remember_me)
             session["user_id"] = user["id"]
             session["username"] = user["username"]
@@ -2447,9 +2699,18 @@ def login():
                 return redirect(next_url)
             return redirect(url_for("dashboard"))
         else:
-            flash("Invalid credentials. Please check your username/roll number and password.", "danger")
+            locked_ip, rem_ip, wait_ip = record_failed_attempt("login_ip", client_ip, conn)
+            locked_user, rem_user, wait_user = record_failed_attempt("login_user", identifier, conn)
+            conn.close()
+            if locked_ip or locked_user:
+                lock_mins = math.ceil(max(wait_ip, wait_user) / 60)
+                flash(f"Account / network temporarily locked due to repeated incorrect password attempts. Please wait {lock_mins} minute(s).", "danger")
+            else:
+                rem = min(rem_ip, rem_user)
+                flash(f"Invalid credentials. Please check your username/roll number and password. ({rem} attempt{'s' if rem != 1 else ''} remaining before temporary lockout)", "danger")
 
-    return render_template("login.html")
+    register_active = (request.args.get("tab") == "register")
+    return render_template("login.html", register_active=register_active)
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -2471,8 +2732,12 @@ def register():
         # Faculty and Instructor accounts must be created by Administrators.
         role = "student"
 
-        if not full_name or not roll_number or not password:
-            flash("Full Name, Roll Number, and Password are required.", "danger")
+        if not full_name or not roll_number or not email or not password:
+            flash("All fields (Full Name, Roll Number, Email, and Password) are mandatory.", "danger")
+            return render_template("login.html", register_active=True)
+
+        if "@" not in email or "." not in email:
+            flash("Please provide a valid institute or student email address.", "danger")
             return render_template("login.html", register_active=True)
 
         if password != confirm_password:
@@ -2577,6 +2842,464 @@ def register():
     return render_template("login.html", register_active=True)
 
 
+# --- Teacher Self-Registration & Verification (#1) ---
+
+@app.route("/register/teacher", methods=["GET", "POST"])
+def teacher_register():
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        full_name = request.form.get("full_name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        department = request.form.get("department", "").strip()
+        designation = request.form.get("designation", "").strip()
+        employee_id = request.form.get("employee_id", "").strip().upper()
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if not full_name or not email or not password or not department or not designation:
+            flash("Full Name, Email, Department, Designation, and Password are required.", "danger")
+            return render_template("teacher_register.html")
+
+        if "@" not in email or "." not in email:
+            flash("Please enter a valid email address.", "danger")
+            return render_template("teacher_register.html")
+
+        if password != confirm_password:
+            flash("Passwords do not match. Please verify.", "danger")
+            return render_template("teacher_register.html")
+
+        if len(password) < 6:
+            flash("Password must contain at least 6 characters.", "danger")
+            return render_template("teacher_register.html")
+
+        conn = get_db()
+        existing_user = conn.execute("""
+            SELECT id FROM users
+            WHERE LOWER(email) = ? OR (roll_number != '' AND UPPER(roll_number) = ?)
+        """, (email, employee_id)).fetchone()
+
+        if existing_user:
+            conn.close()
+            flash("An account with this Email or Employee ID already exists. Please log in.", "warning")
+            return redirect(url_for("login"))
+
+        existing_reg = conn.execute("""
+            SELECT id, status FROM teacher_registrations
+            WHERE LOWER(email) = ? AND status IN ('pending_otp', 'pending_approval')
+        """, (email,)).fetchone()
+
+        now_dt = datetime.now()
+        now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+        raw_otp = f"{secrets.randbelow(900000) + 100000}"
+        otp_hash = hashlib.sha256(raw_otp.encode("utf-8")).hexdigest()
+        otp_exp = (now_dt + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+        pwd_hash = hash_password(password)
+
+        if existing_reg:
+            reg_id = existing_reg["id"]
+            def _update_reg(c):
+                c.execute("BEGIN IMMEDIATE")
+                c.execute("""
+                    UPDATE teacher_registrations
+                    SET full_name = ?, password_hash = ?, department = ?, designation = ?,
+                        employee_id = ?, otp_hash = ?, otp_expires_at = ?, otp_attempts = 0,
+                        otp_sent_count = otp_sent_count + 1, last_otp_sent_at = ?, status = 'pending_otp'
+                    WHERE id = ?
+                """, (full_name, pwd_hash, department, designation, employee_id, otp_hash, otp_exp, now_str, reg_id))
+                c.commit()
+                return reg_id
+            execute_db_write_with_retry(_update_reg)
+        else:
+            def _insert_reg(c):
+                c.execute("BEGIN IMMEDIATE")
+                cur = c.execute("""
+                    INSERT INTO teacher_registrations (
+                        full_name, email, password_hash, department, designation, employee_id,
+                        otp_hash, otp_expires_at, otp_attempts, otp_sent_count, last_otp_sent_at,
+                        status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, 'pending_otp', ?)
+                """, (full_name, email, pwd_hash, department, designation, employee_id, otp_hash, otp_exp, now_str, now_str))
+                rid = getattr(cur, "lastrowid", None)
+                if not rid:
+                    row = c.execute("SELECT id FROM teacher_registrations WHERE LOWER(email) = ?", (email,)).fetchone()
+                    rid = row["id"] if row else None
+                c.commit()
+                return rid
+            reg_id = execute_db_write_with_retry(_insert_reg)
+
+        conn.close()
+
+        # Send OTP email
+        otp_body = f"""
+Dear {full_name},
+
+Thank you for registering as an Instructor / Faculty member on Hoodle LMS.
+Your 6-digit email verification security code is:
+
+    {raw_otp}
+
+This code will expire in 10 minutes. Please enter it on the verification screen to submit your application for administrator review.
+
+If you did not initiate this registration, please disregard this email.
+
+Best regards,
+Hoodle LMS Academic Platform
+Room 402, Engineering Department 1, IIT Bhilai
+"""
+        otp_html = f"""
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h2 style="color: #1e3a8a; margin: 0;">👨‍🏫 Faculty Email Verification</h2>
+    <p style="color: #64748b; font-size: 14px; margin-top: 5px;">Hoodle Learning Management System</p>
+  </div>
+  <p>Dear <strong>{full_name}</strong>,</p>
+  <p>Your one-time verification security code for instructor self-registration is:</p>
+  <div style="background: #f1f5f9; padding: 16px; text-align: center; border-radius: 8px; margin: 24px 0;">
+    <span style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #2563eb; font-family: monospace;">{raw_otp}</span>
+  </div>
+  <p style="font-size: 13px; color: #64748b;">This code expires in 10 minutes. After verifying your email, your account will be reviewed by the system administrator for activation.</p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
+  <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">Room 402, Engineering Dept 1, IIT Bhilai • <a href="https://hoodle.in" style="color: #2563eb;">hoodle.in</a></p>
+</div>
+"""
+        try:
+            enqueue_email(email, "Your Hoodle Faculty Verification Code", "Email Verification", otp_body, otp_html, otp_body, priority=100, expires_in_minutes=15)
+        except Exception as e:
+            app.logger.warning("Could not enqueue verification email: %s", e)
+
+        flash("Verification code sent to your email. Please enter the 6-digit OTP below.", "info")
+        return redirect(url_for("teacher_verify", reg_id=reg_id))
+
+    return render_template("teacher_register.html")
+
+
+@app.route("/register/teacher/verify/<int:reg_id>", methods=["GET", "POST"])
+def teacher_verify(reg_id):
+    conn = get_db()
+    reg = conn.execute("SELECT * FROM teacher_registrations WHERE id = ?", (reg_id,)).fetchone()
+    conn.close()
+
+    if not reg:
+        flash("Registration application not found.", "danger")
+        return redirect(url_for("teacher_register"))
+
+    if reg["status"] == "pending_approval":
+        flash("Your email is already verified! Application is currently awaiting administrator approval.", "info")
+        return redirect(url_for("login"))
+    elif reg["status"] == "approved":
+        flash("Your instructor account has already been approved! Please sign in with your email.", "success")
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        otp = request.form.get("otp", "").strip()
+        now_dt = datetime.now()
+        now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        if now_str > (reg["otp_expires_at"] or ""):
+            flash("Verification code has expired. Please click 'Resend Code'.", "danger")
+            return render_template("teacher_verify.html", reg=reg)
+
+        if (reg["otp_attempts"] or 0) >= 5:
+            flash("Too many failed verification attempts. Please request a new code.", "danger")
+            return render_template("teacher_verify.html", reg=reg)
+
+        otp_hash = hashlib.sha256(otp.encode("utf-8")).hexdigest()
+        if otp_hash != reg["otp_hash"]:
+            conn = get_db()
+            conn.execute("UPDATE teacher_registrations SET otp_attempts = otp_attempts + 1 WHERE id = ?", (reg_id,))
+            conn.commit()
+            conn.close()
+            flash("Invalid verification code. Please check your email and try again.", "danger")
+            return render_template("teacher_verify.html", reg=reg)
+
+        # OTP verified successfully -> status becomes pending_approval
+        def _verify_success(c):
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("""
+                UPDATE teacher_registrations
+                SET email_verified_at = ?, status = 'pending_approval'
+                WHERE id = ?
+            """, (now_str, reg_id))
+            c.commit()
+            return True
+
+        execute_db_write_with_retry(_verify_success)
+
+        # Notify administrator(s) via email queue
+        try:
+            admin_conn = get_db()
+            admins = admin_conn.execute("SELECT email FROM users WHERE role = 'admin' AND email != ''").fetchall()
+            admin_conn.close()
+            admin_emails = [a["email"] for a in admins] or ["hoodle.lms@gmail.com"]
+            for a_email in admin_emails:
+                enqueue_email(
+                    a_email,
+                    f"New Faculty Registration Pending: {reg['full_name']}",
+                    "Teacher Approval Required",
+                    f"{reg['full_name']} ({reg['email']}, {reg['department']}) has verified their email and requested teacher access.",
+                    f"<p><strong>{reg['full_name']}</strong> ({reg['email']}, {reg['department']} - {reg['designation']}) has applied for teacher access.<br><a href='https://hoodle.in/admin/teachers'>Open Teacher Approvals Dashboard</a></p>",
+                    f"{reg['full_name']} ({reg['email']}) registered as teacher.",
+                    priority=50,
+                    expires_in_minutes=1440
+                )
+        except Exception:
+            pass
+
+        flash("✅ Email verified successfully! Your application has been submitted to the administrator for approval. You will receive an email upon activation.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("teacher_verify.html", reg=reg)
+
+
+@app.route("/register/teacher/resend/<int:reg_id>", methods=["POST"])
+def teacher_resend_otp(reg_id):
+    conn = get_db()
+    reg = conn.execute("SELECT * FROM teacher_registrations WHERE id = ?", (reg_id,)).fetchone()
+    conn.close()
+
+    if not reg or reg["status"] not in ("pending_otp",):
+        flash("Invalid request.", "danger")
+        return redirect(url_for("teacher_register"))
+
+    now_dt = datetime.now()
+    now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Rate limit: 60s between resends
+    if reg["last_otp_sent_at"]:
+        try:
+            last_dt = datetime.strptime(reg["last_otp_sent_at"], "%Y-%m-%d %H:%M:%S")
+            if (now_dt - last_dt).total_seconds() < 60:
+                flash("Please wait a moment before requesting another verification code.", "warning")
+                return redirect(url_for("teacher_verify", reg_id=reg_id))
+        except Exception:
+            pass
+
+    raw_otp = f"{secrets.randbelow(900000) + 100000}"
+    otp_hash = hashlib.sha256(raw_otp.encode("utf-8")).hexdigest()
+    otp_exp = (now_dt + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+
+    def _do_resend(c):
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("""
+            UPDATE teacher_registrations
+            SET otp_hash = ?, otp_expires_at = ?, otp_attempts = 0,
+                otp_sent_count = otp_sent_count + 1, last_otp_sent_at = ?
+            WHERE id = ?
+        """, (otp_hash, otp_exp, now_str, reg_id))
+        c.commit()
+        return True
+
+    execute_db_write_with_retry(_do_resend)
+
+    otp_body = f"Your new Hoodle verification code is: {raw_otp}\nExpires in 10 minutes."
+    try:
+        enqueue_email(reg["email"], "Your New Hoodle Faculty Verification Code", "Email Verification", otp_body, f"<p>Your code is: <strong>{raw_otp}</strong></p>", otp_body, priority=100, expires_in_minutes=15)
+    except Exception:
+        pass
+
+    flash("A new 6-digit verification code has been dispatched to your email.", "info")
+    return redirect(url_for("teacher_verify", reg_id=reg_id))
+
+
+# --- Admin Teacher Approvals Dashboard ---
+
+@app.route("/admin/teachers")
+@admin_required
+def admin_teachers():
+    tab = request.args.get("tab", "pending").strip().lower()
+    if tab not in ("pending", "approved", "rejected"):
+        tab = "pending"
+
+    status_filter = "pending_approval" if tab == "pending" else tab
+
+    conn = get_db()
+    registrations = conn.execute("""
+        SELECT * FROM teacher_registrations
+        WHERE status = ?
+        ORDER BY created_at DESC
+    """, (status_filter,)).fetchall()
+
+    counts = conn.execute("""
+        SELECT
+            SUM(CASE WHEN status = 'pending_approval' THEN 1 ELSE 0 END) as pending_count,
+            SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_count,
+            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count
+        FROM teacher_registrations
+    """).fetchone()
+    conn.close()
+
+    p_count = (counts["pending_count"] if counts else 0) or 0
+    a_count = (counts["approved_count"] if counts else 0) or 0
+    r_count = (counts["rejected_count"] if counts else 0) or 0
+
+    return render_template(
+        "admin_teachers.html",
+        registrations=registrations,
+        current_tab=tab,
+        pending_count=p_count,
+        approved_count=a_count,
+        rejected_count=r_count
+    )
+
+
+@app.route("/admin/teachers/<int:reg_id>/approve", methods=["POST"])
+@admin_required
+def admin_teacher_approve(reg_id):
+    actor_id = session.get("user_id")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db()
+    reg = conn.execute("SELECT * FROM teacher_registrations WHERE id = ?", (reg_id,)).fetchone()
+    if not reg or reg["status"] != "pending_approval":
+        conn.close()
+        flash("Registration request not found or not in pending state.", "danger")
+        return redirect(url_for("admin_teachers"))
+
+    # Determine unique username (use email or employee ID)
+    cand_username = reg["email"].strip().lower()
+    existing_u = conn.execute("SELECT id FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?", (cand_username, reg["email"].lower())).fetchone()
+    if existing_u:
+        conn.close()
+        flash("A user account with this email or username already exists in the system.", "warning")
+        return redirect(url_for("admin_teachers"))
+    conn.close()
+
+    def _do_approve(c):
+        c.execute("BEGIN IMMEDIATE")
+        cur = c.execute("""
+            INSERT INTO users (
+                username, roll_number, email, password_hash, display_name, role, created_at
+            ) VALUES (?, ?, ?, ?, ?, 'teacher', ?)
+        """, (
+            cand_username,
+            reg["employee_id"] or "",
+            reg["email"],
+            reg["password_hash"],
+            reg["full_name"],
+            now_str
+        ))
+        uid = getattr(cur, "lastrowid", None)
+        if not uid:
+            u_row = c.execute("SELECT id FROM users WHERE LOWER(username) = ?", (cand_username,)).fetchone()
+            uid = u_row["id"] if u_row else None
+
+        c.execute("""
+            UPDATE teacher_registrations
+            SET status = 'approved', reviewed_by = ?, reviewed_at = ?, created_user_id = ?
+            WHERE id = ?
+        """, (actor_id, now_str, uid, reg_id))
+        c.commit()
+        return uid
+
+    new_uid = execute_db_write_with_retry(_do_approve)
+
+    # Notify teacher via email
+    welcome_body = f"""
+Dear {reg['full_name']},
+
+Congratulations! Your instructor account on Hoodle LMS has been approved and activated by the administrator.
+
+You may now sign in using your email address ({reg['email']}) and the password you set during registration:
+https://hoodle.in/login
+
+With your instructor privileges, you can now:
+  • Create and conduct courses and labs
+  • Launch high-speed rotating QR attendance projectors
+  • Manage course announcements, assignments, and exam lockers
+  • Access real-time gradebook and attendance analytics
+
+Best regards,
+Hoodle LMS Academic Platform
+Room 402, Engineering Department 1, IIT Bhilai
+"""
+    try:
+        enqueue_email(
+            reg["email"],
+            "Hoodle LMS — Your Instructor Account Has Been Approved!",
+            "Account Approved",
+            welcome_body,
+            f"<div style='font-family: sans-serif; padding: 20px;'><h2 style='color: #15803d;'>🎉 Welcome to Hoodle LMS</h2><p>Dear {reg['full_name']},</p><pp>Your instructor account has been approved. You can now <a href='https://hoodle.in/login'>Sign in with your email</a>.</p></div>",
+            welcome_body,
+            priority=100,
+            expires_in_minutes=1440
+        )
+    except Exception as e:
+        app.logger.warning("Could not enqueue approval email: %s", e)
+
+    flash(f"✅ Approved! Teacher account created for {reg['full_name']} (User #{new_uid}). Notification email dispatched.", "success")
+    return redirect(url_for("admin_teachers"))
+
+
+@app.route("/admin/teachers/<int:reg_id>/reject", methods=["POST"])
+@admin_required
+def admin_teacher_reject(reg_id):
+    actor_id = session.get("user_id")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    review_note = request.form.get("review_note", "").strip()
+
+    conn = get_db()
+    reg = conn.execute("SELECT * FROM teacher_registrations WHERE id = ?", (reg_id,)).fetchone()
+    if not reg:
+        conn.close()
+        flash("Registration request not found.", "danger")
+        return redirect(url_for("admin_teachers"))
+    conn.close()
+
+    def _do_reject(c):
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("""
+            UPDATE teacher_registrations
+            SET status = 'rejected', review_note = ?, reviewed_by = ?, reviewed_at = ?, otp_hash = ''
+            WHERE id = ?
+        """, (review_note, actor_id, now_str, reg_id))
+        c.commit()
+        return True
+
+    execute_db_write_with_retry(_do_reject)
+
+    reject_body = f"""
+Dear {reg['full_name']},
+
+Thank you for your interest in Hoodle LMS.
+Your instructor registration application has been reviewed. At this time, the application could not be approved.
+
+Reason / Administrator Note:
+{review_note or 'Application requirements not met.'}
+
+If you believe this is in error, please contact hoodle.lms@gmail.com.
+
+Best regards,
+Hoodle LMS Administration
+Room 402, Engineering Department 1, IIT Bhilai
+"""
+    try:
+        enqueue_email(
+            reg["email"],
+            "Update on your Hoodle Instructor Registration",
+            "Application Update",
+            reject_body,
+            f"<p>{reject_body.replace(chr(10), '<br>')}</p>",
+            reject_body,
+            priority=50,
+            expires_in_minutes=1440
+        )
+    except Exception:
+        pass
+
+    flash(f"Application for {reg['full_name']} marked as rejected.", "info")
+    return redirect(url_for("admin_teachers"))
+
+
+# --- Contact Us Public Page (#7) ---
+
+@app.route("/contact")
+def contact_page():
+    """Public academic contact and support page."""
+    return render_template("contact.html")
+
+
 @app.route("/logout")
 def logout():
     session.clear()
@@ -2602,6 +3325,24 @@ def forgot_password():
             return render_template("forgot_password.html")
 
         conn = get_db()
+        client_ip = get_real_client_ip()
+
+        # Rate limiting: protect against password reset spamming / user enumeration
+        ip_ok, ip_wait = check_rate_limit("forgot_ip", client_ip, conn)
+        if not ip_ok:
+            conn.close()
+            flash(f"Too many password recovery requests from this network. Please wait {math.ceil(ip_wait / 60)} minute(s).", "warning")
+            return render_template("forgot_password.html")
+
+        user_ok, user_wait = check_rate_limit("forgot_user", identifier, conn)
+        if not user_ok:
+            conn.close()
+            flash(f"Too many recovery requests for this account. Please wait {math.ceil(user_wait / 60)} minute(s).", "warning")
+            return render_template("forgot_password.html")
+
+        record_failed_attempt("forgot_ip", client_ip, conn)
+        record_failed_attempt("forgot_user", identifier, conn)
+
         user = conn.execute("""
             SELECT * FROM users
             WHERE LOWER(username) = LOWER(?)
@@ -2720,6 +3461,15 @@ def reset_password():
             return render_template("reset_password.html", identifier=identifier)
 
         conn = get_db()
+        client_ip = get_real_client_ip()
+        otp_key = f"{identifier}:{client_ip}"
+
+        otp_ok, otp_wait = check_rate_limit("reset_otp", otp_key, conn)
+        if not otp_ok:
+            conn.close()
+            flash(f"Too many incorrect verification attempts. Please wait {math.ceil(otp_wait / 60)} minute(s) before trying again.", "danger")
+            return render_template("reset_password.html", identifier=identifier)
+
         user = conn.execute("""
             SELECT * FROM users
             WHERE LOWER(username) = LOWER(?)
@@ -2740,10 +3490,12 @@ def reset_password():
         """, (user["id"], otp_code, now_str)).fetchone()
 
         if not valid_otp:
+            record_failed_attempt("reset_otp", otp_key, conn)
             conn.close()
             flash("Invalid or expired OTP verification code. Please request a fresh code.", "danger")
             return render_template("reset_password.html", identifier=identifier)
 
+        clear_rate_limit("reset_otp", otp_key, conn)
         new_hash = hash_password(new_password)
         conn.execute("UPDATE password_reset_otps SET is_used = 1 WHERE id = ?", (valid_otp["id"],))
         conn.execute("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", (new_hash, user["id"]))
@@ -2948,7 +3700,7 @@ student_guide = usage_guide
 def index():
     if "user_id" in session:
         return redirect(url_for("dashboard"))
-    return redirect(url_for("login"))
+    return render_template("home.html")
 
 
 @app.route("/dashboard")
@@ -5170,6 +5922,120 @@ def coursework_clear_room_allocations(course_id, coursework_id):
     return redirect(url_for("coursework_detail", course_id=course_id, coursework_id=coursework_id))
 
 
+# --- Assignment-Level Plagiarism & Code Similarity Detector ---
+
+@app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/plagiarism", methods=["GET"])
+@login_required
+def coursework_plagiarism_status(course_id, coursework_id):
+    course = get_course_or_404(course_id)
+    curr_user = get_current_user()
+    if not (curr_user and (curr_user["role"] in ("teacher", "admin") or course["teacher_id"] == session["user_id"])):
+        return jsonify({"error": "Unauthorized"}), 403
+
+    conn = get_db()
+    init_coursework_plagiarism_db(conn)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, status, total_submissions, results_json, error_message, created_at, updated_at
+        FROM coursework_plagiarism_scans
+        WHERE coursework_id = ?
+        ORDER BY id DESC LIMIT 1;
+    """, (coursework_id,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"status": "none", "message": "No scans run yet for this assignment."})
+
+    status = row[1] if isinstance(row, (tuple, list)) else row["status"]
+    total = row[2] if isinstance(row, (tuple, list)) else row["total_submissions"]
+    res_json = row[3] if isinstance(row, (tuple, list)) else row["results_json"]
+    err = row[4] if isinstance(row, (tuple, list)) else row["error_message"]
+    updated_at = row[6] if isinstance(row, (tuple, list)) else row["updated_at"]
+
+    parsed_results = json.loads(res_json) if res_json else {}
+    return jsonify({
+        "status": status,
+        "total_submissions": total,
+        "updated_at": str(updated_at),
+        "error": err,
+        "report": parsed_results
+    })
+
+
+@app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/plagiarism/scan", methods=["POST"])
+@login_required
+def coursework_plagiarism_start_scan(course_id, coursework_id):
+    course = get_course_or_404(course_id)
+    curr_user = get_current_user()
+    if not (curr_user and (curr_user["role"] in ("teacher", "admin") or course["teacher_id"] == session["user_id"])):
+        return jsonify({"error": "Unauthorized"}), 403
+
+    def _bg_scan_worker():
+        with app.app_context():
+            try:
+                os.nice(10)
+            except Exception:
+                pass
+            bg_conn = get_db()
+            try:
+                run_coursework_plagiarism_scan(coursework_id, bg_conn)
+            finally:
+                bg_conn.close()
+
+    threading.Thread(target=_bg_scan_worker, daemon=True).start()
+    return jsonify({"success": True, "message": "Plagiarism analysis started in background."})
+
+
+@app.route("/courses/<int:course_id>/coursework/<int:coursework_id>/plagiarism/compare/<int:sub1_id>/<int:sub2_id>", methods=["GET"])
+@login_required
+def coursework_plagiarism_compare(course_id, coursework_id, sub1_id, sub2_id):
+    course = get_course_or_404(course_id)
+    curr_user = get_current_user()
+    if not (curr_user and (curr_user["role"] in ("teacher", "admin") or course["teacher_id"] == session["user_id"])):
+        return jsonify({"error": "Unauthorized"}), 403
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    def _get_sub(sid):
+        cur.execute("""
+            SELECT s.id, s.original_filename, s.file_path, u.display_name, u.roll_number
+            FROM submissions s
+            JOIN users u ON s.student_id = u.id
+            WHERE s.id = ?
+        """, (sid,))
+        r = cur.fetchone()
+        if r:
+            disp = r[3] if isinstance(r, (tuple, list)) else r["display_name"]
+            roll = r[4] if isinstance(r, (tuple, list)) else r["roll_number"]
+            fpath = r[2] if isinstance(r, (tuple, list)) else r["file_path"]
+            orig = r[1] if isinstance(r, (tuple, list)) else r["original_filename"]
+            code = extract_code_from_file(fpath, orig)
+            return {"name": disp, "roll": roll, "filename": orig, "code": code}
+
+        # Check coding_submissions
+        cur.execute("""
+            SELECT cs.id, cs.code_snapshot, u.display_name, u.roll_number
+            FROM coding_submissions cs
+            JOIN users u ON cs.user_id = u.id
+            WHERE cs.id = ?
+        """, (sid,))
+        cr = cur.fetchone()
+        if cr:
+            disp = cr[2] if isinstance(cr, (tuple, list)) else cr["display_name"]
+            roll = cr[3] if isinstance(cr, (tuple, list)) else cr["roll_number"]
+            code = cr[1] if isinstance(cr, (tuple, list)) else cr["code_snapshot"]
+            return {"name": disp, "roll": roll, "filename": "Cloud IDE Submission", "code": code}
+        return {"name": "Unknown", "roll": "", "filename": "", "code": "Code not found"}
+
+    s1 = _get_sub(sub1_id)
+    s2 = _get_sub(sub2_id)
+    conn.close()
+
+    return jsonify({"student1": s1, "student2": s2})
+
+
 # --- Strict Exam Mode Lockdown Interface & Submission ---
 
 @app.route("/courses/<int:course_id>/exam/<int:coursework_id>")
@@ -6274,13 +7140,57 @@ def calculate_course_grades(course_id, student_id=None, conn=None):
     course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
     categories = ensure_course_grading_categories(course_id, conn)
 
-    coursework_list = conn.execute("""
+    coursework_rows = conn.execute("""
         SELECT cw.*, cgc.name as category_name
         FROM coursework cw
         LEFT JOIN course_grading_categories cgc ON cw.category_id = cgc.id
         WHERE cw.course_id = ? AND cw.type != 'material'
         ORDER BY cw.created_at ASC
     """, (course_id,)).fetchall()
+    coursework_list = [dict(cw) for cw in coursework_rows]
+
+    # Incorporate published quizzes with released grades into weighted grading
+    try:
+        quizzes_raw = conn.execute("""
+            SELECT q.*, cgc.name as category_name
+            FROM quizzes q
+            LEFT JOIN course_grading_categories cgc ON q.category_id = cgc.id
+            WHERE q.course_id = ? AND q.is_published = 1 AND COALESCE(q.grades_released, 0) = 1
+            ORDER BY q.created_at ASC
+        """, (course_id,)).fetchall()
+
+        default_quiz_cat = None
+        for c in categories:
+            c_name = (c["name"] or "").lower()
+            if "quiz" in c_name or "assignment" in c_name:
+                default_quiz_cat = c
+                break
+        if not default_quiz_cat:
+            for c in categories:
+                if not c["is_attendance"]:
+                    default_quiz_cat = c
+                    break
+
+        for q in quizzes_raw:
+            assigned_cat_id = q["category_id"] or (default_quiz_cat["id"] if default_quiz_cat else None)
+            assigned_cat_name = q["category_name"] or (default_quiz_cat["name"] if default_quiz_cat else "Assignments & Quizzes")
+            quiz_cw_item = {
+                "id": 100000 + q["id"],
+                "quiz_id": q["id"],
+                "course_id": course_id,
+                "title": f"🎯 {q['title']}",
+                "description": q["description"] or "",
+                "points": float(q["total_marks"] or 0.0),
+                "due_date": q["end_time"],
+                "type": "quiz",
+                "category_id": assigned_cat_id,
+                "category_name": assigned_cat_name,
+                "created_at": q["created_at"],
+                "is_quiz": True
+            }
+            coursework_list.append(quiz_cw_item)
+    except Exception as e:
+        app.logger.warning("Error loading quizzes into calculate_course_grades: %s", e)
 
     if student_id:
         students = conn.execute("""
@@ -6310,7 +7220,40 @@ def calculate_course_grades(course_id, student_id=None, conn=None):
     else:
         submissions_raw = conn.execute(sub_query, (course_id,)).fetchall()
 
-    sub_map = {(r["student_id"], r["coursework_id"]): r for r in submissions_raw}
+    sub_map = {(r["student_id"], r["coursework_id"]): dict(r) for r in submissions_raw}
+
+    # Incorporate released quiz attempts into sub_map
+    try:
+        qa_query = """
+            SELECT qa.*, q.total_marks
+            FROM quiz_attempts qa
+            JOIN quizzes q ON qa.quiz_id = q.id
+            WHERE q.course_id = ? AND q.is_published = 1 AND COALESCE(q.grades_released, 0) = 1
+              AND qa.status IN ('submitted', 'auto_submitted_violation')
+        """
+        if student_id:
+            qa_query += " AND qa.student_id = ?"
+            qa_rows = conn.execute(qa_query, (course_id, student_id)).fetchall()
+        else:
+            qa_rows = conn.execute(qa_query, (course_id,)).fetchall()
+
+        for qa in qa_rows:
+            s_id = qa["student_id"]
+            synth_cw_id = 100000 + qa["quiz_id"]
+            sub_map[(s_id, synth_cw_id)] = {
+                "id": qa["id"],
+                "coursework_id": synth_cw_id,
+                "student_id": s_id,
+                "grade": qa["score"],
+                "feedback": "",
+                "status": "graded",
+                "submitted_at": qa["submitted_at"],
+                "is_quiz": True,
+                "attempt_id": qa["id"],
+                "quiz_id": qa["quiz_id"]
+            }
+    except Exception as e:
+        app.logger.warning("Error loading quiz attempts into calculate_course_grades sub_map: %s", e)
 
     # Attendance stats for course
     logged_dates = conn.execute("""
@@ -6846,6 +7789,38 @@ def quick_grade_update(course_id):
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db()
+
+    try:
+        cw_int = int(coursework_id)
+    except (ValueError, TypeError):
+        cw_int = 0
+
+    if cw_int >= 100000:
+        quiz_id = cw_int - 100000
+        att = conn.execute("""
+            SELECT id FROM quiz_attempts
+            WHERE quiz_id = ? AND student_id = ?
+            ORDER BY id DESC LIMIT 1
+        """, (quiz_id, student_id)).fetchone()
+        if att:
+            conn.execute("""
+                UPDATE quiz_attempts
+                SET score = ?, submitted_at = COALESCE(submitted_at, ?)
+                WHERE id = ?
+            """, (grade, now_str, att["id"]))
+        else:
+            q_row = conn.execute("SELECT total_marks FROM quizzes WHERE id = ?", (quiz_id,)).fetchone()
+            tot_p = q_row["total_marks"] if q_row else 100.0
+            conn.execute("""
+                INSERT INTO quiz_attempts (quiz_id, student_id, status, started_at, submitted_at, score, total_possible)
+                VALUES (?, ?, 'submitted', ?, ?, ?, ?)
+            """, (quiz_id, student_id, now_str, now_str, grade, tot_p))
+        conn.commit()
+        conn.close()
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+            return jsonify({"success": True, "grade": grade, "feedback": feedback})
+        flash(f"✅ Quiz score updated to {grade} pts.", "success")
+        return redirect(url_for("course_grades", course_id=course_id))
 
     existing = conn.execute("""
         SELECT id FROM submissions WHERE coursework_id = ? AND student_id = ?
@@ -8545,9 +9520,16 @@ def api_acknowledge_announcement(ann_id):
 @app.route("/admin/system")
 @admin_required
 def admin_system_monitor():
+    conn = get_db()
+    courses = conn.execute("""
+        SELECT c.*, u.display_name as teacher_name, u.email as teacher_email
+        FROM courses c
+        JOIN users u ON c.teacher_id = u.id
+        ORDER BY c.code ASC
+    """).fetchall()
+    conn.close()
+    return render_template("admin_system.html", courses=courses)
     """Renders the Real-Time Cluster & System Health Monitor dashboard."""
-    return render_template("admin_system.html")
-
 
 @app.route("/api/admin/system/status")
 @admin_required
@@ -9959,6 +10941,17 @@ def attendance_session_detail(course_id):
         WHERE course_id = ? AND excluded_date = ? AND session_type = ?
     """, (course_id, target_date, session_type)).fetchone()
 
+    # 4. Fetch revoked audit logs for this session (for transparency & instant restore)
+    audit_logs = []
+    try:
+        audit_logs = conn.execute("""
+            SELECT * FROM attendance_audit_log
+            WHERE course_id = ? AND attendance_date = ? AND session_type = ? AND action = 'REMOVED' AND restored_at IS NULL
+            ORDER BY performed_at DESC
+        """, (course_id, target_date, session_type)).fetchall()
+    except Exception:
+        pass
+
     conn.close()
 
     present_student_ids = {l["student_id"] for l in logs}
@@ -9982,8 +10975,139 @@ def attendance_session_detail(course_id):
         absent_count=absent_count,
         attendance_pct=pct,
         is_excluded=bool(excluded_row),
-        excluded_info=excluded_row
+        excluded_info=excluded_row,
+        audit_logs=audit_logs
     )
+
+
+@app.route("/courses/<int:course_id>/attendance/delete-record/<int:log_id>", methods=["POST"])
+@teacher_required
+def attendance_delete_student_record(course_id, log_id):
+    """
+    Teacher & TA Single Attendance Record Removal (#3):
+    Safely archives the attendance record into the audit log before removing it from attendance_logs.
+    Prevents cross-course IDOR deletion and guarantees full zero-data-loss auditability.
+    """
+    course = get_course_or_404(course_id)
+    target_date = request.form.get("target_date", "").strip()
+    session_type = request.form.get("session_type", "Lecture").strip()
+    reason = request.form.get("reason", "").strip()
+    actor_id = session.get("user_id")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db()
+    log_row = conn.execute("SELECT * FROM attendance_logs WHERE id = ? AND course_id = ?", (log_id, course_id)).fetchone()
+    if not log_row:
+        conn.close()
+        flash("Attendance record not found or does not belong to this course.", "danger")
+        return redirect(url_for("attendance_session_detail", course_id=course_id, date=target_date, type=session_type))
+
+    log_dict = dict(log_row)
+    snapshot = json.dumps(log_dict)
+    stud_name = log_dict.get("student_name", "Student")
+    stud_roll = log_dict.get("roll_number", "")
+    conn.close()
+
+    def _do_archive_and_delete(c):
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("""
+            INSERT INTO attendance_audit_log (
+                course_id, original_log_id, student_id, roll_number, student_name,
+                session_type, attendance_date, action, snapshot_json, reason,
+                performed_by, performed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'REMOVED', ?, ?, ?, ?)
+        """, (
+            course_id, log_id, log_dict["student_id"], stud_roll, stud_name,
+            log_dict.get("session_type", session_type), log_dict.get("attendance_date", target_date),
+            snapshot, reason, actor_id, now_str
+        ))
+        c.execute("DELETE FROM attendance_logs WHERE id = ? AND course_id = ?", (log_id, course_id))
+        c.commit()
+        return True
+
+    execute_db_write_with_retry(_do_archive_and_delete)
+    flash(f"🗑️ Attendance record for {stud_name} ({stud_roll}) safely removed and archived.", "info")
+    return redirect(url_for("attendance_session_detail", course_id=course_id, date=target_date, type=session_type))
+
+
+@app.route("/courses/<int:course_id>/attendance/restore-record/<int:audit_id>", methods=["POST"])
+@teacher_required
+def attendance_restore_student_record(course_id, audit_id):
+    """
+    Teacher & TA 1-Click Record Restore:
+    Restores an archived attendance record from attendance_audit_log back into attendance_logs.
+    """
+    course = get_course_or_404(course_id)
+    target_date = request.form.get("target_date", "").strip()
+    session_type = request.form.get("session_type", "Lecture").strip()
+    actor_id = session.get("user_id")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db()
+    audit_row = conn.execute("SELECT * FROM attendance_audit_log WHERE id = ? AND course_id = ?", (audit_id, course_id)).fetchone()
+    if not audit_row:
+        conn.close()
+        flash("Audit record not found.", "danger")
+        return redirect(url_for("attendance_session_detail", course_id=course_id, date=target_date, type=session_type))
+
+    log_data = json.loads(audit_row["snapshot_json"])
+    conn.close()
+
+    def _do_restore(c):
+        c.execute("BEGIN IMMEDIATE")
+        # Check if already marked
+        existing = c.execute("""
+            SELECT id FROM attendance_logs
+            WHERE course_id = ? AND student_id = ? AND attendance_date = ? AND session_type = ?
+        """, (course_id, log_data["student_id"], log_data["attendance_date"], log_data["session_type"])).fetchone()
+
+        if existing:
+            c.rollback()
+            return "already_present"
+
+        c.execute("""
+            INSERT INTO attendance_logs (
+                course_id, session_id, student_id, roll_number, student_name,
+                section, session_type, attendance_date, status, method,
+                ip_address, marked_at, attendance_key, latitude, longitude,
+                accuracy_meters, distance_meters, is_proxy_suspect, proxy_remark
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            log_data.get("course_id", course_id),
+            log_data.get("session_id"),
+            log_data.get("student_id"),
+            log_data.get("roll_number"),
+            log_data.get("student_name"),
+            log_data.get("section", "Section A"),
+            log_data.get("session_type", session_type),
+            log_data.get("attendance_date", target_date),
+            log_data.get("status", "PRESENT"),
+            log_data.get("method", "RESTORED"),
+            log_data.get("ip_address"),
+            log_data.get("marked_at", now_str),
+            log_data.get("attendance_key", f"RESTORE_{uuid.uuid4().hex[:12]}"),
+            log_data.get("latitude"),
+            log_data.get("longitude"),
+            log_data.get("accuracy_meters"),
+            log_data.get("distance_meters"),
+            log_data.get("is_proxy_suspect", 0),
+            log_data.get("proxy_remark", "")
+        ))
+
+        c.execute("""
+            UPDATE attendance_audit_log
+            SET restored_at = ?, restored_by = ?
+            WHERE id = ?
+        """, (now_str, actor_id, audit_id))
+        c.commit()
+        return "ok"
+
+    res = execute_db_write_with_retry(_do_restore)
+    if res == "already_present":
+        flash("Student is already marked present for this session.", "warning")
+    else:
+        flash(f"↩️ Attendance record for {log_data.get('student_name')} restored successfully.", "success")
+    return redirect(url_for("attendance_session_detail", course_id=course_id, date=target_date, type=session_type))
 
 
 @app.route("/courses/<int:course_id>/attendance/session/delete", methods=["POST"])
@@ -11344,6 +12468,7 @@ def download_apk():
 
 with app.app_context():
     init_db()
+    ensure_feature_tables()
     start_daily_google_sheet_backup_daemon()
 
 

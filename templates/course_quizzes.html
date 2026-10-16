@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course.code }} Quizzes & Assessments - Hoodle{% endblock %}
+
+{% block content %}
+<!-- Google Classroom Course Header Banner -->
+<div class="course-banner banner-{{ course.theme_color }}">
+  <h1>{{ course.code }}: {{ course.title }}</h1>
+  <div class="course-subtitle">{{ course.section or 'Section A' }}</div>
+  <div class="course-meta">
+    <span>👨‍🏫 {{ course.teacher_name }}</span>
+    {% if is_staff %}
+      <div class="class-code-badge" onclick="copyToClipboard('{{ course.join_code }}', this, 'Code Copied!')">
+        <span>Class Code:</span>
+        <strong>{{ course.join_code }}</strong>
+        <span>📋</span>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Course Tabs Navigation -->
+<nav class="course-tabs-nav">
+  <a href="{{ url_for('course_stream', course_id=course.id) }}" class="course-tab">
+    📢 Stream
+  </a>
+  <a href="{{ url_for('course_classwork', course_id=course.id) }}" class="course-tab active">
+    📝 Classwork
+  </a>
+  <a href="{{ url_for('course_people', course_id=course.id) }}" class="course-tab">
+    👥 People
+  </a>
+  <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="course-tab">
+    📅 Attendance
+  </a>
+  <a href="{{ url_for('course_grades', course_id=course.id) }}" class="course-tab">
+    📊 Grades
+  </a>
+  <a href="{{ url_for('course_messages', course_id=course.id) }}" class="course-tab">
+    💬 Messages
+    {% set c_unread = get_course_unread_count(course.id) %}
+    {% if c_unread > 0 %}
+      <span class="badge" style="background: #ef4444; color: white; border-radius: 9999px; padding: 1px 6px; font-size: 0.7rem; font-weight: 800; margin-left: 0.3rem;">{{ c_unread }}</span>
+    {% endif %}
+  </a>
+</nav>
+
+<div style="margin: 0.5rem 0 1rem 0;">
+  <a href="{{ url_for('course_classwork', course_id=course.id) }}" style="color: #2563eb; font-weight: 700; text-decoration: none; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 0.3rem;">
+    ← Back to Coursework
+  </a>
+</div>
+
+<!-- Teacher Action Bar -->
+{% if is_staff %}
+  <div class="classwork-actions-strip" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.75rem;">
+    <div>
+      <h2 style="font-size: 1.25rem; font-weight: 800; margin: 0; color: #1e293b;">Interactive Quizzes &amp; Assessments</h2>
+      <p style="font-size: 0.85rem; color: #64748b; margin: 0.2rem 0 0 0;">Create auto-graded quizzes with anti-cheat lockdown, code analysis, and continuous autosave.</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+      <a href="{{ url_for('quizzes.download_quiz_template', course_id=course.id, format='json') }}" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; padding: 0.55rem 0.9rem; font-weight: 700; border-radius: 8px;" title="Download sample template covering all 6 question formats">
+        📄 Download Template
+      </a>
+      <button onclick="openModal('importQuizModal')" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.55rem 1rem; font-weight: 700; border-radius: 8px;">
+        📥 Import from File (PDF / JSON)
+      </button>
+      <button onclick="openModal('createQuizModal')" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.55rem 1.1rem; font-weight: 700; border-radius: 8px;">
+        ➕ Create New Quiz
+      </button>
+    </div>
+  </div>
+{% endif %}
+
+<!-- Quizzes Container -->
+<div class="container-responsive" style="max-width: 1100px; margin: 0 auto; padding-bottom: 3rem;">
+  {% if not quizzes %}
+    <div style="background: white; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 3rem 1.5rem; text-align: center; margin-top: 1rem;">
+      <div style="font-size: 3rem; margin-bottom: 0.5rem;">⏱️</div>
+      <h3 style="font-size: 1.2rem; font-weight: 700; color: #334155; margin-bottom: 0.4rem;">No Quizzes Available Yet</h3>
+      <p style="font-size: 0.9rem; color: #64748b; max-width: 480px; margin: 0 auto 1.5rem auto;">
+        Interactive timed assessments, code snippet questions, and lockdown quizzes will appear here when scheduled by course instructors.
+      </p>
+      {% if is_staff %}
+        <button onclick="openModal('createQuizModal')" class="btn btn-primary" style="padding: 0.5rem 1.2rem; font-weight: 700;">
+          ➕ Create First Quiz
+        </button>
+      {% endif %}
+    </div>
+  {% else %}
+    <div style="display: flex; flex-direction: column; gap: 1rem;">
+      {% for q in quizzes %}
+        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.25rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 0.75rem; transition: transform 0.15s ease, box-shadow 0.15s ease;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem;">
+            <div style="flex: 1; min-width: 260px;">
+              <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.35rem;">
+                <h3 style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin: 0;">
+                  {{ q.title }}
+                </h3>
+                {% if q.exam_lockdown %}
+                  <span class="badge" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-weight: 700; font-size: 0.75rem; padding: 2px 8px; border-radius: 6px;">
+                    🔒 Anti-Cheat Lockdown
+                  </span>
+                {% endif %}
+                {% if q.remote_approval_required %}
+                  <span class="badge" style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; font-weight: 700; font-size: 0.75rem; padding: 2px 8px; border-radius: 6px;">
+                    🛡️ Remote Gate
+                  </span>
+                {% endif %}
+                {% if q.is_active %}
+                  <span class="badge" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 700; font-size: 0.75rem; padding: 2px 8px; border-radius: 6px;">
+                    🟢 Open Now
+                  </span>
+                {% elif q.is_upcoming %}
+                  <span class="badge" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 700; font-size: 0.75rem; padding: 2px 8px; border-radius: 6px;">
+                    ⏳ Scheduled
+                  </span>
+                {% elif q.is_ended %}
+                  <span class="badge" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; font-weight: 700; font-size: 0.75rem; padding: 2px 8px; border-radius: 6px;">
+                    Closed
+                  </span>
+                {% endif %}
+              </div>
+
+              {% if q.description %}
+                <p style="font-size: 0.88rem; color: #475569; margin: 0.2rem 0 0.5rem 0; line-height: 1.4;">
+                  {{ q.description }}
+                </p>
+              {% endif %}
+
+              <div style="display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.82rem; color: #64748b; margin-top: 0.4rem;">
+                <span>⏱️ <strong>{{ q.duration_minutes }}</strong> mins</span>
+                <span>❓ <strong>{{ q.question_count }}</strong> questions</span>
+                <span>🏆 <strong>{{ q.total_marks }}</strong> total pts (Pass: {{ q.pass_marks }})</span>
+                {% if q.start_time %}
+                  <span>📅 Starts: {{ q.start_time }}</span>
+                {% endif %}
+                {% if q.end_time %}
+                  <span>⌛ Ends: {{ q.end_time }}</span>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              {% if is_staff %}
+                <a href="{{ url_for('quizzes.edit_quiz', course_id=course.id, quiz_id=q.id) }}" class="btn btn-secondary" style="font-size: 0.82rem; padding: 0.45rem 0.9rem; font-weight: 700;">
+                  ✏️ Edit / Questions
+                </a>
+                <a href="{{ url_for('quizzes.quiz_submissions', course_id=course.id, quiz_id=q.id) }}" class="btn btn-secondary" style="font-size: 0.82rem; padding: 0.45rem 0.9rem; font-weight: 700;">
+                  📊 Submissions &amp; Proctoring
+                </a>
+                <form action="{{ url_for('quizzes.delete_quiz', course_id=course.id, quiz_id=q.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('⚠️ Are you sure you want to permanently delete quiz &quot;{{ q.title }}&quot; and all student attempts? This cannot be undone.');">
+                  <button type="submit" class="btn" style="background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; font-size: 0.82rem; padding: 0.45rem 0.85rem; font-weight: 700; border-radius: 6px; cursor: pointer;">
+                    🗑️ Delete
+                  </button>
+                </form>
+              {% endif %}
+
+              <!-- Student Actions -->
+              {% if not is_staff %}
+                {% if q.my_status == 'submitted' %}
+                  <a href="{{ url_for('quizzes.take_quiz', course_id=course.id, quiz_id=q.id) }}" class="btn" style="background: #10b981; color: white; font-size: 0.85rem; padding: 0.5rem 1.1rem; font-weight: 700; border-radius: 8px;">
+                    {% if q.grades_released %}✅ Result: {{ q.my_score }} pts{% else %}⏳ Submitted (Under Review){% endif %}
+                  </a>
+                {% elif q.my_status == 'auto_submitted_violation' %}
+                  <a href="{{ url_for('quizzes.take_quiz', course_id=course.id, quiz_id=q.id) }}" class="btn" style="background: #ef4444; color: white; font-size: 0.85rem; padding: 0.5rem 1.1rem; font-weight: 700; border-radius: 8px;">
+                    {% if q.grades_released %}🛑 Locked (Strike 3) • {{ q.my_score }} pts{% else %}🛑 Locked (Strike 3) • Under Review{% endif %}
+                  </a>
+                {% elif q.my_status == 'pending_approval' %}
+                  <a href="{{ url_for('quizzes.take_quiz', course_id=course.id, quiz_id=q.id) }}" class="btn" style="background: #f59e0b; color: white; font-size: 0.85rem; padding: 0.5rem 1.1rem; font-weight: 700; border-radius: 8px;">
+                    ⏳ Awaiting Teacher Approval
+                  </a>
+                {% elif q.my_status == 'in_progress' %}
+                  <a href="{{ url_for('quizzes.take_quiz', course_id=course.id, quiz_id=q.id) }}" class="btn btn-primary" style="background: #2563eb; font-size: 0.85rem; padding: 0.5rem 1.1rem; font-weight: 700; border-radius: 8px;">
+                    ⚡ Resume Exam
+                  </a>
+                {% else %}
+                  {% if q.is_upcoming %}
+                    <button class="btn btn-secondary" disabled style="font-size: 0.85rem; padding: 0.5rem 1.1rem; opacity: 0.7;">
+                      ⏳ Starts {{ q.start_time }}
+                    </button>
+                  {% elif q.is_ended %}
+                    <button class="btn btn-secondary" disabled style="font-size: 0.85rem; padding: 0.5rem 1.1rem; opacity: 0.7;">
+                      Closed
+                    </button>
+                  {% elif q.question_count == 0 %}
+                    <button class="btn btn-secondary" disabled style="font-size: 0.85rem; padding: 0.5rem 1.1rem; opacity: 0.7;">
+                      Questions Pending
+                    </button>
+                  {% else %}
+                    <a href="{{ url_for('quizzes.take_quiz', course_id=course.id, quiz_id=q.id) }}" class="btn btn-primary" style="font-size: 0.85rem; padding: 0.5rem 1.2rem; font-weight: 700; border-radius: 8px; background: #2563eb;">
+                      🚀 Start Assessment
+                    </a>
+                  {% endif %}
+                {% endif %}
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+<!-- Modal: Create Quiz (Teacher / Staff) -->
+{% if is_staff %}
+<div id="createQuizModal" class="modal-backdrop">
+  <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
+    <div class="modal-header">
+      <h3 style="font-size: 1.15rem; font-weight: 800; color: #1e293b;">Create Interactive Assessment / Quiz</h3>
+      <button class="modal-close" onclick="closeModal('createQuizModal')">&times;</button>
+    </div>
+    <form action="{{ url_for('quizzes.create_quiz', course_id=course.id) }}" method="POST">
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Quiz Title *</label>
+        <input type="text" name="title" class="form-control" placeholder="e.g. Midterm Quiz 1: Pointers & Cache Hierarchy" required>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Instructions / Description</label>
+        <textarea name="description" class="form-control" rows="2" placeholder="Brief directions for students..."></textarea>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Associated Topic / Unit (Optional)</label>
+        <select name="topic_id" class="form-control">
+          <option value="">-- General / No Topic --</option>
+          {% for t in topics %}
+            <option value="{{ t.id }}">{{ t.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Duration (Minutes)</label>
+          <input type="number" name="duration_minutes" class="form-control" value="30" min="1" max="360" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Pass Marks</label>
+          <input type="number" step="0.5" name="pass_marks" class="form-control" value="40" required>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Start Date &amp; Time (Optional)</label>
+          <input type="datetime-local" name="start_time" class="form-control">
+          <small style="color: #64748b; font-size: 0.75rem;">Quiz locked until this time</small>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">End Date &amp; Time (Optional)</label>
+          <input type="datetime-local" name="end_time" class="form-control">
+          <small style="color: #64748b; font-size: 0.75rem;">Submissions closed after this time</small>
+        </div>
+      </div>
+
+      <!-- Security & Anti-Cheat Settings -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;">
+        <h4 style="font-size: 0.88rem; font-weight: 800; color: #334155; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.4rem;">
+          🛡️ Exam Security &amp; Anti-Cheat Controls
+        </h4>
+
+        <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.85rem; cursor: pointer; color: #1e293b;">
+            <input type="checkbox" name="exam_lockdown" value="1" checked style="margin-top: 0.2rem;">
+            <span>
+              <strong>Enforce Exam Lockdown Mode</strong>
+              <span style="display: block; font-size: 0.75rem; color: #64748b;">Mandates fullscreen. 3 strikes for tab-switch, blur, or exit triggers immediate auto-submit.</span>
+            </span>
+          </label>
+
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.85rem; cursor: pointer; color: #1e293b;">
+            <input type="checkbox" name="remote_approval_required" value="1" checked style="margin-top: 0.2rem;">
+            <span>
+              <strong>Remote Access Approval Gate</strong>
+              <span style="display: block; font-size: 0.75rem; color: #64748b;">Students connecting via mobile app or public internet (hoodle.in) must be approved by Teacher/TA before starting.</span>
+            </span>
+          </label>
+
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.85rem; cursor: pointer; color: #1e293b;">
+            <input type="checkbox" name="shuffle_questions" value="1" checked style="margin-top: 0.2rem;">
+            <span>
+              <strong>Shuffle Question Order</strong>
+              <span style="display: block; font-size: 0.75rem; color: #64748b;">Randomizes question presentation sequence for each student to prevent screen peeking.</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('createQuizModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" style="font-weight: 700;">Proceed to Question Builder ➔</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Import Quiz from File (PDF / JSON / TXT / CSV) -->
+<div id="importQuizModal" class="modal-backdrop">
+  <div class="modal-content" style="max-width: 580px;">
+    <div class="modal-header">
+      <h3 style="font-size: 1.15rem; font-weight: 800; color: #1e293b; margin: 0;">
+        📥 Import Assessment from Document
+      </h3>
+      <button class="modal-close" onclick="closeModal('importQuizModal')">&times;</button>
+    </div>
+
+    <!-- Download Sample Template Callout -->
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1.25rem;">
+      <div style="font-weight: 700; font-size: 0.85rem; color: #1d4ed8; margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.4rem;">
+        📄 Sample Templates (Supports All 6 Question Formats)
+      </div>
+      <p style="font-size: 0.8rem; color: #3b82f6; margin: 0 0 0.5rem 0; line-height: 1.4;">
+        Need an exact template? Download our comprehensive sample featuring MCQs, MSQs, blanks, code output predictions, and justifications:
+      </p>
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <a href="{{ url_for('quizzes.download_quiz_template', course_id=course.id, format='json') }}" class="btn" style="background: white; color: #1d4ed8; border: 1px solid #93c5fd; font-size: 0.78rem; padding: 0.3rem 0.7rem; font-weight: 700; border-radius: 4px;">
+          ⬇️ Download Sample JSON
+        </a>
+        <a href="{{ url_for('quizzes.download_quiz_template', course_id=course.id, format='txt') }}" class="btn" style="background: white; color: #1d4ed8; border: 1px solid #93c5fd; font-size: 0.78rem; padding: 0.3rem 0.7rem; font-weight: 700; border-radius: 4px;">
+          ⬇️ Download Sample Text / Aiken
+        </a>
+      </div>
+    </div>
+
+    <form action="{{ url_for('quizzes.import_new_quiz_file', course_id=course.id) }}" method="POST" enctype="multipart/form-data">
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Select Question Document (.pdf, .json, .txt, .csv) *</label>
+        <input type="file" name="quiz_file" class="form-control" accept=".pdf,.json,.txt,.csv" required style="padding: 0.5rem;">
+        <small style="color: #64748b; font-size: 0.75rem; display: block; margin-top: 0.4rem;">
+          💡 <strong>PDF Support:</strong> Automatically parses question prompts, choices (A-D), answer keys, code snippets, and points.
+        </small>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('importQuizModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" style="font-weight: 700; padding: 0.55rem 1.4rem;">
+          🚀 Upload &amp; Create Quiz
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

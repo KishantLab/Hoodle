@@ -1,0 +1,909 @@
+{% extends "base.html" %}
+
+{% block title %}Edit {{ quiz.title }} - Hoodle{% endblock %}
+
+{% block content %}
+<div class="container-responsive" style="max-width: 1050px; margin: 1.5rem auto 4rem auto; padding: 0 1rem;">
+  
+  <!-- Breadcrumb & Top Bar -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+      <a href="{{ url_for('quizzes.course_quizzes', course_id=course.id) }}" style="color: #2563eb; text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 0.3rem;">
+        ← Back to Quizzes
+      </a>
+      <span style="color: #94a3b8;">/</span>
+      <span style="color: #64748b; font-weight: 600;">{{ course.code }}</span>
+      <span style="color: #94a3b8;">/</span>
+      <span style="color: #1e293b; font-weight: 700;">Question Builder</span>
+    </div>
+
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+      <a href="{{ url_for('quizzes.download_quiz_template', course_id=course.id, format='json') }}" class="btn btn-secondary" style="font-size: 0.82rem; padding: 0.45rem 0.85rem; font-weight: 700;" title="Download sample template covering all 6 question formats">
+        📄 Download Template
+      </a>
+      <button onclick="openModal('bulkImportModal')" class="btn btn-primary" style="font-size: 0.82rem; padding: 0.45rem 0.95rem; font-weight: 700; background: #2563eb;">
+        📥 Bulk Import (PDF / JSON)
+      </button>
+      <a href="{{ url_for('quizzes.quiz_submissions', course_id=course.id, quiz_id=quiz.id) }}" class="btn btn-secondary" style="font-size: 0.82rem; padding: 0.45rem 0.9rem; font-weight: 700;">
+        📊 Submissions &amp; Proctoring
+      </a>
+    </div>
+  </div>
+
+  <!-- Quiz Meta Card -->
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <h1 style="font-size: 1.4rem; font-weight: 800; color: #0f172a; margin: 0 0 0.4rem 0;">
+          {{ quiz.title }}
+        </h1>
+        {% if quiz.description %}
+          <p style="font-size: 0.9rem; color: #475569; margin: 0 0 0.75rem 0; line-height: 1.4;">
+            {{ quiz.description }}
+          </p>
+        {% endif %}
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.85rem; color: #64748b;">
+          <span>⏱️ <strong>{{ quiz.duration_minutes }}</strong> mins</span>
+          <span>🎯 Total Points: <strong id="totalPointsDisplay">{{ quiz.total_marks }}</strong> (Pass: {{ quiz.pass_marks }})</span>
+          <span>❓ Questions: <strong>{{ questions|length }}</strong></span>
+          {% if quiz.exam_lockdown %}
+            <span class="badge" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-weight: 700; padding: 2px 7px; border-radius: 4px;">
+              🔒 Anti-Cheat Lockdown
+            </span>
+          {% endif %}
+          {% if quiz.remote_approval_required %}
+            <span class="badge" style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; font-weight: 700; padding: 2px 7px; border-radius: 4px;">
+              🛡️ Remote Gate
+            </span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+        <button onclick="openModal('editQuizSettingsModal')" class="btn btn-secondary" style="font-size: 0.82rem; padding: 0.45rem 0.9rem; font-weight: 700;">
+          ⚙️ Edit Settings &amp; Time
+        </button>
+        <form action="{{ url_for('quizzes.delete_quiz', course_id=course.id, quiz_id=quiz.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('⚠️ Are you sure you want to permanently delete this quiz and all student attempts?');">
+          <button type="submit" class="btn" style="background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; font-size: 0.82rem; padding: 0.45rem 0.85rem; font-weight: 700; border-radius: 6px; cursor: pointer;">
+            🗑️ Delete Quiz
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Existing Questions Section -->
+  <div style="margin-bottom: 2.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h2 style="font-size: 1.15rem; font-weight: 800; color: #1e293b; margin: 0;">
+        Existing Questions ({{ questions|length }})
+      </h2>
+      <a href="#newQuestionCard" class="btn btn-primary" style="font-size: 0.82rem; padding: 0.4rem 0.85rem; font-weight: 700; border-radius: 6px;">
+        ➕ Jump to Add Question
+      </a>
+    </div>
+
+    {% if not questions %}
+      <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 2rem; text-align: center;">
+        <p style="color: #64748b; font-size: 0.92rem; margin: 0 0 0.75rem 0;">No questions added yet. Use the question builder below to add MCQs, MSQs, blanks, or code snippet questions.</p>
+      </div>
+    {% else %}
+      <div style="display: flex; flex-direction: column; gap: 1rem;">
+        {% for q in questions %}
+          <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.25rem; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 0.75rem;">
+              <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <span style="background: #2563eb; color: white; font-weight: 800; font-size: 0.78rem; padding: 2px 8px; border-radius: 4px;">
+                  Q{{ loop.index }}
+                </span>
+                
+                {% if q.question_type == 'mcq' %}
+                  <span class="badge" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 700; font-size: 0.75rem;">
+                    MCQ (Single Choice)
+                  </span>
+                {% elif q.question_type == 'msq' %}
+                  <span class="badge" style="background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; font-weight: 700; font-size: 0.75rem;">
+                    MSQ (Multiple Select)
+                  </span>
+                {% elif q.question_type == 'fitb' %}
+                  <span class="badge" style="background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; font-weight: 700; font-size: 0.75rem;">
+                    Fill in the Blanks
+                  </span>
+                {% elif q.question_type == 'mcq_justification' %}
+                  <span class="badge" style="background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; font-weight: 700; font-size: 0.75rem;">
+                    MCQ + Justification
+                  </span>
+                {% elif q.question_type == 'code_predict' %}
+                  <span class="badge" style="background: #0f172a; color: #38bdf8; border: 1px solid #334155; font-weight: 700; font-size: 0.75rem;">
+                    💻 Code - Predict Output
+                  </span>
+                {% elif q.question_type == 'code_blank' %}
+                  <span class="badge" style="background: #0f172a; color: #4ade80; border: 1px solid #334155; font-weight: 700; font-size: 0.75rem;">
+                    💻 Code - Missing Blank
+                  </span>
+                {% endif %}
+
+                <span style="font-size: 0.8rem; font-weight: 700; color: #475569;">
+                  ⭐ {{ q.points }} pt{% if q.points != 1 %}s{% endif %}
+                </span>
+              </div>
+
+              <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <!-- Edit Full Question Button -->
+                <button type="button" class="btn btn-secondary" onclick="openEditQuestionModal({{ loop.index0 }})" style="font-size: 0.75rem; padding: 0.25rem 0.65rem; font-weight: 700; border-radius: 4px; display: inline-flex; align-items: center; gap: 0.25rem;" title="Edit question prompt, options, answer, code snippet, and justification">
+                  ✏️ Edit
+                </button>
+
+                <!-- Quick Edit Points Form -->
+                <form action="{{ url_for('quizzes.update_question_points', course_id=course.id, quiz_id=quiz.id, question_id=q.id) }}" method="POST" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                  <input type="number" name="points" step="0.5" min="0.5" max="100" value="{{ q.points }}" style="width: 55px; padding: 0.2rem 0.35rem; font-size: 0.78rem; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center; font-weight: 700;" title="Edit points">
+                  <button type="submit" class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.2rem 0.5rem; font-weight: 700;" title="Save points">Save pts</button>
+                </form>
+
+                <!-- Delete Question Form -->
+                <form action="{{ url_for('quizzes.delete_quiz_question', course_id=course.id, quiz_id=quiz.id, question_id=q.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete Question {{ loop.index }}?');">
+                  <button type="submit" class="btn" style="background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; font-size: 0.75rem; padding: 0.25rem 0.6rem; font-weight: 700; border-radius: 4px; cursor: pointer;">
+                    🗑️ Delete
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            <!-- Question Prompt -->
+            <div style="font-size: 0.95rem; color: #1e293b; font-weight: 600; line-height: 1.5; margin-bottom: 0.75rem; white-space: pre-wrap;">{{ q.prompt }}</div>
+
+            <!-- Code Snippet Box (if any) -->
+            {% if q.code_snippet %}
+              <div style="background: #0f172a; color: #f8fafc; border-radius: 8px; padding: 0.85rem 1.1rem; margin-bottom: 0.75rem; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.86rem; overflow-x: auto; line-height: 1.45; border: 1px solid #1e293b;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: #94a3b8; border-bottom: 1px solid #334155; padding-bottom: 0.35rem; margin-bottom: 0.6rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                  <span>Snippet ({{ q.code_language }})</span>
+                </div>
+                <pre style="margin: 0; font-family: inherit; white-space: pre;">{{ q.code_snippet }}</pre>
+              </div>
+            {% endif %}
+
+            <!-- Question-Specific Answers Display -->
+            {% if q.question_type in ('mcq', 'msq', 'mcq_justification') %}
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.5rem; margin-top: 0.5rem;">
+                {% for opt in q.options %}
+                  {% set opt_letter = loop.index0 | string %}
+                  {% set char_code = 65 + loop.index0 %}
+                  {% set letter = ('A', 'B', 'C', 'D', 'E', 'F')[loop.index0] if loop.index0 < 6 else '?' %}
+                  {% set is_correct = (letter in q.correct_answer.split(',')) %}
+                  <div style="padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; background: {% if is_correct %}#ecfdf5{% else %}#f8fafc{% endif %}; border: 1px solid {% if is_correct %}#10b981{% else %}#e2e8f0{% endif %};">
+                    <strong style="color: {% if is_correct %}#047857{% else %}#64748b{% endif %};">{{ letter }}.</strong>
+                    <span style="flex: 1; color: #334155;">{{ opt }}</span>
+                    {% if is_correct %}
+                      <span style="color: #059669; font-weight: 800; font-size: 0.8rem;">✓ Correct</span>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+              </div>
+              {% if q.question_type == 'mcq_justification' %}
+                <div style="font-size: 0.78rem; color: #d97706; margin-top: 0.5rem; font-weight: 600;">
+                  📝 Requires student justification paragraph for TA evaluation.
+                </div>
+              {% endif %}
+            {% elif q.question_type in ('fitb', 'code_predict', 'code_blank') %}
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.6rem 0.85rem; font-size: 0.84rem; margin-top: 0.5rem;">
+                <div style="color: #0f172a;">
+                  <strong>Expected Answer:</strong> <code style="background: #e2e8f0; padding: 1px 5px; border-radius: 4px; font-weight: 700; color: #047857;">{{ q.correct_answer }}</code>
+                </div>
+                {% if q.variations %}
+                  <div style="color: #64748b; font-size: 0.78rem; margin-top: 0.3rem;">
+                    Acceptable Variations:
+                    {% for v in q.variations %}
+                      <code style="background: #f1f5f9; padding: 1px 4px; border-radius: 3px;">{{ v }}</code>{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            {% endif %}
+
+            {% if q.explanation %}
+              <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 0.55rem 0.85rem; margin-top: 0.65rem; font-size: 0.85rem; color: #92400e; display: flex; align-items: baseline; gap: 0.4rem;">
+                <strong style="white-space: nowrap;">💬 Required Justification / Guide:</strong>
+                <span style="font-style: italic; white-space: pre-wrap; margin-left: 0.25rem;">{{ q.explanation }}</span>
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Add New Question Form Card -->
+  <div id="newQuestionCard" style="background: white; border: 2px solid #3b82f6; border-radius: 12px; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.06);">
+    <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1.25rem;">
+      <h3 style="font-size: 1.2rem; font-weight: 800; color: #1e293b; margin: 0 0 0.25rem 0;">
+        ➕ Add Question to Quiz
+      </h3>
+      <p style="font-size: 0.85rem; color: #64748b; margin: 0;">
+        Select from 6 versatile assessment formats including auto-graded code snippets and justifications.
+      </p>
+    </div>
+
+    <form action="{{ url_for('quizzes.add_quiz_question', course_id=course.id, quiz_id=quiz.id) }}" method="POST">
+      <!-- Question Type Selector -->
+      <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Question Format *</label>
+          <select name="question_type" id="questionTypeSelect" class="form-control" onchange="switchQuestionType(this.value)" style="font-weight: 600;">
+            <option value="mcq">1. MCQ (Single Choice - 1 Correct Option)</option>
+            <option value="msq">2. MSQ (Multiple Choice / Multiple Select - Partial Credit)</option>
+            <option value="fitb">3. Fill in the Blanks (FITB - Multiple Acceptable Answers)</option>
+            <option value="mcq_justification">4. MCQ with Justification (Auto-graded option + TA Review)</option>
+            <option value="code_predict">5. Code Snippet - Predict Output (Exact Console Output)</option>
+            <option value="code_blank">6. Code Snippet - Missing Blank (Fill in Blank in Code)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Points / Marks *</label>
+          <input type="number" step="0.5" name="points" class="form-control" value="2.0" required>
+        </div>
+      </div>
+
+      <!-- Question Prompt Statement -->
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Question Prompt / Statement *</label>
+        <textarea name="prompt" id="promptInput" class="form-control" rows="3" placeholder="Enter question statement here..." required></textarea>
+      </div>
+
+      <!-- Code Snippet Section (Shown for Code Predict, Code Blank, and optional for others) -->
+      <div id="codeSnippetSection" style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem; margin: 0;">Code Snippet</label>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <label style="font-size: 0.8rem; font-weight: 600; color: #475569;">Language:</label>
+            <select name="code_language" class="form-control" style="width: auto; padding: 0.2rem 0.6rem; font-size: 0.8rem;">
+              <option value="c">C</option>
+              <option value="cpp">C++</option>
+              <option value="cuda">CUDA C++</option>
+              <option value="python" selected>Python</option>
+              <option value="bash">Bash / Shell</option>
+            </select>
+          </div>
+        </div>
+        <textarea name="code_snippet" id="codeSnippetInput" class="form-control" rows="5" placeholder="// Type or paste code snippet here...&#10;// For Blank questions, use ___BLANK___ where student must supply code" style="font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85rem; background: #0f172a; color: #f8fafc;"></textarea>
+        <small style="color: #64748b; font-size: 0.75rem; display: block; margin-top: 0.35rem;">
+          💡 For Missing Blank questions, place <code>___BLANK___</code> in the code snippet.
+        </small>
+      </div>
+
+      <!-- Format-Specific Subform 1: Single Choice (MCQ & MCQ+Justification) -->
+      <div id="mcqOptionsSection" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Answer Options &amp; Correct Choice *</label>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          {% for letter in ['A', 'B', 'C', 'D'] %}
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <label style="display: flex; align-items: center; gap: 0.35rem; min-width: 45px; font-weight: 700; cursor: pointer;">
+                <input type="radio" name="correct_option" value="{{ loop.index0 }}" {% if loop.first %}checked{% endif %}>
+                <span>{{ letter }}</span>
+              </label>
+              <input type="text" name="options[]" class="form-control" placeholder="Option {{ letter }} text" style="font-size: 0.88rem;">
+            </div>
+          {% endfor %}
+        </div>
+        <div id="justificationNote" style="display: none; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 0.6rem 0.85rem; font-size: 0.8rem; color: #92400e; margin-top: 0.75rem;">
+          📌 <strong>MCQ with Justification Mode:</strong> Hoodle will automatically grade the student's objective choice (A, B, C, or D). The student will also be required to submit a justification paragraph explaining their reasoning, which will be conveniently displayed in your grading view.
+        </div>
+      </div>
+
+      <!-- Format-Specific Subform 2: Multiple Select (MSQ) -->
+      <div id="msqOptionsSection" style="display: none; margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Answer Options &amp; Correct Choices (Select all that apply) *</label>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          {% for letter in ['A', 'B', 'C', 'D'] %}
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <label style="display: flex; align-items: center; gap: 0.35rem; min-width: 45px; font-weight: 700; cursor: pointer;">
+                <input type="checkbox" name="correct_msq[]" value="{{ loop.index0 }}">
+                <span>{{ letter }}</span>
+              </label>
+              <input type="text" name="options[]" class="form-control" placeholder="Option {{ letter }} text" style="font-size: 0.88rem;">
+            </div>
+          {% endfor %}
+        </div>
+        <small style="color: #64748b; font-size: 0.75rem; display: block; margin-top: 0.35rem;">
+          💡 Students receive partial credit for correct choices without penalties.
+        </small>
+      </div>
+
+      <!-- Format-Specific Subform 3: Text / Code Answers (FITB, Code Predict, Code Blank) -->
+      <div id="textAnswerSection" style="display: none; margin-bottom: 1rem;">
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Primary Correct Answer *</label>
+          <input type="text" name="correct_answer" id="correctAnswerInput" class="form-control" placeholder="e.g. 42 or return 0; or threadIdx.x" style="font-family: 'Consolas', 'Monaco', monospace; font-size: 0.88rem;">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Acceptable Variations (One per line)</label>
+          <textarea name="acceptable_variations" class="form-control" rows="2" placeholder="e.g.&#10;42.0&#10;forty-two" style="font-family: 'Consolas', 'Monaco', monospace; font-size: 0.82rem;"></textarea>
+          <small style="color: #64748b; font-size: 0.75rem; display: block; margin-top: 0.3rem;">
+            Hoodle normalizes trailing whitespace and line endings automatically during auto-grading.
+          </small>
+        </div>
+      </div>
+
+      <!-- Required Justification / Explanation Guide -->
+      <div class="form-group" style="margin-bottom: 1.25rem; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 0.85rem;">
+        <label class="form-label" style="font-weight: 800; font-size: 0.88rem; color: #92400e; display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.35rem;">
+          💬 Required Justification / Solution Explanation Guide
+        </label>
+        <textarea name="explanation" class="form-control" rows="3" placeholder="Provide the model justification, key reasoning steps, or solution explanation expected for this question..." style="font-size: 0.88rem;"></textarea>
+        <small style="color: #b45309; font-size: 0.75rem; display: block; margin-top: 0.35rem;">
+          Teachers and TAs can review and edit this justification anytime to guide grading.
+        </small>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button type="submit" class="btn btn-primary" style="font-weight: 700; padding: 0.6rem 1.4rem;">
+          💾 Save &amp; Add Question
+        </button>
+      </div>
+    </form>
+  </div>
+
+</div>
+
+<script>
+function switchQuestionType(type) {
+  const codeSec = document.getElementById("codeSnippetSection");
+  const mcqSec = document.getElementById("mcqOptionsSection");
+  const msqSec = document.getElementById("msqOptionsSection");
+  const textSec = document.getElementById("textAnswerSection");
+  const justNote = document.getElementById("justificationNote");
+
+  // Reset displays
+  codeSec.style.display = "none";
+  mcqSec.style.display = "none";
+  msqSec.style.display = "none";
+  textSec.style.display = "none";
+  justNote.style.display = "none";
+
+  if (type === "mcq") {
+    mcqSec.style.display = "block";
+  } else if (type === "mcq_justification") {
+    mcqSec.style.display = "block";
+    justNote.style.display = "block";
+  } else if (type === "msq") {
+    msqSec.style.display = "block";
+  } else if (type === "fitb") {
+    textSec.style.display = "block";
+  } else if (type === "code_predict") {
+    codeSec.style.display = "block";
+    textSec.style.display = "block";
+  } else if (type === "code_blank") {
+    codeSec.style.display = "block";
+    textSec.style.display = "block";
+  }
+}
+
+// ==========================================
+// 2-STEP INTERACTIVE BULK IMPORT WIZARD
+// ==========================================
+let parsedQuestionsBuffer = [];
+
+function analyzeImportFile() {
+  const fileInput = document.getElementById("bulkImportFileInput");
+  if (!fileInput.files || fileInput.files.length === 0) {
+    alert("Please select a file to import.");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("quiz_file", fileInput.files[0]);
+
+  const spinner = document.getElementById("importAnalyzeSpinner");
+  const uploadStep = document.getElementById("importUploadStep");
+  const previewStep = document.getElementById("importPreviewStep");
+  const errorBox = document.getElementById("importErrorBox");
+
+  spinner.style.display = "flex";
+  errorBox.style.display = "none";
+
+  fetch("{{ url_for('quizzes.import_quiz_preview', course_id=course.id, quiz_id=quiz.id) }}", {
+    method: "POST",
+    body: formData
+  })
+  .then(res => res.json())
+  .then(data => {
+    spinner.style.display = "none";
+    if (data.success && data.questions && data.questions.length > 0) {
+      parsedQuestionsBuffer = data.questions;
+      renderImportPreviewGrid(parsedQuestionsBuffer);
+      uploadStep.style.display = "none";
+      previewStep.style.display = "block";
+    } else {
+      errorBox.textContent = data.error || "No valid questions could be detected in this file.";
+      errorBox.style.display = "block";
+    }
+  })
+  .catch(err => {
+    spinner.style.display = "none";
+    errorBox.textContent = "Network error while parsing file: " + err.message;
+    errorBox.style.display = "block";
+  });
+}
+
+function renderImportPreviewGrid(questions) {
+  const container = document.getElementById("importQuestionsPreviewList");
+  container.innerHTML = "";
+  document.getElementById("previewCountBadge").textContent = `${questions.length} Questions Detected`;
+
+  questions.forEach((q, idx) => {
+    const card = document.createElement("div");
+    card.style = "background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.85rem; margin-bottom: 0.75rem;";
+    
+    let optionsHtml = "";
+    if (q.options && q.options.length > 0) {
+      optionsHtml = `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-top: 0.4rem; font-size: 0.8rem;">
+        ${q.options.map((opt, oIdx) => {
+          const letter = String.fromCharCode(65 + oIdx);
+          const isAns = (q.correct_answer || '').includes(letter);
+          return `<div style="background: ${isAns ? '#ecfdf5' : 'white'}; border: 1px solid ${isAns ? '#10b981' : '#cbd5e1'}; padding: 3px 6px; border-radius: 4px;">
+            <strong>${letter}.</strong> ${opt} ${isAns ? '✓' : ''}
+          </div>`;
+        }).join('')}
+      </div>`;
+    }
+
+    let codeHtml = "";
+    if (q.code_snippet) {
+      codeHtml = `<pre style="background: #0f172a; color: #38bdf8; padding: 0.5rem; border-radius: 6px; font-size: 0.75rem; margin: 0.4rem 0 0 0; max-height: 120px; overflow-y: auto;">${q.code_snippet}</pre>`;
+    }
+
+    card.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700; font-size: 0.85rem; cursor: pointer;">
+          <input type="checkbox" class="import-q-cb" checked data-idx="${idx}">
+          <span>Q${idx + 1}. <span class="badge" style="background: #e2e8f0; color: #334155; font-size: 0.72rem; padding: 1px 5px; border-radius: 3px;">${q.question_type.toUpperCase()}</span></span>
+        </label>
+        <div style="display: flex; align-items: center; gap: 0.3rem;">
+          <span style="font-size: 0.78rem; color: #64748b;">Points:</span>
+          <input type="number" step="0.5" class="import-q-pts" value="${q.points || 1.0}" style="width: 55px; padding: 2px 4px; font-size: 0.78rem; border-radius: 4px; border: 1px solid #cbd5e1;">
+        </div>
+      </div>
+      <div style="font-size: 0.86rem; color: #1e293b; font-weight: 600; line-height: 1.35;">${q.prompt}</div>
+      ${codeHtml}
+      ${optionsHtml}
+      <div style="font-size: 0.76rem; color: #047857; margin-top: 0.35rem; font-weight: 600;">
+        Answer: <code>${q.correct_answer || 'N/A'}</code>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function commitImportedQuestions() {
+  const checkboxes = document.querySelectorAll(".import-q-cb");
+  const pointsInputs = document.querySelectorAll(".import-q-pts");
+  const selectedQuestions = [];
+
+  checkboxes.forEach((cb, idx) => {
+    if (cb.checked && parsedQuestionsBuffer[idx]) {
+      const q = { ...parsedQuestionsBuffer[idx] };
+      const ptsVal = parseFloat(pointsInputs[idx].value);
+      if (!isNaN(ptsVal)) q.points = ptsVal;
+      selectedQuestions.push(q);
+    }
+  });
+
+  if (selectedQuestions.length === 0) {
+    alert("Please select at least one question to import.");
+    return;
+  }
+
+  const btn = document.getElementById("commitImportBtn");
+  btn.disabled = true;
+  btn.textContent = "⏳ Importing...";
+
+  fetch("{{ url_for('quizzes.import_quiz_commit', course_id=course.id, quiz_id=quiz.id) }}", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ questions: selectedQuestions })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert(`🎉 Successfully imported ${data.imported_count} questions into this quiz!`);
+      window.location.reload();
+    } else {
+      alert("Error importing questions: " + (data.error || "Unknown error"));
+      btn.disabled = false;
+      btn.textContent = "✅ Confirm & Import Selected Questions";
+    }
+  })
+  .catch(err => {
+    alert("Network error: " + err.message);
+    btn.disabled = false;
+    btn.textContent = "✅ Confirm & Import Selected Questions";
+  });
+}
+
+function resetImportWizard() {
+  parsedQuestionsBuffer = [];
+  document.getElementById("importUploadStep").style.display = "block";
+  document.getElementById("importPreviewStep").style.display = "none";
+  document.getElementById("bulkImportFileInput").value = "";
+  document.getElementById("importErrorBox").style.display = "none";
+  closeModal('bulkImportModal');
+}
+
+// ==========================================
+// INDIVIDUAL QUESTION EDIT MODAL CONTROLS
+// ==========================================
+const allQuizQuestions = {{ questions | tojson }};
+
+function switchEditQuestionType(type) {
+  const codeSec = document.getElementById("editCodeSnippetSection");
+  const mcqSec = document.getElementById("editMcqOptionsSection");
+  const textSec = document.getElementById("editTextAnswerSection");
+
+  codeSec.style.display = "none";
+  mcqSec.style.display = "none";
+  textSec.style.display = "none";
+
+  if (type === "mcq" || type === "mcq_justification" || type === "msq") {
+    mcqSec.style.display = "block";
+  } else if (type === "fitb") {
+    textSec.style.display = "block";
+  } else if (type === "code_predict" || type === "code_blank") {
+    codeSec.style.display = "block";
+    textSec.style.display = "block";
+  }
+}
+
+function openEditQuestionModal(index) {
+  const q = allQuizQuestions[index];
+  if (!q) return;
+
+  const form = document.getElementById("editQuestionForm");
+  form.action = `/courses/{{ course.id }}/quizzes/{{ quiz.id }}/questions/${q.id}/edit`;
+
+  document.getElementById("editModalTitle").textContent = `✏️ Edit Question #${index + 1}`;
+  document.getElementById("editQuestionTypeSelect").value = q.question_type;
+  document.getElementById("editPointsInput").value = q.points;
+  document.getElementById("editPromptInput").value = q.prompt || "";
+  document.getElementById("editCodeSnippetInput").value = q.code_snippet || "";
+  document.getElementById("editCodeLanguageSelect").value = q.code_language || "python";
+  document.getElementById("editExplanationInput").value = q.explanation || "";
+
+  switchEditQuestionType(q.question_type);
+  renderEditOptions(q);
+
+  document.getElementById("editCorrectAnswerInput").value = q.correct_answer || "";
+  document.getElementById("editAcceptableVariations").value = (q.variations || []).join("\n");
+
+  openModal("editQuestionModal");
+}
+
+function renderEditOptions(q) {
+  const container = document.getElementById("editOptionsContainer");
+  container.innerHTML = "";
+  const opts = (q.options && q.options.length > 0) ? q.options : ["", "", "", ""];
+  const correctLetters = (q.correct_answer || "").split(",").map(s => s.trim().toUpperCase());
+
+  opts.forEach((optText, i) => {
+    const letter = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'][i] || (i + 1);
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.gap = "0.6rem";
+
+    const isChecked = correctLetters.includes(letter);
+    let selectorHtml = "";
+    if (q.question_type === "msq") {
+      selectorHtml = `<label style="display: flex; align-items: center; gap: 0.35rem; min-width: 45px; font-weight: 700; cursor: pointer;">
+        <input type="checkbox" name="correct_msq[]" value="${i}" ${isChecked ? "checked" : ""}>
+        <span>${letter}</span>
+      </label>`;
+    } else {
+      selectorHtml = `<label style="display: flex; align-items: center; gap: 0.35rem; min-width: 45px; font-weight: 700; cursor: pointer;">
+        <input type="radio" name="correct_option" value="${i}" ${isChecked ? "checked" : ""}>
+        <span>${letter}</span>
+      </label>`;
+    }
+
+    row.innerHTML = `
+      ${selectorHtml}
+      <input type="text" name="options[]" class="form-control" value="${escapeHtml(optText)}" placeholder="Option ${letter} text" style="font-size: 0.88rem;">
+    `;
+    container.appendChild(row);
+  });
+}
+
+function addEditOptionRow() {
+  const container = document.getElementById("editOptionsContainer");
+  const count = container.children.length;
+  const letter = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'][count] || (count + 1);
+  const qType = document.getElementById("editQuestionTypeSelect").value;
+
+  const row = document.createElement("div");
+  row.style.display = "flex";
+  row.style.alignItems = "center";
+  row.style.gap = "0.6rem";
+
+  let selectorHtml = "";
+  if (qType === "msq") {
+    selectorHtml = `<label style="display: flex; align-items: center; gap: 0.35rem; min-width: 45px; font-weight: 700; cursor: pointer;">
+      <input type="checkbox" name="correct_msq[]" value="${count}">
+      <span>${letter}</span>
+    </label>`;
+  } else {
+    selectorHtml = `<label style="display: flex; align-items: center; gap: 0.35rem; min-width: 45px; font-weight: 700; cursor: pointer;">
+      <input type="radio" name="correct_option" value="${count}">
+      <span>${letter}</span>
+    </label>`;
+  }
+
+  row.innerHTML = `
+    ${selectorHtml}
+    <input type="text" name="options[]" class="form-control" placeholder="Option ${letter} text" style="font-size: 0.88rem;">
+  `;
+  container.appendChild(row);
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+</script>
+
+<!-- Modal: Interactive Bulk Import Wizard -->
+<div id="bulkImportModal" class="modal-backdrop">
+  <div class="modal-content" style="max-width: 680px; max-height: 90vh; display: flex; flex-direction: column;">
+    <div class="modal-header">
+      <h3 style="font-size: 1.15rem; font-weight: 800; color: #1e293b; margin: 0;">
+        📥 Bulk Import Questions (PDF, JSON, TXT, CSV)
+      </h3>
+      <button class="modal-close" onclick="resetImportWizard()">&times;</button>
+    </div>
+
+    <!-- Step 1: Upload File -->
+    <div id="importUploadStep" style="padding: 0.5rem 0;">
+      <!-- Template Callout -->
+      <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1.25rem;">
+        <div style="font-weight: 700; font-size: 0.85rem; color: #1d4ed8; margin-bottom: 0.25rem;">
+          📄 Download Matching Sample Templates (All 6 Formats)
+        </div>
+        <p style="font-size: 0.8rem; color: #3b82f6; margin: 0 0 0.5rem 0;">
+          Download a ready-to-edit template containing examples for MCQs, MSQs, blanks, code output, and justifications:
+        </p>
+        <div style="display: flex; gap: 0.5rem;">
+          <a href="{{ url_for('quizzes.download_quiz_template', course_id=course.id, format='json') }}" class="btn" style="background: white; color: #1d4ed8; border: 1px solid #93c5fd; font-size: 0.78rem; padding: 0.3rem 0.7rem; font-weight: 700; border-radius: 4px;">
+            ⬇️ Download Sample JSON
+          </a>
+          <a href="{{ url_for('quizzes.download_quiz_template', course_id=course.id, format='txt') }}" class="btn" style="background: white; color: #1d4ed8; border: 1px solid #93c5fd; font-size: 0.78rem; padding: 0.3rem 0.7rem; font-weight: 700; border-radius: 4px;">
+            ⬇️ Download Sample Text / Aiken
+          </a>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Select Question Sheet / Bank File (.pdf, .json, .txt, .csv) *</label>
+        <input type="file" id="bulkImportFileInput" class="form-control" accept=".pdf,.json,.txt,.csv" style="padding: 0.5rem;">
+        <small style="color: #64748b; font-size: 0.75rem; display: block; margin-top: 0.35rem;">
+          💡 <strong>Zero-Guessing Preview:</strong> You will review every extracted question, adjust marks, and confirm before anything is added to the quiz.
+        </small>
+      </div>
+
+      <div id="importAnalyzeSpinner" style="display: none; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 1rem; color: #2563eb; font-weight: 700; font-size: 0.88rem;">
+        <span>⏳ Analyzing and extracting questions...</span>
+      </div>
+
+      <div id="importErrorBox" style="display: none; background: #fee2e2; border: 1px solid #fecaca; color: #b91c1c; border-radius: 6px; padding: 0.6rem 0.8rem; font-size: 0.82rem; margin-bottom: 1rem;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="resetImportWizard()">Cancel</button>
+        <button type="button" onclick="analyzeImportFile()" class="btn btn-primary" style="font-weight: 700; padding: 0.55rem 1.4rem;">
+          🔍 Analyze &amp; Review Questions ➔
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 2: Interactive Review & Confirm -->
+    <div id="importPreviewStep" style="display: none; flex: 1; overflow-y: hidden; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.5rem;">
+        <div>
+          <span id="previewCountBadge" class="badge" style="background: #ecfdf5; color: #047857; font-weight: 800; font-size: 0.82rem; padding: 3px 8px; border-radius: 4px;">
+            0 Questions Detected
+          </span>
+          <span style="font-size: 0.78rem; color: #64748b; margin-left: 0.5rem;">Review and adjust points below</span>
+        </div>
+        <button type="button" onclick="document.querySelectorAll('.import-q-cb').forEach(cb => cb.checked = true)" class="btn" style="background: #f1f5f9; font-size: 0.75rem; padding: 2px 7px; border: 1px solid #cbd5e1; border-radius: 4px;">
+          Select All
+        </button>
+      </div>
+
+      <div id="importQuestionsPreviewList" style="flex: 1; max-height: 52vh; overflow-y: auto; padding-right: 0.25rem;"></div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 0.75rem;">
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('importUploadStep').style.display='block'; document.getElementById('importPreviewStep').style.display='none';">
+          ← Back to Upload
+        </button>
+        <button type="button" id="commitImportBtn" onclick="commitImportedQuestions()" class="btn btn-primary" style="background: #10b981; font-weight: 700; padding: 0.6rem 1.5rem;">
+          ✅ Confirm &amp; Import Selected Questions
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modal: Edit Quiz Settings & Schedule -->
+<div id="editQuizSettingsModal" class="modal-backdrop">
+  <div class="modal-content" style="max-width: 600px;">
+    <div class="modal-header">
+      <h3 style="font-size: 1.15rem; font-weight: 800; color: #1e293b; margin: 0;">
+        ⚙️ Edit Quiz Settings &amp; Schedule
+      </h3>
+      <button class="modal-close" onclick="closeModal('editQuizSettingsModal')">&times;</button>
+    </div>
+
+    <form action="{{ url_for('quizzes.update_quiz_settings', course_id=course.id, quiz_id=quiz.id) }}" method="POST">
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Quiz Title *</label>
+        <input type="text" name="title" class="form-control" value="{{ quiz.title }}" required style="font-size: 0.95rem; font-weight: 600;">
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Instructions / Description</label>
+        <textarea name="description" class="form-control" rows="2" style="font-size: 0.88rem;">{{ quiz.description or '' }}</textarea>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.82rem;">⏱️ Duration (Mins) *</label>
+          <input type="number" name="duration_minutes" class="form-control" value="{{ quiz.duration_minutes }}" min="1" max="600" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.82rem;">🎯 Pass Marks (%) *</label>
+          <input type="number" name="pass_marks" step="0.5" class="form-control" value="{{ quiz.pass_marks }}" min="0" max="1000" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.82rem;">🏆 Total Points</label>
+          <input type="text" class="form-control" value="{{ quiz.total_marks }} pts (Sum of Questions)" disabled style="background: #f1f5f9; font-weight: 700; color: #047857;">
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.82rem;">📅 Scheduled Start (Optional)</label>
+          <input type="datetime-local" name="start_time" class="form-control" value="{{ quiz.start_time or '' }}">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.82rem;">⌛ Submission Deadline (Optional)</label>
+          <input type="datetime-local" name="end_time" class="form-control" value="{{ quiz.end_time or '' }}">
+        </div>
+      </div>
+
+      <!-- Security & Anti-Cheat Controls -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1.25rem; display: flex; flex-direction: column; gap: 0.6rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 600; cursor: pointer;">
+          <input type="checkbox" name="exam_lockdown" value="1" {% if quiz.exam_lockdown %}checked{% endif %}>
+          <span>🔒 Strict Anti-Cheat Lockdown (Mandatory Fullscreen, Esc/Blur Strikes &amp; 3-Strike Auto-Lock)</span>
+        </label>
+
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 600; cursor: pointer;">
+          <input type="checkbox" name="shuffle_questions" value="1" {% if quiz.shuffle_questions %}checked{% endif %}>
+          <span>🔀 Randomize Question Order per student</span>
+        </label>
+
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; font-weight: 600; cursor: pointer;">
+          <input type="checkbox" name="remote_approval_required" value="1" {% if quiz.remote_approval_required %}checked{% endif %}>
+          <span>🛡️ Remote Access Gate (Require Teacher/TA authorization for off-campus/mobile exam taking)</span>
+        </label>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('editQuizSettingsModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" style="font-weight: 700; padding: 0.55rem 1.4rem;">
+          💾 Save Quiz Settings
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Edit Individual Question & Justification -->
+<div id="editQuestionModal" class="modal-backdrop">
+  <div class="modal-content" style="max-width: 680px; max-height: 90vh; overflow-y: auto;">
+    <div class="modal-header">
+      <h3 id="editModalTitle" style="font-size: 1.15rem; font-weight: 800; color: #1e3a8a; margin: 0;">
+        ✏️ Edit Question
+      </h3>
+      <button class="modal-close" onclick="closeModal('editQuestionModal')">&times;</button>
+    </div>
+
+    <form id="editQuestionForm" method="POST">
+      <!-- Question Type and Points -->
+      <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Question Format *</label>
+          <select name="question_type" id="editQuestionTypeSelect" class="form-control" onchange="switchEditQuestionType(this.value)" style="font-weight: 600;">
+            <option value="mcq">1. MCQ (Single Choice - 1 Correct Option)</option>
+            <option value="msq">2. MSQ (Multiple Choice / Multiple Select - Partial Credit)</option>
+            <option value="fitb">3. Fill in the Blanks (FITB - Multiple Acceptable Answers)</option>
+            <option value="mcq_justification">4. MCQ with Justification (Auto-graded option + TA Review)</option>
+            <option value="code_predict">5. Code Snippet - Predict Output (Exact Console Output)</option>
+            <option value="code_blank">6. Code Snippet - Missing Blank (Fill in Blank in Code)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Points / Marks *</label>
+          <input type="number" step="0.5" min="0.5" max="100" name="points" id="editPointsInput" class="form-control" required>
+        </div>
+      </div>
+
+      <!-- Question Prompt Statement -->
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Question Prompt / Statement *</label>
+        <textarea name="prompt" id="editPromptInput" class="form-control" rows="3" required></textarea>
+      </div>
+
+      <!-- Code Snippet Section -->
+      <div id="editCodeSnippetSection" style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem; margin: 0;">Code Snippet</label>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <label style="font-size: 0.8rem; font-weight: 600; color: #475569;">Language:</label>
+            <select name="code_language" id="editCodeLanguageSelect" class="form-control" style="width: auto; padding: 0.2rem 0.6rem; font-size: 0.8rem;">
+              <option value="c">C</option>
+              <option value="cpp">C++</option>
+              <option value="cuda">CUDA C++</option>
+              <option value="python">Python</option>
+              <option value="bash">Bash / Shell</option>
+            </select>
+          </div>
+        </div>
+        <textarea name="code_snippet" id="editCodeSnippetInput" class="form-control" rows="5" style="font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85rem; background: #0f172a; color: #f8fafc;"></textarea>
+      </div>
+
+      <!-- MCQ / MSQ Options Container -->
+      <div id="editMcqOptionsSection" style="margin-bottom: 1rem;">
+        <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Options &amp; Correct Answer Key *</label>
+        <div id="editOptionsContainer" style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <!-- Dynamically populated in JS -->
+        </div>
+        <div style="margin-top: 0.5rem;">
+          <button type="button" onclick="addEditOptionRow()" class="btn btn-secondary" style="font-size: 0.78rem; padding: 0.25rem 0.65rem;">
+            ➕ Add Option
+          </button>
+        </div>
+      </div>
+
+      <!-- Text Answers / Variations (FITB, Code Predict, Code Blank) -->
+      <div id="editTextAnswerSection" style="display: none; margin-bottom: 1rem;">
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Primary Correct Answer *</label>
+          <input type="text" name="correct_answer" id="editCorrectAnswerInput" class="form-control" style="font-family: 'Consolas', 'Monaco', monospace; font-size: 0.88rem;">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; font-size: 0.85rem;">Acceptable Variations (One per line)</label>
+          <textarea name="acceptable_variations" id="editAcceptableVariations" class="form-control" rows="2" style="font-family: 'Consolas', 'Monaco', monospace; font-size: 0.82rem;"></textarea>
+        </div>
+      </div>
+
+      <!-- Justification & Explanation Guide Box -->
+      <div class="form-group" style="margin-bottom: 1.25rem; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 0.85rem;">
+        <label class="form-label" style="font-weight: 800; font-size: 0.88rem; color: #92400e; display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.35rem;">
+          💬 Required Justification / Solution Explanation Guide
+        </label>
+        <textarea name="explanation" id="editExplanationInput" class="form-control" rows="3" placeholder="Provide the model justification, key reasoning steps, or solution explanation expected for this question..." style="font-size: 0.88rem;"></textarea>
+        <small style="color: #b45309; font-size: 0.75rem; display: block; margin-top: 0.35rem;">
+          Teachers and TAs can review and edit this justification anytime to guide grading.
+        </small>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('editQuestionModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" style="background: #2563eb; font-weight: 700; padding: 0.55rem 1.5rem;">
+          💾 Save Changes
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
