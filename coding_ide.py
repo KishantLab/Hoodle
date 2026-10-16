@@ -18,7 +18,7 @@ from datetime import datetime
 from functools import wraps
 
 from plagiarism_detector import calculate_similarity_matrix
-from pip_manager import list_course_packages, install_course_package
+from pip_manager import (list_course_packages, list_system_packages, get_popular_packages_catalog, STANDARD_MODULES, start_install_job, get_job_status, uninstall_course_package)
 from terminal_server import create_terminal_session, write_to_terminal, read_from_terminal, resize_terminal, close_terminal_session
 
 
@@ -754,7 +754,7 @@ def trigger_plagiarism_scan(course_id, assignment_id):
 
 
 # =====================================================================
-# 9. COURSE PYTHON PIP PACKAGE MANAGER
+# 9. COURSE PYTHON PIP PACKAGE & MODULE MANAGER
 # =====================================================================
 
 @coding_ide_bp.route("/courses/<int:course_id>/ide/api/pip/list", methods=["GET"])
@@ -762,6 +762,22 @@ def trigger_plagiarism_scan(course_id, assignment_id):
 def course_pip_list(course_id):
     pkgs = list_course_packages(course_id)
     return jsonify({"packages": pkgs})
+
+
+@coding_ide_bp.route("/courses/<int:course_id>/ide/api/pip/available", methods=["GET"])
+@course_ide_access_required
+def course_pip_available(course_id):
+    """Returns comprehensive list of course packages, pre-installed system packages, popular catalog, and standard library."""
+    course_pkgs = list_course_packages(course_id)
+    popular_pkgs = get_popular_packages_catalog(course_id)
+    system_pkgs = list_system_packages()
+    return jsonify({
+        "success": True,
+        "course_packages": course_pkgs,
+        "popular_packages": popular_pkgs,
+        "system_packages": system_pkgs,
+        "standard_modules": STANDARD_MODULES
+    })
 
 
 @coding_ide_bp.route("/courses/<int:course_id>/ide/api/pip/install", methods=["POST"])
@@ -779,5 +795,32 @@ def course_pip_install(course_id):
 
     req = request.get_json() or {}
     package_name = req.get("package_name", "").strip()
-    result = install_course_package(course_id, package_name)
+    # Start asynchronous background job
+    result = start_install_job(course_id, package_name)
+    return jsonify(result)
+
+
+@coding_ide_bp.route("/courses/<int:course_id>/ide/api/pip/job/<job_id>", methods=["GET"])
+@course_ide_access_required
+def course_pip_job_status(course_id, job_id):
+    result = get_job_status(job_id)
+    return jsonify(result)
+
+
+@coding_ide_bp.route("/courses/<int:course_id>/ide/api/pip/uninstall", methods=["POST"])
+@course_ide_access_required
+def course_pip_uninstall(course_id):
+    user_id = session["user_id"]
+    conn = get_db()
+    course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+    user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    is_teacher = (course["teacher_id"] == user_id) or (user["role"] == "admin")
+    conn.close()
+
+    if not is_teacher:
+        abort(403, "Instructor permission required to uninstall course pip modules.")
+
+    req = request.get_json() or {}
+    package_name = req.get("package_name", "").strip()
+    result = uninstall_course_package(course_id, package_name)
     return jsonify(result)

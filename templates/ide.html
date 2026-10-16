@@ -566,33 +566,119 @@
     </div>
   </div>
 
-  <!-- Course Python Pip Packages Modal -->
+  <!-- Course Python Pip Packages & Modules Modal -->
   <div class="modal-backdrop" id="pipManagerModal">
-    <div class="modal-box" style="max-width: 550px;">
-      <div class="modal-header">
-        <div class="modal-title">📦 Course Python Pip Package Manager</div>
+    <div class="modal-box" style="max-width: 680px; width: 95%; max-height: 88vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem;">
+        <div>
+          <div class="modal-title" style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>📦</span> Python Packages & Modules Manager
+          </div>
+          <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">
+            Install course-specific libraries & view all pre-installed environment modules
+          </div>
+        </div>
         <button class="btn btn-secondary" onclick="closePipModal()" style="padding: 0.2rem 0.5rem;">✕</button>
       </div>
-      <div class="modal-body">
-        <p style="font-size: 0.82rem; color: #64748b; margin-bottom: 0.85rem;">
-          Install custom Python libraries for this course without root/sudo. Modules will be mounted automatically inside all student sandboxes.
-        </p>
 
-        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-          <input type="text" id="pipPackageInput" placeholder="e.g. numpy, scipy, matplotlib, pandas, networkx" class="form-control" style="font-size: 0.84rem;">
-          <button class="btn btn-primary" onclick="installCoursePipPackage()" id="btnPipInstall" style="white-space: nowrap;">
-            ➕ Install Package
-          </button>
+      <!-- Navigation Tabs -->
+      <div style="display: flex; gap: 0.25rem; background: #f1f5f9; padding: 0.35rem; border-radius: 6px; margin: 0.75rem 1rem 0 1rem;">
+        <button id="pipTabBtn_course" class="btn" onclick="switchPipTab('course')" style="flex: 1; padding: 0.35rem 0.6rem; font-size: 0.8rem; font-weight: 600; border-radius: 4px; background: #ffffff; color: #1e293b; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+          📦 Course Custom Packages (<span id="pipCourseCount">...</span>)
+        </button>
+        <button id="pipTabBtn_system" class="btn" onclick="switchPipTab('system')" style="flex: 1; padding: 0.35rem 0.6rem; font-size: 0.8rem; font-weight: 600; border-radius: 4px; background: transparent; color: #64748b;">
+          📚 Available System Modules (<span id="pipSystemCount">114+</span>)
+        </button>
+        <button id="pipTabBtn_popular" class="btn" onclick="switchPipTab('popular')" style="flex: 1; padding: 0.35rem 0.6rem; font-size: 0.8rem; font-weight: 600; border-radius: 4px; background: transparent; color: #64748b;">
+          ⚡ Popular Catalog
+        </button>
+      </div>
+
+      <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 1rem;">
+        <!-- TAB 1: Course Custom Packages -->
+        <div id="pipTab_course">
+          <p style="font-size: 0.8rem; color: #64748b; margin-bottom: 0.75rem;">
+            Install custom Python libraries for this course. Modules are automatically isolated and mounted inside all student sandboxes and autograders.
+          </p>
+
+          <div style="display: flex; gap: 0.5rem; margin-bottom: 0.4rem;">
+            <input type="text" id="pipPackageInput" oninput="checkPipPreinstalledNotice(this.value)" placeholder="e.g. scipy, pandas, matplotlib, sympy, scikit-learn" class="form-control" style="font-size: 0.84rem;">
+            <button class="btn btn-primary" onclick="installCoursePipPackage()" id="btnPipInstall" style="white-space: nowrap; font-weight: 600;">
+              ➕ Install Package
+            </button>
+          </div>
+
+          <div id="pipNoticePreinstalled" style="display: none; font-size: 0.76rem; color: #0284c7; background: #e0f2fe; padding: 0.35rem 0.6rem; border-radius: 4px; margin-bottom: 0.5rem;">
+            💡 <span id="pipNoticeText"></span>
+          </div>
+
+          <!-- Quick suggestion chips -->
+          <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-bottom: 0.85rem;">
+            <span style="font-size: 0.72rem; color: #94a3b8; font-weight: 600;">Quick Add:</span>
+            <button class="btn btn-secondary" onclick="setPipInput('pandas')" style="font-size: 0.7rem; padding: 0.15rem 0.45rem;">+ pandas</button>
+            <button class="btn btn-secondary" onclick="setPipInput('scipy')" style="font-size: 0.7rem; padding: 0.15rem 0.45rem;">+ scipy</button>
+            <button class="btn btn-secondary" onclick="setPipInput('matplotlib')" style="font-size: 0.7rem; padding: 0.15rem 0.45rem;">+ matplotlib</button>
+            <button class="btn btn-secondary" onclick="setPipInput('sympy')" style="font-size: 0.7rem; padding: 0.15rem 0.45rem;">+ sympy</button>
+            <button class="btn btn-secondary" onclick="setPipInput('scikit-learn')" style="font-size: 0.7rem; padding: 0.15rem 0.45rem;">+ scikit-learn</button>
+            <button class="btn btn-secondary" onclick="setPipInput('pytest')" style="font-size: 0.7rem; padding: 0.15rem 0.45rem;">+ pytest</button>
+          </div>
+
+          <!-- Real-time Install Job Status Panel -->
+          <div id="pipInstallStatus" style="display: none; margin-bottom: 0.85rem; padding: 0.65rem; border-radius: 6px; font-size: 0.8rem;"></div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+            <label style="font-size: 0.82rem; font-weight: 700; color: #1e293b; margin: 0;">Currently Installed in this Course:</label>
+            <button class="btn btn-secondary" onclick="loadCoursePipPackages()" style="font-size: 0.72rem; padding: 0.15rem 0.4rem;">🔄 Refresh</button>
+          </div>
+          <div id="pipPackagesList" style="max-height: 220px; overflow-y: auto; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.5rem; font-size: 0.82rem;">
+            Loading packages...
+          </div>
         </div>
 
-        <div id="pipInstallStatus" style="display: none; margin-bottom: 0.85rem; padding: 0.5rem; border-radius: 6px; font-size: 0.8rem;"></div>
+        <!-- TAB 2: Pre-Installed System Libraries & Modules -->
+        <div id="pipTab_system" style="display: none;">
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 0.6rem 0.75rem; margin-bottom: 0.75rem; font-size: 0.78rem; color: #166534;">
+            <strong>✅ Out-of-the-Box Availability:</strong> All student code sandboxes, interactive terminals, and autograders have direct read access to these pre-installed Python libraries and standard modules without needing installation.
+          </div>
 
-        <label style="font-size: 0.8rem; font-weight: 700; color: #1e293b; display: block; margin-bottom: 0.4rem;">Currently Installed Course Packages:</label>
-        <div id="pipPackagesList" style="max-height: 180px; overflow-y: auto; background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; font-size: 0.82rem;">
-          Loading packages...
+          <!-- Search filter -->
+          <div style="margin-bottom: 0.75rem;">
+            <input type="text" id="pipSystemSearch" oninput="filterSystemPackages(this.value)" placeholder="🔍 Search pre-installed modules (e.g. numpy, math, requests, json)..." class="form-control" style="font-size: 0.82rem;">
+          </div>
+
+          <!-- Standard Library Section -->
+          <div style="margin-bottom: 1rem;">
+            <div style="font-size: 0.78rem; font-weight: 700; color: #334155; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.03em;">
+              Built-in Python Standard Libraries:
+            </div>
+            <div id="pipStandardModulesList" style="display: flex; flex-wrap: wrap; gap: 0.35rem;">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <!-- System Packages Section -->
+          <div>
+            <div style="font-size: 0.78rem; font-weight: 700; color: #334155; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.03em;">
+              Host Pre-Installed Libraries (Python 3.10):
+            </div>
+            <div id="pipSystemPackagesList" style="max-height: 220px; overflow-y: auto; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.4rem 0.6rem; font-size: 0.8rem;">
+              Loading system libraries...
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: Popular Academic Catalog -->
+        <div id="pipTab_popular" style="display: none;">
+          <p style="font-size: 0.8rem; color: #64748b; margin-bottom: 0.75rem;">
+            Commonly used computational, scientific, and AI packages in computer science coursework.
+          </p>
+          <div id="pipPopularCatalogList" style="max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem;">
+            Loading catalog...
+          </div>
         </div>
       </div>
-      <div class="modal-footer">
+
+      <div class="modal-footer" style="border-top: 1px solid #e2e8f0; padding-top: 0.6rem;">
         <button class="btn btn-secondary" onclick="closePipModal()">Close</button>
       </div>
     </div>
@@ -1156,36 +1242,196 @@
     }
 
     // -----------------------------------------------------------------
-    // Addon 2: Course Pip Package Manager
+    // Addon 2: Course Pip Package & Module Manager (Enhanced)
     // -----------------------------------------------------------------
+    let cachedAvailableData = null;
+    let pipActiveJobId = null;
+    let pipPollingTimer = null;
+
     function openPipModal() {
       document.getElementById("pipManagerModal").style.display = "flex";
-      loadCoursePipPackages();
+      loadAllPipData();
     }
 
     function closePipModal() {
       document.getElementById("pipManagerModal").style.display = "none";
     }
 
-    async function loadCoursePipPackages() {
-      const listDiv = document.getElementById("pipPackagesList");
-      listDiv.innerHTML = "Loading...";
-      try {
-        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/pip/list");
-        const data = await res.json();
-        if (data.packages && data.packages.length > 0) {
-          listDiv.innerHTML = data.packages.map(p => `
-            <div style="display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid #e2e8f0;">
-              <strong>${p.name}</strong>
-              <span class="badge badge-info" style="font-size: 0.72rem;">${p.version}</span>
-            </div>
-          `).join('');
-        } else {
-          listDiv.innerHTML = "<span style='color: #94a3b8;'>No extra pip packages installed yet for this course.</span>";
+    function switchPipTab(tab) {
+      ['course', 'system', 'popular'].forEach(t => {
+        const pane = document.getElementById("pipTab_" + t);
+        const btn = document.getElementById("pipTabBtn_" + t);
+        if (pane) pane.style.display = (t === tab) ? "block" : "none";
+        if (btn) {
+          if (t === tab) {
+            btn.style.background = "#ffffff";
+            btn.style.color = "#1e293b";
+            btn.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+          } else {
+            btn.style.background = "transparent";
+            btn.style.color = "#64748b";
+            btn.style.boxShadow = "none";
+          }
         }
-      } catch (e) {
-        listDiv.innerHTML = "<span style='color: #ef4444;'>Failed to load packages.</span>";
+      });
+    }
+
+    function setPipInput(pkgName) {
+      const inp = document.getElementById("pipPackageInput");
+      inp.value = pkgName;
+      checkPipPreinstalledNotice(pkgName);
+      inp.focus();
+    }
+
+    function checkPipPreinstalledNotice(val) {
+      const noticeDiv = document.getElementById("pipNoticePreinstalled");
+      const textSpan = document.getElementById("pipNoticeText");
+      const clean = val.trim().toLowerCase();
+      if (!clean || !cachedAvailableData) {
+        noticeDiv.style.display = "none";
+        return;
       }
+
+      // Check system packages
+      const sysPkg = (cachedAvailableData.system_packages || []).find(p => p.name.toLowerCase() === clean);
+      if (sysPkg) {
+        textSpan.textContent = `'${sysPkg.name}' (v${sysPkg.version}) is already pre-installed system-wide. Installing here will provide a course-level override.`;
+        noticeDiv.style.display = "block";
+        return;
+      }
+
+      // Check standard modules
+      const stdMod = (cachedAvailableData.standard_modules || []).find(m => m.name.toLowerCase() === clean);
+      if (stdMod) {
+        textSpan.textContent = `'${stdMod.name}' is a built-in Python standard library module. It is already available to all code out-of-the-box!`;
+        noticeDiv.style.display = "block";
+        return;
+      }
+
+      noticeDiv.style.display = "none";
+    }
+
+    async function loadAllPipData() {
+      const listDiv = document.getElementById("pipPackagesList");
+      listDiv.innerHTML = "<div style='color: #64748b;'>Loading environment packages...</div>";
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/pip/available");
+        const data = await res.json();
+        cachedAvailableData = data;
+        renderPipCoursePackages(data.course_packages || []);
+        renderPipSystemPackages(data.system_packages || [], data.standard_modules || []);
+        renderPipPopularCatalog(data.popular_packages || []);
+      } catch (e) {
+        listDiv.innerHTML = "<span style='color: #ef4444;'>Failed to load package info.</span>";
+      }
+    }
+
+    async function loadCoursePipPackages() {
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/pip/available");
+        const data = await res.json();
+        cachedAvailableData = data;
+        renderPipCoursePackages(data.course_packages || []);
+        renderPipPopularCatalog(data.popular_packages || []);
+      } catch (e) {
+        console.error("Refresh error:", e);
+      }
+    }
+
+    function renderPipCoursePackages(packages) {
+      const listDiv = document.getElementById("pipPackagesList");
+      const countSpan = document.getElementById("pipCourseCount");
+      countSpan.textContent = packages.length;
+
+      if (packages && packages.length > 0) {
+        listDiv.innerHTML = packages.map(p => `
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.35rem 0.25rem; border-bottom: 1px solid #e2e8f0;">
+            <div>
+              <strong style="color: #0f172a;">${p.name}</strong>
+              <span class="badge badge-info" style="font-size: 0.72rem; margin-left: 0.4rem; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;">v${p.version}</span>
+            </div>
+            <button class="btn btn-secondary" onclick="uninstallCoursePipPackage('${p.name}')" title="Remove package from this course" style="color: #dc2626; border-color: #fecaca; background: #fff5f5; font-size: 0.7rem; padding: 0.15rem 0.45rem;">
+              🗑️ Remove
+            </button>
+          </div>
+        `).join('');
+      } else {
+        listDiv.innerHTML = "<span style='color: #94a3b8; font-style: italic;'>No extra custom packages installed yet for this course.</span>";
+      }
+    }
+
+    function renderPipSystemPackages(systemPkgs, standardMods) {
+      const countSpan = document.getElementById("pipSystemCount");
+      countSpan.textContent = (systemPkgs.length + standardMods.length) + "+";
+
+      // Render standard modules
+      const stdDiv = document.getElementById("pipStandardModulesList");
+      if (stdDiv) {
+        stdDiv.innerHTML = standardMods.map(m => `
+          <span class="badge" title="${m.description}" style="background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; font-size: 0.72rem; padding: 0.2rem 0.45rem; cursor: help;">
+            ${m.name}
+          </span>
+        `).join('');
+      }
+
+      // Render system packages
+      const sysDiv = document.getElementById("pipSystemPackagesList");
+      if (sysDiv) {
+        sysDiv.innerHTML = systemPkgs.map(p => `
+          <div class="pip-sys-item" data-name="${p.name.toLowerCase()}" style="display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid #f1f5f9;">
+            <span style="font-weight: 500; color: #1e293b;">${p.name}</span>
+            <span style="font-family: monospace; font-size: 0.75rem; color: #64748b;">${p.version}</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    function filterSystemPackages(q) {
+      const term = q.trim().toLowerCase();
+      const items = document.querySelectorAll(".pip-sys-item");
+      items.forEach(el => {
+        const name = el.getAttribute("data-name") || "";
+        el.style.display = name.includes(term) ? "flex" : "none";
+      });
+    }
+
+    function renderPipPopularCatalog(catalog) {
+      const catDiv = document.getElementById("pipPopularCatalogList");
+      if (!catDiv) return;
+
+      catDiv.innerHTML = catalog.map(p => {
+        let badgeHtml = '';
+        let actionBtn = '';
+
+        if (p.status === "Course Installed") {
+          badgeHtml = `<span class="badge badge-success" style="font-size: 0.7rem; background: #dcfce7; color: #15803d;">Course: v${p.active_version}</span>`;
+          actionBtn = `<button class="btn btn-secondary" onclick="uninstallCoursePipPackage('${p.name}')" style="font-size: 0.72rem; color: #dc2626; padding: 0.2rem 0.5rem;">Remove</button>`;
+        } else if (p.status === "Pre-installed (System)") {
+          badgeHtml = `<span class="badge" style="font-size: 0.7rem; background: #e0f2fe; color: #0369a1;">System: v${p.active_version}</span>`;
+          actionBtn = `<button class="btn btn-secondary" onclick="setPipInput('${p.name}'); switchPipTab('course');" style="font-size: 0.72rem; padding: 0.2rem 0.5rem;" title="Install custom version override">Override</button>`;
+        } else {
+          badgeHtml = `<span class="badge" style="font-size: 0.7rem; background: #f1f5f9; color: #64748b;">Not Installed</span>`;
+          actionBtn = `<button class="btn btn-primary" onclick="setPipInput('${p.name}'); installCoursePipPackage(); switchPipTab('course');" style="font-size: 0.72rem; padding: 0.2rem 0.5rem;">+ Install</button>`;
+        }
+
+        return `
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.6rem 0.75rem; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <strong style="color: #0f172a; font-size: 0.86rem;">${p.name}</strong>
+                <span class="badge" style="font-size: 0.68rem; background: #f8fafc; color: #475569; border: 1px solid #e2e8f0;">${p.category}</span>
+                ${badgeHtml}
+              </div>
+              <div style="font-size: 0.76rem; color: #64748b; margin-top: 2px;">
+                ${p.description}
+              </div>
+            </div>
+            <div>
+              ${actionBtn}
+            </div>
+          </div>
+        `;
+      }).join('');
     }
 
     async function installCoursePipPackage() {
@@ -1196,11 +1442,21 @@
       const btn = document.getElementById("btnPipInstall");
       const statusDiv = document.getElementById("pipInstallStatus");
       btn.disabled = true;
-      btn.textContent = "Installing...";
+      btn.textContent = "Initiating...";
+
       statusDiv.style.display = "block";
       statusDiv.style.background = "#eff6ff";
+      statusDiv.style.border = "1px solid #bfdbfe";
       statusDiv.style.color = "#1d4ed8";
-      statusDiv.textContent = `Installing '${pkg}' into course environment...`;
+      statusDiv.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
+          <div>
+            <strong>Starting background installation of '${pkg}'...</strong>
+            <div style="font-size: 0.72rem; color: #3b82f6;">Job submitted to background runner (will not timeout or block).</div>
+          </div>
+        </div>
+      `;
 
       try {
         const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/pip/install", {
@@ -1209,24 +1465,145 @@
           body: JSON.stringify({ package_name: pkg })
         });
         const data = await res.json();
-        btn.disabled = false;
-        btn.textContent = "➕ Install Package";
 
-        if (data.success) {
-          statusDiv.style.background = "#f0fdf4";
-          statusDiv.style.color = "#15803d";
-          statusDiv.textContent = `✅ ${data.message}`;
-          pkgInput.value = "";
-          loadCoursePipPackages();
+        if (data.success && data.job_id) {
+          pipActiveJobId = data.job_id;
+          btn.textContent = "Installing...";
+          // Start polling job status
+          pollPipJobStatus(data.job_id, pkg);
         } else {
+          btn.disabled = false;
+          btn.textContent = "➕ Install Package";
           statusDiv.style.background = "#fef2f2";
+          statusDiv.style.border = "1px solid #fecaca";
           statusDiv.style.color = "#b91c1c";
-          statusDiv.textContent = `❌ ${data.error || "Installation error"}`;
+          statusDiv.innerHTML = `❌ <strong>${data.error || "Failed to start installation."}</strong>`;
         }
       } catch (e) {
         btn.disabled = false;
         btn.textContent = "➕ Install Package";
         statusDiv.style.background = "#fef2f2";
+        statusDiv.style.border = "1px solid #fecaca";
+        statusDiv.style.color = "#b91c1c";
+        statusDiv.innerHTML = `❌ <strong>Error:</strong> ${e.message}`;
+      }
+    }
+
+    function pollPipJobStatus(jobId, pkgName) {
+      if (pipPollingTimer) clearInterval(pipPollingTimer);
+
+      pipPollingTimer = setInterval(async () => {
+        try {
+          const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/pip/job/" + jobId);
+          const data = await res.json();
+          const statusDiv = document.getElementById("pipInstallStatus");
+          const btn = document.getElementById("btnPipInstall");
+
+          if (!data.success) {
+            clearInterval(pipPollingTimer);
+            btn.disabled = false;
+            btn.textContent = "➕ Install Package";
+            return;
+          }
+
+          if (data.status === "running") {
+            const elapsed = data.elapsed_seconds || 0;
+            statusDiv.style.display = "block";
+            statusDiv.style.background = "#eff6ff";
+            statusDiv.style.border = "1px solid #bfdbfe";
+            statusDiv.style.color = "#1d4ed8";
+            statusDiv.innerHTML = `
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <div style="display: flex; align-items: center; gap: 0.4rem;">
+                  <span style="display: inline-block; animation: spin 1s linear infinite;">⚙️</span>
+                  <strong>Installing '${pkgName}'... (${elapsed}s elapsed)</strong>
+                </div>
+                <span class="badge" style="background: #dbeafe; color: #1e40af; font-size: 0.7rem;">In Progress</span>
+              </div>
+              <div style="font-size: 0.72rem; color: #475569; margin-bottom: 0.3rem;">
+                Downloading wheels & building dependencies in background.
+              </div>
+              <details style="font-size: 0.7rem; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0.3rem;">
+                <summary style="cursor: pointer; color: #2563eb; font-weight: 600;">View Live Pip Output Log</summary>
+                <pre style="max-height: 120px; overflow-y: auto; margin-top: 0.3rem; white-space: pre-wrap; font-family: monospace; color: #0f172a;">${data.log || "Waiting for output..."}</pre>
+              </details>
+            `;
+          } else if (data.status === "completed") {
+            clearInterval(pipPollingTimer);
+            btn.disabled = false;
+            btn.textContent = "➕ Install Package";
+            statusDiv.style.background = "#f0fdf4";
+            statusDiv.style.border = "1px solid #bbf7d0";
+            statusDiv.style.color = "#15803d";
+            statusDiv.innerHTML = `
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+                <strong>✅ ${data.message || "Successfully installed " + pkgName}</strong>
+                <span class="badge badge-success" style="font-size: 0.7rem;">Done (${data.elapsed_seconds}s)</span>
+              </div>
+              <details style="font-size: 0.7rem; background: #ffffff; border: 1px solid #bbf7d0; border-radius: 4px; padding: 0.3rem;">
+                <summary style="cursor: pointer; color: #166534; font-weight: 600;">View Installation Summary</summary>
+                <pre style="max-height: 120px; overflow-y: auto; margin-top: 0.3rem; white-space: pre-wrap; font-family: monospace; color: #0f172a;">${data.log || "No extra log."}</pre>
+              </details>
+            `;
+            document.getElementById("pipPackageInput").value = "";
+            document.getElementById("pipNoticePreinstalled").style.display = "none";
+            loadCoursePipPackages();
+          } else if (data.status === "failed") {
+            clearInterval(pipPollingTimer);
+            btn.disabled = false;
+            btn.textContent = "➕ Install Package";
+            statusDiv.style.background = "#fef2f2";
+            statusDiv.style.border = "1px solid #fecaca";
+            statusDiv.style.color = "#b91c1c";
+            statusDiv.innerHTML = `
+              <div style="margin-bottom: 0.3rem;">
+                ❌ <strong>Installation Failed:</strong> ${data.error || "Pip exited with error"}
+              </div>
+              <details open style="font-size: 0.7rem; background: #ffffff; border: 1px solid #fecaca; border-radius: 4px; padding: 0.3rem;">
+                <summary style="cursor: pointer; color: #991b1b; font-weight: 600;">Error Details</summary>
+                <pre style="max-height: 120px; overflow-y: auto; margin-top: 0.3rem; white-space: pre-wrap; font-family: monospace; color: #991b1b;">${data.log || data.error}</pre>
+              </details>
+            `;
+          }
+        } catch (e) {
+          console.error("Polling error:", e);
+        }
+      }, 1500);
+    }
+
+    async function uninstallCoursePipPackage(pkgName) {
+      if (!confirm(`Are you sure you want to remove '${pkgName}' from this course?`)) return;
+
+      const statusDiv = document.getElementById("pipInstallStatus");
+      statusDiv.style.display = "block";
+      statusDiv.style.background = "#eff6ff";
+      statusDiv.style.border = "1px solid #bfdbfe";
+      statusDiv.style.color = "#1d4ed8";
+      statusDiv.textContent = `Uninstalling '${pkgName}'...`;
+
+      try {
+        const res = await fetch(basePrefix + "/courses/" + courseId + "/ide/api/pip/uninstall", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ package_name: pkgName })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          statusDiv.style.background = "#f0fdf4";
+          statusDiv.style.border = "1px solid #bbf7d0";
+          statusDiv.style.color = "#15803d";
+          statusDiv.textContent = `✅ ${data.message}`;
+          loadCoursePipPackages();
+        } else {
+          statusDiv.style.background = "#fef2f2";
+          statusDiv.style.border = "1px solid #fecaca";
+          statusDiv.style.color = "#b91c1c";
+          statusDiv.textContent = `❌ ${data.error || "Uninstall error"}`;
+        }
+      } catch (e) {
+        statusDiv.style.background = "#fef2f2";
+        statusDiv.style.border = "1px solid #fecaca";
         statusDiv.style.color = "#b91c1c";
         statusDiv.textContent = "Error: " + e.message;
       }
