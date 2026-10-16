@@ -367,3 +367,43 @@ def run_coursework_plagiarism_scan(coursework_id: int, conn) -> Dict[str, Any]:
         except Exception:
             pass
         return {"status": "failed", "error": str(e)}
+
+
+def find_similar_line_indices(code1: str, code2: str) -> Tuple[List[int], List[int]]:
+    """
+    Identifies 1-indexed line numbers in code1 and code2 that contain identical
+    or structurally matching code logic (after whitespace normalization and AST tokenization).
+    """
+    lines1 = (code1 or "").splitlines()
+    lines2 = (code2 or "").splitlines()
+
+    TRIVIAL = {'{', '}', '};', 'else', 'else {', 'begin', 'end', ';', '(', ')', '', 'None', 'pass'}
+
+    def norm_line(l):
+        s = l.strip()
+        if len(s) <= 2 or s in TRIVIAL:
+            return ""
+        tokens = tokenize_code(s)
+        return " ".join(tokens) if tokens else ""
+
+    norm1 = [norm_line(l) for l in lines1]
+    norm2 = [norm_line(l) for l in lines2]
+
+    matched1 = set()
+    matched2 = set()
+
+    for i, n1 in enumerate(norm1):
+        if not n1:
+            continue
+        s1 = lines1[i].strip()
+        for j, n2 in enumerate(norm2):
+            if not n2:
+                continue
+            s2 = lines2[j].strip()
+            # Direct text match or normalized token match
+            if s1 == s2 or (n1 == n2 and len(n1.split()) >= 3):
+                matched1.add(i + 1)
+                matched2.add(j + 1)
+                break
+
+    return sorted(list(matched1)), sorted(list(matched2))

@@ -31,7 +31,7 @@ from pathlib import Path
 from functools import wraps
 import math
 from rate_limiter import get_real_client_ip, check_rate_limit, record_failed_attempt, clear_rate_limit, init_rate_limiter_db
-from plagiarism_detector import run_coursework_plagiarism_scan, init_coursework_plagiarism_db, extract_code_from_file
+from plagiarism_detector import run_coursework_plagiarism_scan, init_coursework_plagiarism_db, extract_code_from_file, find_similar_line_indices
 
 from flask import (
     Flask,
@@ -6033,7 +6033,17 @@ def coursework_plagiarism_compare(course_id, coursework_id, sub1_id, sub2_id):
     s2 = _get_sub(sub2_id)
     conn.close()
 
-    return jsonify({"student1": s1, "student2": s2})
+    matched1, matched2 = find_similar_line_indices(s1.get("code", ""), s2.get("code", ""))
+    s1["matched_lines"] = matched1
+    s2["matched_lines"] = matched2
+
+    return jsonify({
+        "student1": s1,
+        "student2": s2,
+        "matched_count": len(matched1),
+        "total_lines_1": len((s1.get("code", "")).splitlines()),
+        "total_lines_2": len((s2.get("code", "")).splitlines())
+    })
 
 
 # --- Strict Exam Mode Lockdown Interface & Submission ---

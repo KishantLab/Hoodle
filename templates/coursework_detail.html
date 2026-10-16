@@ -1151,39 +1151,62 @@ document.addEventListener("DOMContentLoaded", () => {
 
 <!-- Side-by-Side Code Inspection Modal -->
 <div id="plagInspectModal" class="modal-backdrop" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 100000; background: rgba(15, 23, 42, 0.78); backdrop-filter: blur(6px); align-items: center; justify-content: center; padding: 1.25rem; box-sizing: border-box;">
-  <div class="modal-content" style="max-width: 1150px; width: 100%; max-height: 92vh; background: #ffffff; border-radius: 16px; box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; padding: 1.5rem; border: 1px solid #cbd5e1; box-sizing: border-box; overflow: hidden;">
-    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 0.85rem;">
+  <div class="modal-content" style="max-width: 1200px; width: 100%; max-height: 94vh; background: #ffffff; border-radius: 16px; box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; padding: 1.25rem 1.5rem; border: 1.5px solid #cbd5e1; box-sizing: border-box; overflow: hidden;">
+    
+    <!-- Header with Controls & Match Statistics -->
+    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
       <div>
-        <h3 style="margin: 0; font-size: 1.2rem; font-weight: 800; color: #1e3a8a;">
-          Code Comparison &amp; Similarity Inspection
-        </h3>
+        <div style="display: flex; align-items: center; gap: 0.65rem;">
+          <h3 style="margin: 0; font-size: 1.2rem; font-weight: 800; color: #1e3a8a;">
+            🔍 Side-by-Side Code Comparison &amp; Line Inspector
+          </h3>
+          <span id="inspectHighlightBadge" class="badge" style="background: #fee2e2; color: #b91c1c; font-weight: 800; font-size: 0.78rem; padding: 3px 9px; border-radius: 9999px;">
+            0 Matching Lines
+          </span>
+        </div>
         <div id="inspectSubtitle" style="font-size: 0.82rem; color: #64748b; margin-top: 0.2rem; font-weight: 600;"></div>
       </div>
-      <button type="button" class="btn btn-secondary btn-sm" onclick="closeInspectModal()" style="font-size: 1.35rem; line-height: 1; padding: 3px 9px;">&times;</button>
+
+      <!-- Action & Navigation Controls -->
+      <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+        <label style="font-size: 0.8rem; font-weight: 700; color: #475569; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; user-select: none; margin: 0; background: #f1f5f9; padding: 4px 8px; border-radius: 6px;">
+          <input type="checkbox" id="chkToggleLineHighlight" checked onchange="toggleLineHighlights()">
+          <span>Highlight Similar Lines</span>
+        </label>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="jumpToNextMatch()" style="font-weight: 700; font-size: 0.78rem; padding: 4px 9px; cursor: pointer;" title="Scroll both panes to the next highlighted match">
+          Next Match ⬇️
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeInspectModal()" style="font-size: 1.35rem; line-height: 1; padding: 2px 8px; cursor: pointer;" title="Close">&times;</button>
+      </div>
     </div>
 
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; flex: 1; overflow: hidden; min-height: 420px;">
+    <!-- Dual Code Inspection Panes -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; flex: 1; overflow: hidden; min-height: 440px;">
       <!-- Student 1 Box -->
       <div style="display: flex; flex-direction: column; border: 1.5px solid #cbd5e1; border-radius: 10px; overflow: hidden; background: #f8fafc;">
         <div style="background: #eff6ff; padding: 8px 14px; border-bottom: 1.5px solid #bfdbfe; font-size: 0.88rem; font-weight: 800; color: #1e40af; display: flex; justify-content: space-between; align-items: center;">
           <span id="inspectStu1Title">Student 1</span>
-          <span id="inspectStu1File" style="font-size: 0.75rem; font-family: monospace; color: #3b82f6;"></span>
+          <span id="inspectStu1File" style="font-size: 0.75rem; font-family: monospace; color: #2563eb; font-weight: 600;"></span>
         </div>
-        <pre id="inspectCode1" style="flex: 1; margin: 0; padding: 14px; overflow: auto; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.82rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all; background: #ffffff; color: #0f172a;"></pre>
+        <div id="inspectCodeBox1" style="flex: 1; margin: 0; padding: 0; overflow: auto; background: #ffffff;"></div>
       </div>
 
       <!-- Student 2 Box -->
       <div style="display: flex; flex-direction: column; border: 1.5px solid #cbd5e1; border-radius: 10px; overflow: hidden; background: #f8fafc;">
         <div style="background: #eff6ff; padding: 8px 14px; border-bottom: 1.5px solid #bfdbfe; font-size: 0.88rem; font-weight: 800; color: #1e40af; display: flex; justify-content: space-between; align-items: center;">
           <span id="inspectStu2Title">Student 2</span>
-          <span id="inspectStu2File" style="font-size: 0.75rem; font-family: monospace; color: #3b82f6;"></span>
+          <span id="inspectStu2File" style="font-size: 0.75rem; font-family: monospace; color: #2563eb; font-weight: 600;"></span>
         </div>
-        <pre id="inspectCode2" style="flex: 1; margin: 0; padding: 14px; overflow: auto; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.82rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all; background: #ffffff; color: #0f172a;"></pre>
+        <div id="inspectCodeBox2" style="flex: 1; margin: 0; padding: 0; overflow: auto; background: #ffffff;"></div>
       </div>
     </div>
 
-    <div style="display: flex; justify-content: flex-end; margin-top: 0.85rem; border-top: 1px solid #e2e8f0; padding-top: 0.75rem;">
-      <button type="button" class="btn btn-secondary btn-sm" onclick="closeInspectModal()" style="font-weight: 700; padding: 0.4rem 1rem;">Back to Report</button>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.75rem; border-top: 1px solid #e2e8f0; padding-top: 0.65rem;">
+      <span style="font-size: 0.75rem; color: #64748b;">
+        <span style="display: inline-block; width: 10px; height: 10px; background: #fee2e2; border: 1px solid #ef4444; border-radius: 2px; margin-right: 4px;"></span>
+        Red highlighted lines indicate identical logic or normalized structural matches
+      </span>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeInspectModal()" style="font-weight: 700; padding: 0.4rem 1.15rem;">Back to Report</button>
     </div>
   </div>
 </div>
@@ -1197,12 +1220,59 @@ document.addEventListener("DOMContentLoaded", () => {
   0% { background-position: 0 0; }
   100% { background-position: 30px 0; }
 }
+
+.plag-code-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.plag-code-row {
+  display: table-row;
+}
+.plag-code-row.plag-match-highlight {
+  background-color: #fee2e2 !important;
+}
+.plag-line-num {
+  display: table-cell;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  text-align: right;
+  padding-right: 10px;
+  padding-left: 6px;
+  color: #94a3b8;
+  font-weight: 500;
+  user-select: none;
+  background-color: #f8fafc;
+  border-right: 1px solid #e2e8f0;
+}
+.plag-match-highlight .plag-line-num {
+  background-color: #fecdd3 !important;
+  color: #b91c1c !important;
+  font-weight: 800 !important;
+  border-right: 3px solid #dc2626 !important;
+}
+.plag-code-text {
+  display: table-cell;
+  padding-left: 10px;
+  padding-right: 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #0f172a;
+}
+.plag-match-highlight .plag-code-text {
+  color: #7f1d1d !important;
+  font-weight: 600 !important;
+}
 </style>
 
 <script>
 let allPlagMatches = [];
 let plagPollInterval = null;
 let simulatedProgress = 20;
+let currentMatchScrollIdx = 0;
 
 function getPlagBasePrefix() {
   return window.location.pathname.startsWith('/lms') ? '/lms' : '';
@@ -1270,25 +1340,21 @@ function renderPlagiarismData(data) {
     icon.textContent = "⏳";
     btnText.textContent = "Scanning...";
 
-    // Show Progress Bar
     if (progressBox) progressBox.style.display = "block";
     updateProgressUI(simulatedProgress);
     simulatedProgress = Math.min(92, simulatedProgress + Math.floor(Math.random() * 12) + 5);
 
-    // Start polling if not already
     if (!plagPollInterval) {
       plagPollInterval = setInterval(loadPlagiarismReport, 1800);
     }
     return;
   }
 
-  // Stop polling if done
   if (plagPollInterval) {
     clearInterval(plagPollInterval);
     plagPollInterval = null;
   }
 
-  // Hide Progress Bar on complete
   if (progressBox) {
     if (data.status === 'completed' && simulatedProgress > 0) {
       updateProgressUI(100);
@@ -1366,7 +1432,6 @@ async function triggerPlagiarismScan() {
   document.getElementById("plagScanIcon").textContent = "⏳";
   document.getElementById("plagScanBtnText").textContent = "Starting...";
 
-  // Immediately display progress bar
   simulatedProgress = 25;
   const progressBox = document.getElementById("plagProgressBarBox");
   if (progressBox) progressBox.style.display = "block";
@@ -1471,14 +1536,114 @@ function filterPlagRows() {
   renderPlagTable();
 }
 
+// Side-by-Side Code Inspection with Line Highlighting
+function renderCodeLinesWithHighlight(boxId, code, matchedLineNumbers) {
+  const container = document.getElementById(boxId);
+  container.innerHTML = "";
+
+  if (!code || !code.trim()) {
+    container.innerHTML = '<div style="padding: 1.5rem; color: #94a3b8; font-style: italic;">No source code available for this submission.</div>';
+    return;
+  }
+
+  const matchSet = new Set(matchedLineNumbers || []);
+  const lines = code.split('\n');
+
+  const table = document.createElement("div");
+  table.className = "plag-code-table";
+
+  lines.forEach((lineText, idx) => {
+    const lineNum = idx + 1;
+    const isMatched = matchSet.has(lineNum);
+
+    const row = document.createElement("div");
+    row.className = "plag-code-row" + (isMatched ? " plag-match-highlight" : "");
+    if (isMatched) {
+      row.setAttribute("data-match", "1");
+    }
+
+    const numCell = document.createElement("div");
+    numCell.className = "plag-line-num";
+    numCell.textContent = lineNum;
+
+    const textCell = document.createElement("div");
+    textCell.className = "plag-code-text";
+    textCell.textContent = lineText || " ";
+
+    row.appendChild(numCell);
+    row.appendChild(textCell);
+    table.appendChild(row);
+  });
+
+  container.appendChild(table);
+}
+
+function toggleLineHighlights() {
+  const chk = document.getElementById("chkToggleLineHighlight");
+  const isEnabled = chk ? chk.checked : true;
+  document.querySelectorAll(".plag-code-row[data-match='1']").forEach(row => {
+    if (isEnabled) {
+      row.classList.add("plag-match-highlight");
+    } else {
+      row.classList.remove("plag-match-highlight");
+    }
+  });
+}
+
+function setupSynchronizedScroll() {
+  const box1 = document.getElementById("inspectCodeBox1");
+  const box2 = document.getElementById("inspectCodeBox2");
+  if (!box1 || !box2) return;
+
+  let isSyncing1 = false;
+  let isSyncing2 = false;
+
+  box1.onscroll = function() {
+    if (!isSyncing1) {
+      isSyncing2 = true;
+      box2.scrollTop = box1.scrollTop;
+      box2.scrollLeft = box1.scrollLeft;
+    }
+    isSyncing1 = false;
+  };
+
+  box2.onscroll = function() {
+    if (!isSyncing2) {
+      isSyncing1 = true;
+      box1.scrollTop = box2.scrollTop;
+      box1.scrollLeft = box2.scrollLeft;
+    }
+    isSyncing2 = false;
+  };
+}
+
+function jumpToNextMatch() {
+  const box1 = document.getElementById("inspectCodeBox1");
+  const matches = box1.querySelectorAll(".plag-code-row[data-match='1']");
+  if (!matches || matches.length === 0) return;
+
+  if (currentMatchScrollIdx >= matches.length) {
+    currentMatchScrollIdx = 0;
+  }
+
+  const target = matches[currentMatchScrollIdx];
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    currentMatchScrollIdx++;
+  }
+}
+
 async function inspectPair(sub1, sub2, name1Enc, name2Enc, sim) {
   const name1 = decodeURIComponent(name1Enc);
   const name2 = decodeURIComponent(name2Enc);
+  currentMatchScrollIdx = 0;
+
   document.getElementById("inspectSubtitle").textContent = `${name1} vs ${name2} (${sim}% Similarity)`;
   document.getElementById("inspectStu1Title").textContent = name1;
   document.getElementById("inspectStu2Title").textContent = name2;
-  document.getElementById("inspectCode1").textContent = "Loading source code...";
-  document.getElementById("inspectCode2").textContent = "Loading source code...";
+  document.getElementById("inspectCodeBox1").innerHTML = '<div style="padding: 1.5rem; color: #64748b;">Loading source code and calculating line matches...</div>';
+  document.getElementById("inspectCodeBox2").innerHTML = '<div style="padding: 1.5rem; color: #64748b;">Loading source code and calculating line matches...</div>';
+  document.getElementById("inspectHighlightBadge").textContent = "Calculating matches...";
 
   const modal = document.getElementById("plagInspectModal");
   if (modal) modal.style.display = "flex";
@@ -1487,13 +1652,22 @@ async function inspectPair(sub1, sub2, name1Enc, name2Enc, sim) {
   try {
     const res = await fetch(url);
     const data = await res.json();
-    document.getElementById("inspectCode1").textContent = data.student1?.code || "No source code found";
-    document.getElementById("inspectCode2").textContent = data.student2?.code || "No source code found";
-    document.getElementById("inspectStu1File").textContent = data.student1?.filename || "";
-    document.getElementById("inspectStu2File").textContent = data.student2?.filename || "";
+
+    const m1 = data.student1?.matched_lines || [];
+    const m2 = data.student2?.matched_lines || [];
+    const matchedCount = Math.max(m1.length, m2.length);
+
+    document.getElementById("inspectHighlightBadge").textContent = `🚩 ${matchedCount} Similar Lines Highlighted`;
+    document.getElementById("inspectStu1File").textContent = data.student1?.filename || "Source Code";
+    document.getElementById("inspectStu2File").textContent = data.student2?.filename || "Source Code";
+
+    renderCodeLinesWithHighlight("inspectCodeBox1", data.student1?.code || "", m1);
+    renderCodeLinesWithHighlight("inspectCodeBox2", data.student2?.code || "", m2);
+
+    setupSynchronizedScroll();
   } catch (err) {
-    document.getElementById("inspectCode1").textContent = "Error loading code: " + err;
-    document.getElementById("inspectCode2").textContent = "Error loading code: " + err;
+    document.getElementById("inspectCodeBox1").innerHTML = '<div style="padding: 1.5rem; color: #b91c1c;">Error loading code: ' + err + '</div>';
+    document.getElementById("inspectCodeBox2").innerHTML = '<div style="padding: 1.5rem; color: #b91c1c;">Error loading code: ' + err + '</div>';
   }
 }
 </script>
