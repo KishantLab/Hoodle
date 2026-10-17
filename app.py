@@ -3719,6 +3719,12 @@ def usage_guide():
 student_guide = usage_guide
 
 
+@app.route("/privacy")
+def privacy_policy():
+    user = get_current_user() if "user_id" in session else None
+    return render_template("privacy_policy.html", current_user=user)
+
+
 @app.route("/")
 def index():
     if "user_id" in session:
@@ -4994,23 +5000,35 @@ def create_coursework(course_id):
 
     conn.commit()
 
-    # Event Notification Email: Teacher/TA created assignment, exam, or material (Notify all students & TAs)
+    # Event Notification Email & Mobile Notification: Teacher/TA created assignment, exam, or material
     c_info = conn.execute("SELECT code, title FROM courses WHERE id = ?", (course_id,)).fetchone()
     recipient_rows = conn.execute("""
-        SELECT DISTINCT u.email FROM (
+        SELECT DISTINCT rec.user_id, u.email FROM (
             SELECT ce.user_id FROM course_enrollments ce
             WHERE ce.course_id = ? AND ce.role IN ('student', 'ta', 'teacher', 'co-teacher')
             UNION
             SELECT c.teacher_id as user_id FROM courses c WHERE c.id = ?
         ) rec
         JOIN users u ON rec.user_id = u.id
-        WHERE rec.user_id != ? AND u.email IS NOT NULL AND u.email != ''
+        WHERE rec.user_id != ?
     """, (course_id, course_id, session["user_id"])).fetchall()
-    recipient_emails = [r["email"] for r in recipient_rows]
+    recipient_emails = [r["email"] for r in recipient_rows if r["email"]]
+    recipient_ids = [r["user_id"] for r in recipient_rows if r["user_id"]]
     curr_user = get_current_user()
     t_name = curr_user["display_name"] if curr_user else "Instructor"
     t_role = (curr_user["role"] if curr_user else "Teacher").upper()
     conn.close()
+
+    c_code = c_info["code"] if c_info else ""
+    if recipient_ids:
+        snippet = (description[:120] + "...") if len(description) > 120 else (description or f"New {cw_type} published.")
+        threading.Thread(
+            target=create_notification_bulk,
+            args=(recipient_ids, "coursework", f"📚 [{c_code}] New {cw_type.capitalize()}: {title}",
+                  f"{t_name} posted {cw_type}: {title} (Points: {points}, Due: {due_date or 'No due date'})",
+                  course_id, f"/courses/{course_id}/coursework/{coursework_id}"),
+            daemon=True
+        ).start()
 
     if recipient_emails and c_info:
         send_event_notification_email(
@@ -5111,6 +5129,29 @@ def edit_coursework(course_id, coursework_id):
             """, (coursework_id, fname, stored, str(dest), dest.stat().st_size, now_str))
 
     conn.commit()
+
+    # Mobile & In-App Notification: Notify enrolled students about updated coursework
+    try:
+        c_info = conn.execute("SELECT code FROM courses WHERE id = ?", (course_id,)).fetchone()
+        c_code = c_info["code"] if c_info else ""
+        recipient_rows = conn.execute("""
+            SELECT DISTINCT ce.user_id FROM course_enrollments ce
+            WHERE ce.course_id = ? AND ce.user_id != ?
+        """, (course_id, session.get("user_id"))).fetchall()
+        enrolled_ids = [r["user_id"] for r in recipient_rows if r["user_id"]]
+        if enrolled_ids:
+            curr_user = get_current_user()
+            t_name = curr_user["display_name"] if curr_user else "Instructor"
+            threading.Thread(
+                target=create_notification_bulk,
+                args=(enrolled_ids, "coursework", f"📝 [{c_code}] Coursework Updated: {title}",
+                      f"{t_name} updated coursework '{title}' (Due: {due_date or 'No due date'})",
+                      course_id, f"/courses/{course_id}/coursework/{coursework_id}"),
+                daemon=True
+            ).start()
+    except Exception as e:
+        app.logger.warning("Notification error in edit_coursework: %s", e)
+
     conn.close()
 
     flash(f"Coursework '{title}' updated successfully.", "success")
@@ -7820,6 +7861,24 @@ def import_grades(course_id):
                 updated_grades_count += 1
 
     conn.commit()
+
+    # Mobile & In-App Notification: Notify students whose grades were imported
+    if matched_students:
+        try:
+            c_code = course["code"] if course else ""
+            curr_user = get_current_user()
+            t_name = curr_user["display_name"] if curr_user else "Instructor"
+            threading.Thread(
+                target=create_notification_bulk,
+                args=(list(matched_students), "grade",
+                      f"📝 [{c_code}] Grades Published",
+                      f"{t_name} published updated grades for assessments in {c_code}.",
+                      course_id, f"/courses/{course_id}/grades"),
+                daemon=True
+            ).start()
+        except Exception as e:
+            app.logger.warning("Notification error in import_grades: %s", e)
+
     conn.close()
 
     flash(f"Bulk Grade Import Successful: Updated {updated_grades_count} grade(s) across {len(cw_col_map)} assessment(s) for {len(matched_students)} student(s).", "success")
@@ -7909,6 +7968,28 @@ def quick_grade_update(course_id):
         ))
 
     conn.commit()
+
+    # Mobile & In-App Notification: Notify student of updated grade
+    try:
+        c_info = conn.execute("SELECT code FROM courses WHERE id = ?", (course_id,)).fetchone()
+        c_code = c_info["code"] if c_info else ""
+        cw_info = conn.execute("SELECT title, points FROM coursework WHERE id = ?", (coursework_id,)).fetchone()
+        cw_title = cw_info["title"] if cw_info else "Coursework"
+        cw_pts = cw_info["points"] if cw_info else 100
+        curr_user = get_current_user()
+        grader_name = curr_user["display_name"] if curr_user else "Instructor"
+        score_str = f"{grade}/{cw_pts}" if grade is not None else "Feedback posted"
+        threading.Thread(
+            target=create_notification,
+            args=(student_id, "grade",
+                  f"📝 [{c_code}] Grade: {score_str}",
+                  f"{cw_title} evaluated by {grader_name}",
+                  course_id, f"/courses/{course_id}/coursework/{coursework_id}"),
+            daemon=True
+        ).start()
+    except Exception as e:
+        app.logger.warning("Notification error in quick_grade_update: %s", e)
+
     conn.close()
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy - Hoodle LMS{% endblock %}
+{% block content %}
+<div style="max-width: 800px; margin: 2rem auto; padding: 0 1rem;">
+  <div class="card" style="padding: 2.5rem 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
+      <div style="font-size: 2.2rem;">🛡️</div>
+      <div>
+        <h1 style="font-size: 1.6rem; font-weight: 800; color: var(--text-main); margin: 0;">Privacy Policy</h1>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0.25rem 0 0 0;">Last updated: October 2026 | Hoodle Learning Management System</p>
+      </div>
+    </div>
+
+    <div style="line-height: 1.7; color: var(--text-main); font-size: 0.95rem;">
+      <h3 style="font-size: 1.15rem; font-weight: 700; color: var(--primary); margin: 1.25rem 0 0.5rem 0;">1. Overview</h3>
+      <p>
+        Hoodle LMS ("we", "our", or "the Application") is an educational classroom management platform developed for academic institutions.
+        This Privacy Policy explains how our mobile and web applications collect, process, and safeguard student and faculty information.
+      </p>
+
+      <h3 style="font-size: 1.15rem; font-weight: 700; color: var(--primary); margin: 1.25rem 0 0.5rem 0;">2. Device Permissions & Usage</h3>
+      <ul style="padding-left: 1.5rem; margin-bottom: 1rem;">
+        <li style="margin-bottom: 0.5rem;">
+          <strong>Camera Access (CAMERA)</strong>: Used solely for scanning time-rotating classroom QR codes on projector screens to verify student attendance. The camera stream is processed locally in real-time; no photos or video recordings are saved or transmitted to external servers.
+        </li>
+        <li style="margin-bottom: 0.5rem;">
+          <strong>Location Information (ACCESS_FINE_LOCATION)</strong>: Used exclusively during attendance check-in to confirm physical presence within instructor-authorized classroom boundaries (geofencing). Location coordinates are evaluated strictly during attendance submission and are never tracked continuously in the background.
+        </li>
+        <li style="margin-bottom: 0.5rem;">
+          <strong>Notifications (POST_NOTIFICATIONS)</strong>: Used to deliver immediate alerts for published announcements, grade releases, classwork deadlines, and direct academic messages from instructors.
+        </li>
+        <li style="margin-bottom: 0.5rem;">
+          <strong>Storage & Files</strong>: Used strictly when students or instructors voluntarily upload or download assignment submissions, PDF reports, or source code files.
+        </li>
+      </ul>
+
+      <h3 style="font-size: 1.15rem; font-weight: 700; color: var(--primary); margin: 1.25rem 0 0.5rem 0;">3. Data Security & Retention</h3>
+      <p>
+        All communications between the Hoodle client applications and server clusters are encrypted using TLS/HTTPS.
+        Student educational records, assignments, and grades are protected under institutional guidelines and are never sold or shared with commercial third parties.
+      </p>
+
+      <h3 style="font-size: 1.15rem; font-weight: 700; color: var(--primary); margin: 1.25rem 0 0.5rem 0;">4. Contact Us</h3>
+      <p>
+        For inquiries regarding data privacy, account management, or institutional integration, contact the ACCL Administration team at:
+        <br>
+        <strong>Email:</strong> support@hoodle.in | hoodle.lms@gmail.com
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

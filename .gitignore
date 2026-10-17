@@ -50,3 +50,5 @@ android/.idea/
 *.bak*
 .gradle/
 local.properties
+*.jks
+*.keystore

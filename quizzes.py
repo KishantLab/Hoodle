@@ -275,6 +275,47 @@ def course_quizzes(course_id):
     )
 
 
+def notify_course_students_about_quiz(course_id, quiz_id, title):
+    """Dispatches in-app and mobile notifications to students enrolled in the course."""
+    try:
+        import threading
+        def _notify():
+            try:
+                conn = get_db(read_only=True)
+                c_info = conn.execute("SELECT code FROM courses WHERE id = ?", (course_id,)).fetchone()
+                c_code = c_info["code"] if c_info else ""
+                enrolled_rows = conn.execute("""
+                    SELECT DISTINCT user_id FROM course_enrollments
+                    WHERE course_id = ? AND role = 'student'
+                """, (course_id,)).fetchall()
+                student_ids = [r["user_id"] for r in enrolled_rows if r["user_id"]]
+                conn.close()
+
+                if student_ids:
+                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    link = f"/lms/courses/{course_id}/quizzes/{quiz_id}/take"
+                    write_conn = get_db()
+                    for uid in student_ids:
+                        write_conn.execute("""
+                            INSERT INTO notifications (user_id, type, title, body, course_id, link, is_read, is_pushed, created_at)
+                            VALUES (?, 'quiz', ?, ?, ?, ?, 0, 0, ?)
+                        """, (
+                            uid,
+                            f"🎯 [{c_code}] New Quiz: {title}",
+                            f"A new assessment '{title}' has been published in {c_code}.",
+                            course_id,
+                            link,
+                            now_str
+                        ))
+                    write_conn.commit()
+                    write_conn.close()
+            except Exception:
+                pass
+        threading.Thread(target=_notify, daemon=True).start()
+    except Exception:
+        pass
+
+
 @quizzes_bp.route("/courses/<int:course_id>/quizzes/create", methods=["POST"])
 @quiz_staff_required
 def create_quiz(course_id):
@@ -315,6 +356,10 @@ def create_quiz(course_id):
         return qid
 
     quiz_id = execute_db_write_with_retry(_do_insert)
+
+    if quiz_id:
+        notify_course_students_about_quiz(course_id, quiz_id, title)
+
     flash(f"🎉 Quiz '{title}' created! Now add your questions.", "success")
     return redirect(url_for("quizzes.edit_quiz", course_id=course_id, quiz_id=quiz_id))
 
@@ -1417,5 +1462,8 @@ def import_new_quiz_file(course_id):
         return qid
 
     new_qid = execute_db_write_with_retry(_do_create_and_import)
+    if new_qid:
+        notify_course_students_about_quiz(course_id, new_qid, title)
+
     flash(f"🎉 Created quiz '{title}' and successfully imported {len(questions)} questions!", "success")
     return redirect(url_for("quizzes.edit_quiz", course_id=course_id, quiz_id=new_qid))

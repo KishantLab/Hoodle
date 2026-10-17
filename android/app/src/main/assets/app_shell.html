@@ -88,16 +88,113 @@
       100% { opacity: 1; transform: scale(1.2); }
     }
 
-    /* Content Area */
+    /* Central Hoodle Logo Animation */
+    .hero-loader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2.25rem 1rem 1.5rem 1rem;
+      text-align: center;
+    }
+    .hoodle-logo-anim-wrap {
+      position: relative;
+      width: 96px;
+      height: 96px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+    }
+    .hoodle-pulse-halo {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(79, 70, 229, 0.35) 0%, rgba(6, 182, 212, 0.15) 50%, transparent 75%);
+      animation: hoodleHaloPulse 2s infinite ease-in-out;
+    }
+    .hoodle-glow-ring {
+      position: absolute;
+      width: 92px;
+      height: 92px;
+      border-radius: 50%;
+      border: 2.5px solid transparent;
+      border-top-color: #4f46e5;
+      border-right-color: #06b6d4;
+      border-bottom-color: #f59e0b;
+      animation: hoodleRingRotate 1.4s infinite linear;
+    }
+    .hoodle-anim-icon {
+      font-size: 2.75rem;
+      z-index: 2;
+      animation: hoodleMarkFloat 2.2s infinite ease-in-out;
+      filter: drop-shadow(0 6px 14px rgba(79, 70, 229, 0.35));
+    }
+    @keyframes hoodleRingRotate {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes hoodleHaloPulse {
+      0%, 100% { transform: scale(0.9); opacity: 0.5; }
+      50% { transform: scale(1.35); opacity: 0.9; }
+    }
+    @keyframes hoodleMarkFloat {
+      0%, 100% { transform: translateY(0px) scale(1); }
+      50% { transform: translateY(-5px) scale(1.05); }
+    }
+
+    .hero-title {
+      font-size: 1.5rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #1e1b4b;
+      margin-bottom: 0.25rem;
+    }
+    .hero-title .brand-accent {
+      background: linear-gradient(135deg, #1e3a8a, #4f46e5);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero-title .dot { color: #f97316; }
+    .hero-subtitle {
+      font-size: 0.8rem;
+      color: #64748b;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      margin-bottom: 1.25rem;
+    }
+
+    /* Modern Sliding Progress Bar */
+    .hero-loader-bar {
+      width: 150px;
+      height: 4px;
+      background: #e2e8f0;
+      border-radius: 9999px;
+      overflow: hidden;
+      position: relative;
+    }
+    .hero-loader-bar-fill {
+      width: 45%;
+      height: 100%;
+      background: linear-gradient(90deg, #4f46e5, #06b6d4, #f59e0b);
+      border-radius: 9999px;
+      position: absolute;
+      animation: heroBarSlide 1.2s infinite ease-in-out;
+    }
+    @keyframes heroBarSlide {
+      0% { left: -45%; }
+      100% { left: 100%; }
+    }
+
+    /* Content Area & Skeleton Cards */
     .content {
-      padding: 1.15rem;
+      padding: 0 1.15rem 1.15rem 1.15rem;
       flex: 1;
       max-width: 600px;
       margin: 0 auto;
       width: 100%;
     }
-
-    /* Shimmer Effect */
     .shimmer {
       background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
       background-size: 200% 100%;
@@ -109,21 +206,8 @@
       100% { background-position: -200% 0; }
     }
 
-    /* Welcome Banner Skeleton */
-    .banner-skeleton {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.25rem;
-      margin-bottom: 1.25rem;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
-    }
-    .line-title { height: 20px; width: 65%; margin-bottom: 0.65rem; }
-    .line-sub { height: 14px; width: 85%; }
-
-    /* Course Cards Skeleton */
     .section-title {
-      font-size: 0.95rem;
+      font-size: 0.85rem;
       font-weight: 700;
       color: var(--text-muted);
       margin-bottom: 0.75rem;
@@ -134,7 +218,7 @@
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 1.15rem;
+      padding: 1rem 1.15rem;
       margin-bottom: 0.85rem;
       display: flex;
       flex-direction: column;
@@ -147,8 +231,8 @@
       gap: 0.75rem;
     }
     .avatar-skel {
-      width: 42px;
-      height: 42px;
+      width: 38px;
+      height: 38px;
       border-radius: 10px;
       flex-shrink: 0;
     }
@@ -157,31 +241,32 @@
       display: flex;
       justify-content: space-between;
       border-top: 1px solid #f1f5f9;
-      padding-top: 0.75rem;
+      padding-top: 0.65rem;
     }
 
-    /* Offline Box (Hidden by default, shown if network timeout) */
+    /* Offline Box */
     #offlineBox {
       display: none;
       background: #fef2f2;
       border: 1px solid #fecaca;
-      border-radius: 12px;
-      padding: 1.25rem;
+      border-radius: 14px;
+      padding: 1.5rem 1.25rem;
       text-align: center;
-      margin-top: 1rem;
+      margin: 1rem 0;
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.08);
     }
     .btn-retry {
       display: inline-block;
-      margin-top: 0.85rem;
-      padding: 0.65rem 1.5rem;
+      margin-top: 1rem;
+      padding: 0.7rem 1.75rem;
       background: var(--primary);
       color: white;
-      border-radius: 8px;
+      border-radius: 10px;
       font-weight: 700;
-      font-size: 0.9rem;
-      text-decoration: none;
+      font-size: 0.92rem;
       cursor: pointer;
       border: none;
+      box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
     }
 
     /* Bottom Bar */
@@ -195,8 +280,8 @@
       bottom: 0;
     }
     .nav-item-skel {
-      width: 32px;
-      height: 32px;
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
     }
   </style>
@@ -213,25 +298,36 @@
     </div>
   </div>
 
+  <!-- Animated Hoodle Logo & Hero Branding (Replaces Blank Screen) -->
+  <div class="hero-loader">
+    <div class="hoodle-logo-anim-wrap">
+      <div class="hoodle-pulse-halo"></div>
+      <div class="hoodle-glow-ring"></div>
+      <div class="hoodle-anim-icon">🎓</div>
+    </div>
+    <div class="hero-title">
+      <span class="brand-accent">Hoodle LMS</span><span class="dot">.</span>
+    </div>
+    <div class="hero-subtitle">Accelerated Classroom &amp; Lab Learning</div>
+    <div class="hero-loader-bar">
+      <div class="hero-loader-bar-fill"></div>
+    </div>
+  </div>
+
   <div class="content">
-    <div class="banner-skeleton">
-      <div class="shimmer line-title"></div>
-      <div class="shimmer line-sub"></div>
-    </div>
-
-    <div class="section-title">My Courses</div>
+    <div class="section-title">Enrolled Courses</div>
 
     <div class="card-skeleton">
       <div class="card-header-skel">
         <div class="shimmer avatar-skel"></div>
         <div class="header-text-skel">
-          <div class="shimmer" style="height: 16px; width: 70%;"></div>
-          <div class="shimmer" style="height: 12px; width: 45%;"></div>
+          <div class="shimmer" style="height: 15px; width: 68%;"></div>
+          <div class="shimmer" style="height: 11px; width: 45%;"></div>
         </div>
       </div>
       <div class="card-footer-skel">
-        <div class="shimmer" style="height: 12px; width: 30%;"></div>
-        <div class="shimmer" style="height: 12px; width: 20%;"></div>
+        <div class="shimmer" style="height: 11px; width: 32%;"></div>
+        <div class="shimmer" style="height: 11px; width: 22%;"></div>
       </div>
     </div>
 
@@ -239,34 +335,25 @@
       <div class="card-header-skel">
         <div class="shimmer avatar-skel"></div>
         <div class="header-text-skel">
-          <div class="shimmer" style="height: 16px; width: 60%;"></div>
-          <div class="shimmer" style="height: 12px; width: 50%;"></div>
+          <div class="shimmer" style="height: 15px; width: 60%;"></div>
+          <div class="shimmer" style="height: 11px; width: 48%;"></div>
         </div>
       </div>
       <div class="card-footer-skel">
-        <div class="shimmer" style="height: 12px; width: 35%;"></div>
-        <div class="shimmer" style="height: 12px; width: 25%;"></div>
-      </div>
-    </div>
-
-    <div class="card-skeleton">
-      <div class="card-header-skel">
-        <div class="shimmer avatar-skel"></div>
-        <div class="header-text-skel">
-          <div class="shimmer" style="height: 16px; width: 75%;"></div>
-          <div class="shimmer" style="height: 12px; width: 40%;"></div>
-        </div>
+        <div class="shimmer" style="height: 11px; width: 30%;"></div>
+        <div class="shimmer" style="height: 11px; width: 24%;"></div>
       </div>
     </div>
 
     <div id="offlineBox">
-      <div style="font-size: 2rem; margin-bottom: 0.35rem;">📡</div>
-      <div style="font-weight: 800; color: #991b1b; font-size: 1rem;">No Internet Connection Detected</div>
-      <div style="font-size: 0.82rem; color: #b91c1c; margin-top: 0.25rem;">
-        Please check your mobile data or Wi-Fi connection and tap below.
+      <div style="font-size: 2.2rem; margin-bottom: 0.35rem;">📡</div>
+      <div style="font-weight: 800; color: #991b1b; font-size: 1.05rem;">No Connection Detected</div>
+      <div style="font-size: 0.85rem; color: #b91c1c; margin-top: 0.35rem; line-height: 1.5;">
+        Cannot connect to the Hoodle LMS server.<br>Please verify your Wi-Fi or mobile data connection.
       </div>
       <button class="btn-retry" onclick="triggerRetry()">Retry Connection</button>
     </div>
+  </div>
   </div>
 
   <div class="bottom-bar">

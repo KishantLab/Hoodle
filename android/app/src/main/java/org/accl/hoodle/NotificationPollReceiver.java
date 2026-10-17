@@ -89,7 +89,7 @@ public class NotificationPollReceiver extends BroadcastReceiver {
 
     private void pollServerForNotifications(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE);
-        String serverUrl = prefs.getString(MainActivity.KEY_SERVER_URL, MainActivity.URL_LAN);
+        String serverUrl = prefs.getString(MainActivity.KEY_SERVER_URL, MainActivity.URL_INTERNET);
         String token = prefs.getString(MainActivity.KEY_AUTH_TOKEN, "");
         String userId = prefs.getString(MainActivity.KEY_USER_ID, "");
 

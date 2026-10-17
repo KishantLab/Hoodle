@@ -14,6 +14,167 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body>
+  <!-- Hoodle Branded Page Loader Animation -->
+  <div id="hoodle-page-loader" class="hoodle-loader-overlay">
+    <div class="hoodle-loader-card">
+      <div class="hoodle-logo-anim-wrap">
+        <div class="hoodle-glow-ring"></div>
+        <div class="hoodle-pulse-halo"></div>
+        <img src="{{ url_for('static', filename='images/hoodle_mark.svg') }}" alt="Hoodle LMS" class="hoodle-anim-mark">
+      </div>
+      <div class="hoodle-loader-brand">
+        <span class="brand-h">Hoodle</span><span class="brand-dot">.</span>
+      </div>
+      <div class="hoodle-loader-tag">Accelerated Classroom &amp; Lab Learning</div>
+      <div class="hoodle-loader-bar">
+        <div class="hoodle-loader-bar-fill"></div>
+      </div>
+    </div>
+  </div>
+  <style>
+    .hoodle-loader-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(248, 250, 252, 0.96);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 999999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .hoodle-loader-overlay.fade-out {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .hoodle-loader-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+    }
+    .hoodle-logo-anim-wrap {
+      position: relative;
+      width: 90px;
+      height: 90px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+    }
+    .hoodle-pulse-halo {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(79, 70, 229, 0.35) 0%, rgba(6, 182, 212, 0.15) 50%, transparent 75%);
+      animation: hoodleHaloPulse 2s infinite ease-in-out;
+    }
+    .hoodle-glow-ring {
+      position: absolute;
+      width: 86px;
+      height: 86px;
+      border-radius: 50%;
+      border: 2.5px solid transparent;
+      border-top-color: #4f46e5;
+      border-right-color: #06b6d4;
+      border-bottom-color: #f59e0b;
+      animation: hoodleRingRotate 1.4s infinite linear;
+    }
+    .hoodle-anim-mark {
+      width: 54px;
+      height: 54px;
+      object-fit: contain;
+      z-index: 2;
+      animation: hoodleMarkFloat 2.2s infinite ease-in-out;
+      filter: drop-shadow(0 6px 14px rgba(79, 70, 229, 0.3));
+    }
+    @keyframes hoodleRingRotate {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes hoodleHaloPulse {
+      0%, 100% { transform: scale(0.9); opacity: 0.5; }
+      50% { transform: scale(1.35); opacity: 0.9; }
+    }
+    @keyframes hoodleMarkFloat {
+      0%, 100% { transform: translateY(0px) scale(1); }
+      50% { transform: translateY(-4px) scale(1.04); }
+    }
+    .hoodle-loader-brand {
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #1e1b4b;
+      margin-bottom: 0.25rem;
+    }
+    .hoodle-loader-brand .brand-h {
+      background: linear-gradient(135deg, #1e3a8a, #4f46e5);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hoodle-loader-brand .brand-dot {
+      color: #f97316;
+    }
+    .hoodle-loader-tag {
+      font-size: 0.78rem;
+      color: #64748b;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      margin-bottom: 1.25rem;
+    }
+    .hoodle-loader-bar {
+      width: 140px;
+      height: 4px;
+      background: #e2e8f0;
+      border-radius: 9999px;
+      overflow: hidden;
+      position: relative;
+    }
+    .hoodle-loader-bar-fill {
+      width: 45%;
+      height: 100%;
+      background: linear-gradient(90deg, #4f46e5, #06b6d4, #f59e0b);
+      border-radius: 9999px;
+      position: absolute;
+      animation: hoodleBarSlide 1.2s infinite ease-in-out;
+    }
+    @keyframes hoodleBarSlide {
+      0% { left: -45%; }
+      100% { left: 100%; }
+    }
+  </style>
+  <script>
+    (function() {
+      function dismissLoader() {
+        var loader = document.getElementById('hoodle-page-loader');
+        if (loader && !loader.classList.contains('fade-out')) {
+          loader.classList.add('fade-out');
+          setTimeout(function() {
+            if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
+          }, 350);
+        }
+      }
+      if (document.readyState === 'complete') {
+        setTimeout(dismissLoader, 150);
+      } else {
+        window.addEventListener('load', function() {
+          setTimeout(dismissLoader, 150);
+        });
+        setTimeout(dismissLoader, 900);
+      }
+    })();
+  </script>
+
   <!-- Top Navigation Bar -->
   <header class="lms-navbar">
     <div class="navbar-primary-row {% if not current_user %}has-guest-nav{% endif %}">
@@ -123,6 +284,11 @@
                 <span>Contact Us &amp; Support</span>
               </a>
 
+              <a href="{{ url_for('privacy_policy') }}" class="user-dropdown-link">
+                <span>🛡️</span>
+                <span>Privacy Policy</span>
+              </a>
+
               <div class="user-dropdown-separator"></div>
 
               <a href="{{ url_for('logout') }}" class="user-dropdown-link user-dropdown-danger">
@@ -134,6 +300,7 @@
         {% else %}
           <div class="guest-nav-buttons">
             <a href="{{ url_for('usage_guide') }}" class="btn btn-outline btn-sm">📖 Guide</a>
+            <a href="{{ url_for('privacy_policy') }}" class="btn btn-outline btn-sm">🛡️ Privacy</a>
             <a href="{{ url_for('download_apk') }}" class="btn btn-outline btn-sm">📱 App (.apk)</a>
             <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Sign In</a>
           </div>
@@ -736,6 +903,10 @@
         <span class="footer-sep">•</span>
         <a href="{{ url_for('contact_page') }}" style="color: #60a5fa; text-decoration: none; font-weight: 700; font-size: 0.8rem;">
           📬 Contact Us
+        </a>
+        <span class="footer-sep">•</span>
+        <a href="{{ url_for('privacy_policy') }}" style="color: #60a5fa; text-decoration: none; font-weight: 700; font-size: 0.8rem;">
+          🛡️ Privacy Policy
         </a>
       </div>
 
