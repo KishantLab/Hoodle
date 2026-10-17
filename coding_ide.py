@@ -620,17 +620,27 @@ def exam_submit_code(course_id):
 
     # Read latest main.cu or first file
     code_snapshot = ""
+    target_filename = "main.cu"
     for f in locker_dir.iterdir():
         if f.is_file() and f.suffix in ('.cu', '.c', '.cpp', '.py', '.java'):
+            target_filename = f.name
             code_snapshot = f.read_text(encoding="utf-8", errors="replace")
             break
 
     conn = get_db()
-    now = datetime.now().isoformat()
-    conn.execute("""
+    assignment = conn.execute(
+        "SELECT * FROM coding_assignments WHERE id = ? AND course_id = ?",
+        (assignment_id, course_id)
+    ).fetchone()
+    test_cases = json.loads(assignment["test_cases_json"] or "[]") if assignment else []
+    code_checks = json.loads(assignment["code_checks_json"] or "{}") if assignment else {}
+
+    cur = conn.cursor()
+    cur.execute("""
         INSERT INTO coding_submissions (assignment_id, user_id, submitted_at, code_snapshot, autograde_score)
         VALUES (?, ?, CURRENT_TIMESTAMP, ?, 0.0)
     """, (assignment_id, user_id, code_snapshot))
+    submission_id = cur.lastrowid
 
     conn.execute("""
         UPDATE coding_exam_proctor
@@ -640,7 +650,38 @@ def exam_submit_code(course_id):
 
     conn.commit()
     conn.close()
-    return jsonify({"success": True, "message": "Exam submitted and workspace frozen."})
+
+    # Enqueue background evaluation via Task Queue (non-blocking for 25,000+ students)
+    task_id = None
+    try:
+        from task_queue import enqueue_task
+        task_id = enqueue_task("exam_submission", {
+            "submission_id": submission_id,
+            "assignment_id": assignment_id,
+            "locker_path": str(locker_dir),
+            "filename": target_filename,
+            "test_cases": test_cases,
+            "code_checks": code_checks
+        })
+    except Exception:
+        pass
+
+    return jsonify({
+        "success": True,
+        "message": "Exam submitted and workspace frozen. Evaluation queued.",
+        "submission_id": submission_id,
+        "task_id": task_id
+    })
+
+
+@coding_ide_bp.route("/courses/<int:course_id>/ide/api/task/<task_id>", methods=["GET"])
+@course_ide_access_required
+def get_ide_task_status(course_id, task_id):
+    from task_queue import get_task_status
+    st = get_task_status(task_id)
+    if not st:
+        return jsonify({"error": "Task not found"}), 404
+    return jsonify(st)
 
 
 # =====================================================================

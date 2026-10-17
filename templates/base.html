@@ -113,7 +113,12 @@
                   <span>📲</span>
                   <span>Update App (.apk)</span>
                 </div>
-                <span class="badge" style="background: var(--primary-light, #e0e7ff); color: var(--primary, #4f46e5); font-size: 0.68rem; font-weight: 700; padding: 2px 6px; border-radius: 9999px;">Latest v1.2</span>
+                <span class="badge" style="background: var(--primary-light, #e0e7ff); color: var(--primary, #4f46e5); font-size: 0.68rem; font-weight: 700; padding: 2px 6px; border-radius: 9999px;">Latest v2.0</span>
+              </a>
+
+              <a href="#" onclick="closeUserDropdown(); openContactModal(); return false;" class="user-dropdown-link">
+                <span>📞</span>
+                <span>Contact Us &amp; Support</span>
               </a>
 
               <div class="user-dropdown-separator"></div>
@@ -738,6 +743,61 @@
         <span class="footer-org">Room 402, Eng-1 • ACCL IIT Bhilai</span>
       </div>
     </div>
+    <!-- Contact Support Modal -->
+  <div id="contactSupportModal" class="modal-backdrop" style="display: none; align-items: center; justify-content: center; z-index: 10001;">
+    <div class="modal-content" style="max-width: 480px; border-radius: 16px; overflow: hidden; padding: 0; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.2);">
+      <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 1.25rem 1.5rem; color: white; position: relative;">
+        <button type="button" class="modal-close" onclick="closeContactModal()" style="position: absolute; top: 1rem; right: 1rem; color: white; background: rgba(255,255,255,0.2); border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: none; font-size: 1.25rem; cursor: pointer;">&times;</button>
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+            📞
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: white;">Contact Us &amp; Support</h3>
+            <div style="font-size: 0.78rem; opacity: 0.9; margin-top: 2px;">Hoodle LMS &amp; Accelerated Computing Lab</div>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 1.5rem; background: var(--bg-surface, #ffffff);">
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          <!-- Email Block -->
+          <div style="display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.75rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <span style="font-size: 1.3rem;">✉️</span>
+            <div style="flex: 1;">
+              <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase;">Official Support Email</div>
+              <div style="font-size: 0.9rem; font-weight: 700; color: #1e293b; margin-top: 2px;">hoodle.lms@gmail.com</div>
+              <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">General inquiries, technical issues, and quota requests</div>
+            </div>
+            <a href="mailto:hoodle.lms@gmail.com?subject=[Hoodle%20Support]%20Assistance%20Request" class="btn btn-sm btn-primary" style="font-size: 0.75rem; padding: 0.3rem 0.6rem; text-decoration: none;">Write</a>
+          </div>
+
+          <!-- Lab Location Block -->
+          <div style="display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.75rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <span style="font-size: 1.3rem;">🏫</span>
+            <div style="flex: 1;">
+              <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase;">Lab &amp; Department</div>
+              <div style="font-size: 0.88rem; font-weight: 700; color: #1e293b; margin-top: 2px;">Accelerated Computing &amp; Machine Learning Lab</div>
+              <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">Department of Computer Science &amp; Engineering</div>
+            </div>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <a href="/messages" class="btn btn-secondary" style="flex: 1; text-align: center; font-size: 0.82rem; padding: 0.5rem; text-decoration: none;">
+              💬 In-App Messages
+            </a>
+            <a href="/student-guide" class="btn btn-secondary" style="flex: 1; text-align: center; font-size: 0.82rem; padding: 0.5rem; text-decoration: none;">
+              📖 Usage Guide
+            </a>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 0.75rem 1.5rem; background: #f1f5f9; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeContactModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
   </footer>
 
   <script src="{{ url_for('static', filename='js/lms.js') }}"></script>
@@ -745,6 +805,16 @@
   <script src="{{ url_for('static', filename='js/scanner.js') }}"></script>
   <script src="{{ url_for('static', filename='js/qrcode.min.js') }}"></script>
   <script>
+        function openContactModal() {
+      const modal = document.getElementById("contactSupportModal");
+      if (modal) modal.style.display = "flex";
+    }
+
+    function closeContactModal() {
+      const modal = document.getElementById("contactSupportModal");
+      if (modal) modal.style.display = "none";
+    }
+
     function openUserProfileModal() {
       const modal = document.getElementById("userProfileModal");
       if (modal) modal.style.display = "flex";

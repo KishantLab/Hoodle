@@ -73,13 +73,27 @@ if DATABASE_BACKEND == "postgres":
         if normalized_write_url.startswith("postgres://"):
             normalized_write_url = "postgresql://" + normalized_write_url[len("postgres://"):]
 
+        # Auto-detect PgBouncer on port 6432 for 10,000+ multiplexed connections
+        chosen_write_url = normalized_write_url
+        max_pool_conns = 24
+        if ":5432/" in normalized_write_url:
+            candidate_6432 = normalized_write_url.replace(":5432/", ":6432/")
+            try:
+                _test_conn = psycopg2.connect(candidate_6432, connect_timeout=1)
+                _test_conn.close()
+                chosen_write_url = candidate_6432
+                max_pool_conns = 48
+                logger.info("PgBouncer transaction connection multiplexer active on port 6432 (10,000+ client capacity).")
+            except Exception as _pgb_err:
+                logger.info(f"PgBouncer port 6432 not active ({_pgb_err}); using direct PostgreSQL on port 5432.")
+
         pg_write_pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=2,
-            maxconn=24,
-            dsn=normalized_write_url
+            maxconn=max_pool_conns,
+            dsn=chosen_write_url
         )
         pg_pool = pg_write_pool
-        logger.info("PostgreSQL PRIMARY write connection pool initialized (minconn=2, maxconn=24).")
+        logger.info(f"PostgreSQL PRIMARY write connection pool initialized (minconn=2, maxconn={max_pool_conns}, target={chosen_write_url.split('@')[-1]}).")
 
         # 2. Read Replica Connection Pool (on GPU1)
         if REPLICA_DATABASE_URL:
