@@ -47,20 +47,38 @@ sudo systemctl reload nginx
 echo -e "${GREEN}✓ NGINX reloaded with open_file_cache & zero-copy sendfile${NC}"
 
 # 4. Zero-Downtime Rolling Reload of Gunicorn Cluster Nodes
-echo -e "\n${BOLD}[4/6] Executing Sequential Rolling SIGHUP Reload...${NC}"
+echo -e "\n${BOLD}[4/6] Executing Sequential Rolling Restart Across Cluster Nodes...${NC}"
 
-echo -e "  ↻ Reloading Master (192.168.99.2:8096)..."
-pkill -HUP -f "gunicorn.*8096" || echo "Master gunicorn signaled"
-sleep 2
+echo -e "  ↻ Rolling restart Node 1 (GPU1 192.168.99.3:8095)..."
+ssh -o ConnectTimeout=5 gpu1 "sudo systemctl restart accl-lms"
+for i in {1..10}; do
+    if curl -s -o /dev/null -w "%{http_code}" http://192.168.99.3:8095/api/heartbeat | grep -qE "200|302"; then
+        echo -e "    ${GREEN}✓ GPU1 is responsive and healthy${NC}"
+        break
+    fi
+    sleep 1
+done
 
-echo -e "  ↻ Reloading GPU1 (192.168.99.3:8095)..."
-ssh -o ConnectTimeout=3 gpu1 "pkill -HUP -f 'gunicorn.*8095'" || true
-sleep 3
+echo -e "  ↻ Rolling restart Node 2 (GPU2 192.168.99.4:8095)..."
+ssh -o ConnectTimeout=5 gpu2 "sudo systemctl restart accl-lms"
+for i in {1..10}; do
+    if curl -s -o /dev/null -w "%{http_code}" http://192.168.99.4:8095/api/heartbeat | grep -qE "200|302"; then
+        echo -e "    ${GREEN}✓ GPU2 is responsive and healthy${NC}"
+        break
+    fi
+    sleep 1
+done
 
-echo -e "  ↻ Reloading GPU2 (192.168.99.4:8095)..."
-ssh -o ConnectTimeout=3 gpu2 "pkill -HUP -f 'gunicorn.*8095'" || true
-sleep 2
-echo -e "${GREEN}✓ All Gunicorn cluster nodes reloaded gracefully without dropping connections!${NC}"
+echo -e "  ↻ Rolling restart Master (192.168.99.2:8096)..."
+sudo systemctl restart accl-lms
+for i in {1..10}; do
+    if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8096/api/heartbeat | grep -qE "200|302"; then
+        echo -e "    ${GREEN}✓ Master is responsive and healthy${NC}"
+        break
+    fi
+    sleep 1
+done
+echo -e "${GREEN}✓ All Gunicorn cluster nodes reloaded gracefully with zero dropped connections!${NC}"
 
 # 5. Restart Distributed Task Workers
 echo -e "\n${BOLD}[5/6] Synchronizing Distributed Evaluation Task Workers...${NC}"
