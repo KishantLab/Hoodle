@@ -51,8 +51,8 @@ def get_redis_client():
     global _redis_client, _redis_available, _last_check_ts
     now = time.time()
 
-    # Retry reconnection every 10 seconds if previously unavailable
-    if _redis_available is False and (now - _last_check_ts < 10):
+    # Retry reconnection quickly (2 seconds) if previously unavailable
+    if _redis_available is False and (now - _last_check_ts < 2.0):
         return None
 
     if _redis_client is not None:
@@ -66,15 +66,15 @@ def get_redis_client():
             port=REDIS_PORT,
             db=REDIS_DB,
             password=REDIS_PASSWORD,
-            socket_timeout=0.5,
-            socket_connect_timeout=0.5,
+            socket_timeout=2.0,
+            socket_connect_timeout=2.0,
             max_connections=100
         )
         client = redis.Redis(connection_pool=pool)
         if client.ping():
             _redis_client = client
             _redis_available = True
-            logger.info("Connected to Redis in-memory cache successfully.")
+            logger.info("Connected to Redis in-memory cache successfully (%s:%s).", target_host, REDIS_PORT)
             return _redis_client
     except Exception as e:
         _last_check_ts = now

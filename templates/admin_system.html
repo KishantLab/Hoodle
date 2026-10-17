@@ -194,11 +194,11 @@
     </div>
 
     <!-- Redis Fast Cache Stat (Tech 1) -->
-    <div class="card" style="padding: 1rem; border-left: 4px solid #dc2626;">
+    <div class="card" id="cardRedisStat" style="padding: 1rem; border-left: 4px solid #16a34a;">
       <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">
         Redis RAM In-Memory Cache
       </div>
-      <div style="font-size: 1.5rem; font-weight: 800; color: #dc2626; margin-top: 0.25rem;" id="statRedisLat">
+      <div style="font-size: 1.5rem; font-weight: 800; color: #16a34a; margin-top: 0.25rem;" id="statRedisLat">
         -- ms
       </div>
       <div style="font-size: 0.78rem; color: #16a34a; font-weight: 600; margin-top: 0.2rem;" id="statRedisDesc">
@@ -773,9 +773,14 @@ function renderStatus(data) {
 
   // Quick stats
   // New Scaling Tech Stats
+  const cardRedis = document.getElementById('cardRedisStat');
+  const statRedisLatEl = document.getElementById('statRedisLat');
   if (data.redis && data.redis.status === 'healthy') {
-    document.getElementById('statRedisLat').innerText = (data.redis.latency_ms || 0.2) + ' ms';
+    statRedisLatEl.innerText = (data.redis.latency_ms || 0.2) + ' ms';
+    statRedisLatEl.style.color = '#16a34a';
+    if (cardRedis) cardRedis.style.borderLeftColor = '#16a34a';
     document.getElementById('statRedisDesc').innerText = '⚡ ' + (data.redis.memory_human || '1 MB') + ' RAM (' + (data.redis.active_qr_tokens || 0) + ' active QRs)';
+    document.getElementById('statRedisDesc').style.color = '#16a34a';
     document.getElementById('redisBadge').innerText = 'Active (<0.2ms)';
     document.getElementById('redisBadge').style.background = '#dcfce7';
     document.getElementById('redisBadge').style.color = '#15803d';
@@ -784,8 +789,11 @@ function renderStatus(data) {
     document.getElementById('redisQrTokensVal').innerText = (data.redis.active_qr_tokens || 0) + ' active in RAM';
     document.getElementById('redisClientsVal').innerText = data.redis.connected_clients || '11';
   } else {
-    document.getElementById('statRedisLat').innerText = 'OFFLINE';
+    statRedisLatEl.innerText = 'OFFLINE';
+    statRedisLatEl.style.color = '#dc2626';
+    if (cardRedis) cardRedis.style.borderLeftColor = '#dc2626';
     document.getElementById('statRedisDesc').innerText = 'DB Fallback Active';
+    document.getElementById('statRedisDesc').style.color = '#dc2626';
     document.getElementById('redisBadge').innerText = 'Degraded';
     document.getElementById('redisBadge').style.background = '#fee2e2';
     document.getElementById('redisBadge').style.color = '#b91c1c';

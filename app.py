@@ -880,7 +880,14 @@ def init_db():
 
     # Explicit column migration for PostgreSQL backend
     try:
-        if db_adapter and getattr(db_adapter, "DATABASE_BACKEND", "") == "postgres":
+        is_postgres_conn = False
+        try:
+            if hasattr(c, "pgconn") or type(c).__name__ == "PostgresConnectionWrapper" or not isinstance(c, sqlite3.Connection):
+                is_postgres_conn = True
+        except Exception:
+            pass
+
+        if is_postgres_conn and db_adapter and getattr(db_adapter, "DATABASE_BACKEND", "") == "postgres":
             c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS gradebook_sheet_webhook_url text DEFAULT ''")
             c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS gradebook_sheet_sync_enabled integer DEFAULT 0")
             c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS gradebook_sheet_last_synced text DEFAULT NULL")
@@ -9762,11 +9769,19 @@ def api_admin_system_status():
             rc.ping()
             r_lat = round((time.time() - t0) * 1000, 2)
             r_info = rc.info()
+            qr_count = 0
+            try:
+                for _ in rc.scan_iter(match="hoodle:att:qr:*", count=50):
+                    qr_count += 1
+                    if qr_count >= 100:
+                        break
+            except Exception:
+                qr_count = 0
             redis_report.update({
                 "status": "healthy",
                 "latency_ms": r_lat,
                 "memory_human": r_info.get("used_memory_human", "N/A"),
-                "active_qr_tokens": len(rc.keys("hoodle:att:qr:*")),
+                "active_qr_tokens": qr_count,
                 "connected_clients": r_info.get("connected_clients", 0),
                 "role": r_info.get("role", "standalone"),
                 "port": 6379,
@@ -9781,18 +9796,25 @@ def api_admin_system_status():
     pgbouncer_report = {"status": "healthy", "error": None}
     try:
         import psycopg2
-        p_conn = psycopg2.connect("postgresql://kishan_accl:HoodleLMS_Secure_2026@127.0.0.1:6432/accl_lms", connect_timeout=1)
-        p_cur = p_conn.cursor()
-        p_cur.execute("SELECT 1")
-        p_conn.close()
-        pgbouncer_report.update({
-            "status": "healthy",
-            "port": 6432,
-            "pool_mode": "transaction",
-            "max_client_conn": 10000,
-            "max_db_connections": 120,
-            "description": "Active (10,000+ client multiplexing on port 6432)"
-        })
+        p_conn = None
+        for p_host in ["127.0.0.1", "192.168.99.2"]:
+            try:
+                p_conn = psycopg2.connect(f"postgresql://kishan_accl:HoodleLMS_Secure_2026@{p_host}:6432/accl_lms", connect_timeout=1)
+                break
+            except Exception:
+                pass
+        if p_conn:
+            p_conn.close()
+            pgbouncer_report.update({
+                "status": "healthy",
+                "port": 6432,
+                "pool_mode": "transaction",
+                "max_client_conn": 10000,
+                "max_db_connections": 120,
+                "description": "Active (10,000+ client multiplexing on port 6432)"
+            })
+        else:
+            pgbouncer_report = {"status": "offline", "error": "Unable to connect to PgBouncer on port 6432", "port": 6432}
     except Exception as ex:
         pgbouncer_report = {"status": "offline", "error": str(ex), "port": 6432}
 
@@ -9800,19 +9822,27 @@ def api_admin_system_status():
     replica_report = {"status": "healthy", "error": None}
     try:
         import psycopg2
-        rep_conn = psycopg2.connect("postgresql://kishan_accl:HoodleLMS_Secure_2026@192.168.99.3:5432/accl_lms", connect_timeout=1)
-        rep_cur = rep_conn.cursor()
-        rep_cur.execute("SELECT pg_is_in_recovery()")
-        is_rec = rep_cur.fetchone()[0]
-        rep_conn.close()
-        replica_report.update({
-            "status": "healthy" if is_rec else "warning",
-            "node": "Worker 1 (gpu1)",
-            "ip": "192.168.99.3:5432",
-            "in_recovery": is_rec,
-            "role": "Streaming Read Replica",
-            "routing": "Dual Pool Active: Primary Writes (Master) | Read Offload (GPU1)"
-        })
+        rep_conn = None
+        for rep_host in ["192.168.99.3", "127.0.0.1"]:
+            try:
+                rep_conn = psycopg2.connect(f"postgresql://kishan_accl:HoodleLMS_Secure_2026@{rep_host}:5432/accl_lms", connect_timeout=1)
+                rep_cur = rep_conn.cursor()
+                rep_cur.execute("SELECT pg_is_in_recovery()")
+                is_rec = rep_cur.fetchone()[0]
+                rep_conn.close()
+                replica_report.update({
+                    "status": "healthy" if is_rec else "warning",
+                    "node": "Worker 1 (gpu1)",
+                    "ip": f"{rep_host}:5432",
+                    "in_recovery": is_rec,
+                    "role": "Streaming Read Replica",
+                    "routing": "Dual Pool Active: Primary Writes (Master) | Read Offload (GPU1)"
+                })
+                break
+            except Exception:
+                pass
+        if not replica_report.get("ip"):
+            replica_report = {"status": "offline", "error": "Unable to connect to read replica on port 5432"}
     except Exception as ex:
         replica_report = {"status": "offline", "error": str(ex)}
 
