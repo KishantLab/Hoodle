@@ -68,7 +68,8 @@
                 {% endif %}
               </div>
 
-              <!-- Network Switcher in User Dropdown Menu (Campus Intranet vs Internet) -->
+              {% if current_user and current_user.email and current_user.email.endswith('@iitbhilai.ac.in') %}
+              <!-- Network Switcher in User Dropdown Menu (Campus Intranet vs Internet) - IIT Bhilai Only -->
               <div class="user-dropdown-network-box">
                 <div class="network-box-header">
                   <span class="network-box-title">Network Mode</span>
@@ -87,6 +88,7 @@
               </div>
 
               <div class="user-dropdown-separator"></div>
+              {% endif %}
 
               <a href="#" onclick="closeUserDropdown(); openUserProfileModal(); return false;" class="user-dropdown-link">
                 <span>👤</span>
@@ -634,7 +636,8 @@
           {% endif %}
         </div>
 
-        <!-- Network Mode Selector in Modal (Intranet default & priority vs Internet) -->
+        {% if current_user and current_user.email and current_user.email.endswith('@iitbhilai.ac.in') %}
+        <!-- Network Mode Selector in Modal (Intranet default & priority vs Internet) - IIT Bhilai Only -->
         <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 0.85rem; margin-bottom: 0.85rem;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
             <span style="font-size: 0.76rem; font-weight: 700; color: var(--text-main);">📡 Network Access Mode</span>
@@ -651,6 +654,7 @@
             </button>
           </div>
         </div>
+        {% endif %}
 
         <!-- App Version & Auto-Update Card -->
         <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 0.75rem 0.85rem; margin-bottom: 0.85rem;">
@@ -1376,12 +1380,17 @@
         }
       });
 
-      // Pass auth credentials to Android app for background notification polling
+      // Pass auth credentials and profile domain to Android app
       if (window.Android && typeof Android.setAuthCredentials === 'function') {
         try {
           const userId = '{{ current_user.id }}';
           const token = '{{ current_user.username }}';
           Android.setAuthCredentials(token, userId);
+        } catch(e) {}
+      }
+      if (window.Android && typeof Android.setUserProfile === 'function') {
+        try {
+          Android.setUserProfile('{{ current_user.email }}', '{{ current_user.role }}');
         } catch(e) {}
       }
     });

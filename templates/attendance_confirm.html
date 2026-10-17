@@ -28,6 +28,29 @@
       </a>
     </div>
 
+  {% elif error == 'INTRANET_REQUIRED' %}
+    <!-- Intranet Required State -->
+    <div class="card" style="text-align: center; padding: 2.5rem 1.5rem; border-top: 5px solid #2563eb;">
+      <div style="font-size: 3.5rem; margin-bottom: 0.5rem;">🏫</div>
+      <h2 style="font-size: 1.4rem; font-weight: 800; color: #1e40af; margin-bottom: 0.5rem;">
+        Campus Wi-Fi Required
+      </h2>
+      <p style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.5; margin-bottom: 1.5rem;">
+        Your instructor has restricted attendance for <strong>{{ course.code }}</strong> to the <strong>IIT Bhilai Campus Intranet Wi-Fi</strong>.
+      </p>
+      
+      <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.5rem; text-align: left; font-size: 0.88rem;">
+        <div style="color: #1e40af; font-size: 0.78rem; text-transform: uppercase; font-weight: 700; margin-bottom: 0.35rem;">To Record Attendance:</div>
+        <div>1. Connect your phone or laptop to the <strong>IIT Bhilai Campus Wi-Fi</strong>.</div>
+        <div>2. Disconnect from external cellular mobile data / VPN.</div>
+        <div>3. Rescan the projector QR code.</div>
+      </div>
+
+      <a href="{{ url_for('course_attendance', course_id=course.id) }}" class="btn btn-secondary" style="width: 100%;">
+        Return to Course Attendance
+      </a>
+    </div>
+
   {% elif error == 'NOT_ENROLLED' %}
     <!-- Not Enrolled State -->
     <div class="card" style="text-align: center; padding: 2.5rem 1.5rem; border-top: 5px solid var(--warning);">

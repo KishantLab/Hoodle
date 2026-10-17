@@ -72,9 +72,11 @@ public class MainActivity extends AppCompatActivity {
     public static final String KEY_SERVER_URL = "server_url";
     public static final String KEY_AUTH_TOKEN = "auth_token";
     public static final String KEY_USER_ID = "user_id";
+    public static final String KEY_USER_EMAIL = "user_email";
+    public static final String KEY_IS_IIT_BHILAI = "is_iit_bhilai";
 
     public static final String URL_LAN = "https://10.10.14.104/lms/";
-    public static final String URL_INTERNET = "https://accllogin.tail77fd8b.ts.net/lms/";
+    public static final String URL_INTERNET = "https://hoodle.in/lms/";
     public static final String URL_HTTP = "http://10.10.14.104/lms/";
     public static final String URL_DIRECT = "http://10.10.14.104:8095/lms/";
     private static final String CHANNEL_ID = "hoodle_notifications_channel";
@@ -164,7 +166,11 @@ public class MainActivity extends AppCompatActivity {
             }
         );
 
-        loadPortalUrl();
+        // Immediately render the bundled static offline shell (0ms, instant response, no blank screen)
+        webView.loadUrl("file:///android_asset/app_shell.html");
+
+        // Schedule live portal loading in background
+        mainHandler.postDelayed(this::loadPortalUrl, 350);
     }
 
     @Override
@@ -181,21 +187,41 @@ public class MainActivity extends AppCompatActivity {
         swipeRefreshLayout.setEnabled(false);
     }
 
+    public boolean isIitBhilaiUser() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getBoolean(KEY_IS_IIT_BHILAI, false);
+    }
+
+    public void updateNetworkSwitchersVisibility() {
+        boolean isIit = isIitBhilaiUser();
+        if (btnSwitchLan != null) btnSwitchLan.setVisibility(isIit ? View.VISIBLE : View.GONE);
+        if (btnCustomServer != null) btnCustomServer.setVisibility(isIit ? View.VISIBLE : View.GONE);
+        if (btnSwitchInternet != null) btnSwitchInternet.setVisibility(isIit ? View.VISIBLE : View.GONE);
+    }
+
     public void switchToInternet() {
         setSavedServerUrl(URL_INTERNET);
-        Toast.makeText(this, "🌐 Switched to Internet (Tailscale Funnel)", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "🌐 Switched to Internet (hoodle.in)", Toast.LENGTH_SHORT).show();
         loadPortalUrl();
     }
 
     public void switchToCampus() {
+        if (!isIitBhilaiUser()) {
+            Toast.makeText(this, "Campus Intranet is available only for @iitbhilai.ac.in accounts.", Toast.LENGTH_LONG).show();
+            return;
+        }
         setSavedServerUrl(URL_LAN);
         Toast.makeText(this, "🏫 Switched to Campus Wi-Fi (Intranet)", Toast.LENGTH_SHORT).show();
         loadPortalUrl();
     }
 
     public void toggleNetworkMode() {
+        if (!isIitBhilaiUser()) {
+            switchToInternet();
+            return;
+        }
         String current = getSavedServerUrl();
-        if (current != null && (current.contains("ts.net") || current.contains("100.87.0.15"))) {
+        if (current != null && (current.contains("hoodle.in") || current.contains("ts.net") || current.contains("100.87.0.15"))) {
             switchToCampus();
         } else {
             switchToInternet();
@@ -203,13 +229,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupServerSwitchers() {
+        updateNetworkSwitchersVisibility();
         btnRetry.setOnClickListener(v -> loadPortalUrl());
         btnSwitchInternet.setOnClickListener(v -> switchToInternet());
         btnSwitchLan.setOnClickListener(v -> switchToCampus());
-        btnCustomServer.setOnClickListener(v -> showCustomServerDialog());
+        btnCustomServer.setOnClickListener(v -> {
+            if (isIitBhilaiUser()) {
+                showCustomServerDialog();
+            }
+        });
     }
 
     private void showCustomServerDialog() {
+        if (!isIitBhilaiUser()) return;
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("🌐 Custom Portal Address");
         builder.setMessage("Enter campus IP, reverse proxy URL, or domain:");
@@ -238,10 +270,13 @@ public class MainActivity extends AppCompatActivity {
 
     private String getSavedServerUrl() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        String url = prefs.getString(KEY_SERVER_URL, URL_LAN);
-        // Normalize obsolete/broken :8095 direct links back to standard LAN
-        if (url != null && (url.contains(":8095") || url.startsWith("http://10.10.14.104/lms/"))) {
-            url = URL_LAN;
+        if (!isIitBhilaiUser()) {
+            return URL_INTERNET;
+        }
+        String url = prefs.getString(KEY_SERVER_URL, URL_INTERNET);
+        // Normalize obsolete/broken links
+        if (url != null && (url.contains(":8095") || url.startsWith("http://10.10.14.104/lms/") || url.contains("ts.net"))) {
+            url = URL_INTERNET;
             prefs.edit().putString(KEY_SERVER_URL, url).apply();
         }
         return url;
@@ -750,9 +785,27 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
+        public void retryConnection() {
+            activity.runOnUiThread(activity::loadPortalUrl);
+        }
+
+        @JavascriptInterface
+        public void setUserProfile(String email, String role) {
+            if (email != null && !email.trim().isEmpty()) {
+                boolean isIit = email.toLowerCase().endsWith("@iitbhilai.ac.in");
+                SharedPreferences prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+                prefs.edit()
+                    .putString(KEY_USER_EMAIL, email)
+                    .putBoolean(KEY_IS_IIT_BHILAI, isIit)
+                    .apply();
+                activity.runOnUiThread(activity::updateNetworkSwitchersVisibility);
+            }
+        }
+
+        @JavascriptInterface
         public String getActiveNetworkMode() {
             String current = activity.getSavedServerUrl();
-            if (current != null && (current.contains("ts.net") || current.contains("100.87.0.15"))) {
+            if (current != null && (current.contains("hoodle.in") || current.contains("ts.net") || current.contains("100.87.0.15"))) {
                 return "internet";
             }
             return "intranet";

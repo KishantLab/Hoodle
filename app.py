@@ -897,6 +897,9 @@ def init_db():
             c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS classroom_lng REAL DEFAULT NULL")
             c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS geofence_radius_meters INTEGER DEFAULT 100")
             c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS geofence_enabled INTEGER DEFAULT 1")
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS attendance_network_policy VARCHAR(20) DEFAULT 'both'")
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS quiz_network_policy VARCHAR(20) DEFAULT 'both'")
+            c.execute("ALTER TABLE courses ADD COLUMN IF NOT EXISTS exam_network_policy VARCHAR(20) DEFAULT 'both'")
             c.execute("ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS latitude REAL DEFAULT NULL")
             c.execute("ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS longitude REAL DEFAULT NULL")
             c.execute("ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS accuracy_meters REAL DEFAULT NULL")
@@ -984,6 +987,19 @@ def init_db():
         cw_cols = [row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in c.fetchall()]
         if "category_id" not in cw_cols:
             c.execute("ALTER TABLE coursework ADD COLUMN category_id INTEGER DEFAULT NULL")
+    except Exception:
+        pass
+
+    # Migration for courses network policy columns in SQLite
+    try:
+        c.execute("PRAGMA table_info(courses)")
+        course_cols = [row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in c.fetchall()]
+        if "attendance_network_policy" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN attendance_network_policy VARCHAR(20) DEFAULT 'both'")
+        if "quiz_network_policy" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN quiz_network_policy VARCHAR(20) DEFAULT 'both'")
+        if "exam_network_policy" not in course_cols:
+            c.execute("ALTER TABLE courses ADD COLUMN exam_network_policy VARCHAR(20) DEFAULT 'both'")
     except Exception:
         pass
 
@@ -4079,11 +4095,28 @@ def update_course_settings(course_id):
     except (ValueError, TypeError):
         attendance_threshold = 50.0
 
-    conn.execute("""
-        UPDATE courses SET
-            code = ?, title = ?, section = ?, description = ?, theme_color = ?, attendance_threshold = ?
-        WHERE id = ?
-    """, (code, title, section, description, theme_color, attendance_threshold, course_id))
+    curr_user = get_current_user()
+    if curr_user and curr_user.get("email", "").lower().endswith("@iitbhilai.ac.in"):
+        att_policy = request.form.get("attendance_network_policy", "both").strip().lower()
+        quiz_policy = request.form.get("quiz_network_policy", "both").strip().lower()
+        exam_policy = request.form.get("exam_network_policy", "both").strip().lower()
+
+        att_policy = "intranet_only" if att_policy == "intranet_only" else "both"
+        quiz_policy = "intranet_only" if quiz_policy == "intranet_only" else "both"
+        exam_policy = "intranet_only" if exam_policy == "intranet_only" else "both"
+
+        conn.execute("""
+            UPDATE courses SET
+                code = ?, title = ?, section = ?, description = ?, theme_color = ?, attendance_threshold = ?,
+                attendance_network_policy = ?, quiz_network_policy = ?, exam_network_policy = ?
+            WHERE id = ?
+        """, (code, title, section, description, theme_color, attendance_threshold, att_policy, quiz_policy, exam_policy, course_id))
+    else:
+        conn.execute("""
+            UPDATE courses SET
+                code = ?, title = ?, section = ?, description = ?, theme_color = ?, attendance_threshold = ?
+            WHERE id = ?
+        """, (code, title, section, description, theme_color, attendance_threshold, course_id))
     conn.commit()
     conn.close()
 
@@ -6066,6 +6099,11 @@ def exam_view(course_id, coursework_id):
         abort(404, "Exam not found")
 
     user = get_current_user()
+    if course.get("exam_network_policy") == "intranet_only" and user["role"] == "student" and not is_request_from_campus_intranet():
+        conn.close()
+        flash("🔒 Campus Wi-Fi Required: This exam is restricted by your instructor to the IIT Bhilai Campus Intranet Wi-Fi (10.10.*.*). Please connect to campus Wi-Fi to enter this exam session.", "danger")
+        return redirect(url_for("course_classwork", course_id=course_id))
+
     my_sub = conn.execute("SELECT * FROM submissions WHERE coursework_id = ? AND student_id = ?", (coursework_id, user["id"])).fetchone()
 
     raw_labs = cw["labs"] or "Lab 1, Lab 2, Lab 3"
@@ -6112,6 +6150,12 @@ def exam_submit(course_id, coursework_id):
     user = get_current_user()
     user_id = user["id"]
     roll_number = user["roll_number"] or user["username"].upper()
+
+    course = get_course_or_404(course_id)
+    if course.get("exam_network_policy") == "intranet_only" and user["role"] == "student" and not is_request_from_campus_intranet():
+        conn.close()
+        flash("🔒 Campus Wi-Fi Required: Submissions for this exam can only be sent from the IIT Bhilai Campus Intranet Wi-Fi (10.10.*.*).", "danger")
+        return redirect(url_for("exam_view", course_id=course_id, coursework_id=coursework_id))
 
     # Strict Scheduled Start Lock: Submissions rejected before start_time
     now = datetime.now()
@@ -9987,6 +10031,33 @@ def get_dynamic_attendance_token(course_id, session_type="Lecture", time_block=N
     return token
 
 
+def is_request_from_campus_intranet(req=None):
+    """
+    Checks if client is connecting from IIT Bhilai campus intranet
+    (subnets 10.10.x.x, 10.x.x.x, 192.168.x.x, 172.16-31.x.x, 127.0.0.1, or LAN gateway).
+    Correctly parses X-Forwarded-For and X-Real-IP headers behind reverse proxy.
+    """
+    import ipaddress
+    r = req or request
+    ip_str = r.headers.get("X-Forwarded-For", "")
+    if ip_str:
+        client_ip = ip_str.split(",")[0].strip()
+    else:
+        client_ip = r.headers.get("X-Real-IP", r.remote_addr or "").strip()
+
+    if not client_ip:
+        return False
+
+    try:
+        ip_obj = ipaddress.ip_address(client_ip)
+        if ip_obj.is_loopback or ip_obj.is_private:
+            return True
+    except Exception:
+        if client_ip.startswith("10.") or client_ip.startswith("192.168.") or client_ip in ("127.0.0.1", "::1"):
+            return True
+    return False
+
+
 def validate_dynamic_attendance_token(course_id, session_type, scanned_token):
     """
     Validates token against current block and immediately preceding block
@@ -10269,6 +10340,16 @@ def attend_scan_landing(course_id):
             user=user
         )
     
+    # 0. Intranet-Only Policy Enforcement
+    if course.get("attendance_network_policy") == "intranet_only" and user["role"] == "student" and not is_request_from_campus_intranet():
+        return render_template(
+            "attendance_confirm.html",
+            course=course,
+            error="INTRANET_REQUIRED",
+            session_type=session_type,
+            user=user
+        )
+
     # 1. Anti-Proxy Token Check
     is_valid_token = validate_dynamic_attendance_token(course_id, session_type, scanned_token)
     if not is_valid_token:
@@ -10376,6 +10457,10 @@ def attend_submit(course_id):
     session_type = request.form.get("session_type", "Lecture").strip()
     token = request.form.get("token", "").strip().upper()
     
+    if course.get("attendance_network_policy") == "intranet_only" and user["role"] == "student" and not is_request_from_campus_intranet():
+        flash("🔒 Campus Wi-Fi Required: Attendance for this course has been restricted by your instructor to the IIT Bhilai Campus Intranet Wi-Fi (10.10.*.*). Please connect to campus Wi-Fi.", "danger")
+        return redirect(url_for("course_attendance", course_id=course_id))
+
     # Re-validate dynamic token
     if not validate_dynamic_attendance_token(course_id, session_type, token):
         flash("❌ QR Code Expired: The attendance token changed before your confirmation was sent. Please scan the current projector code.", "danger")

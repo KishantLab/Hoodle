@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Hoodle LMS</title>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-light: #6366f1;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Top AppBar */
+    .app-header {
+      background: #ffffff;
+      padding: 0.85rem 1.15rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+    .brand-logo {
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, #4f46e5, #06b6d4);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      color: white;
+      font-weight: 800;
+      box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
+    }
+    .brand-name {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #1e1b4b;
+    }
+    .brand-name span { color: #f97316; }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: #eef2ff;
+      color: var(--primary);
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .spinner-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--primary);
+      border-radius: 50%;
+      animation: pulseDot 1s infinite alternate;
+    }
+    @keyframes pulseDot {
+      0% { opacity: 0.3; transform: scale(0.8); }
+      100% { opacity: 1; transform: scale(1.2); }
+    }
+
+    /* Content Area */
+    .content {
+      padding: 1.15rem;
+      flex: 1;
+      max-width: 600px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* Shimmer Effect */
+    .shimmer {
+      background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+      background-size: 200% 100%;
+      animation: shimmerAnim 1.6s infinite ease-in-out;
+      border-radius: 6px;
+    }
+    @keyframes shimmerAnim {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* Welcome Banner Skeleton */
+    .banner-skeleton {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .line-title { height: 20px; width: 65%; margin-bottom: 0.65rem; }
+    .line-sub { height: 14px; width: 85%; }
+
+    /* Course Cards Skeleton */
+    .section-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .card-skeleton {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.15rem;
+      margin-bottom: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    .card-header-skel {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .avatar-skel {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      flex-shrink: 0;
+    }
+    .header-text-skel { flex: 1; display: flex; flex-direction: column; gap: 0.4rem; }
+    .card-footer-skel {
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid #f1f5f9;
+      padding-top: 0.75rem;
+    }
+
+    /* Offline Box (Hidden by default, shown if network timeout) */
+    #offlineBox {
+      display: none;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 12px;
+      padding: 1.25rem;
+      text-align: center;
+      margin-top: 1rem;
+    }
+    .btn-retry {
+      display: inline-block;
+      margin-top: 0.85rem;
+      padding: 0.65rem 1.5rem;
+      background: var(--primary);
+      color: white;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+    }
+
+    /* Bottom Bar */
+    .bottom-bar {
+      background: #ffffff;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-around;
+      padding: 0.65rem 0;
+      position: sticky;
+      bottom: 0;
+    }
+    .nav-item-skel {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-header">
+    <div class="brand">
+      <div class="brand-logo">🎓</div>
+      <div class="brand-name">Hoodle<span>.</span></div>
+    </div>
+    <div class="status-badge" id="statusBadge">
+      <div class="spinner-dot"></div>
+      <span id="statusText">Connecting...</span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="banner-skeleton">
+      <div class="shimmer line-title"></div>
+      <div class="shimmer line-sub"></div>
+    </div>
+
+    <div class="section-title">My Courses</div>
+
+    <div class="card-skeleton">
+      <div class="card-header-skel">
+        <div class="shimmer avatar-skel"></div>
+        <div class="header-text-skel">
+          <div class="shimmer" style="height: 16px; width: 70%;"></div>
+          <div class="shimmer" style="height: 12px; width: 45%;"></div>
+        </div>
+      </div>
+      <div class="card-footer-skel">
+        <div class="shimmer" style="height: 12px; width: 30%;"></div>
+        <div class="shimmer" style="height: 12px; width: 20%;"></div>
+      </div>
+    </div>
+
+    <div class="card-skeleton">
+      <div class="card-header-skel">
+        <div class="shimmer avatar-skel"></div>
+        <div class="header-text-skel">
+          <div class="shimmer" style="height: 16px; width: 60%;"></div>
+          <div class="shimmer" style="height: 12px; width: 50%;"></div>
+        </div>
+      </div>
+      <div class="card-footer-skel">
+        <div class="shimmer" style="height: 12px; width: 35%;"></div>
+        <div class="shimmer" style="height: 12px; width: 25%;"></div>
+      </div>
+    </div>
+
+    <div class="card-skeleton">
+      <div class="card-header-skel">
+        <div class="shimmer avatar-skel"></div>
+        <div class="header-text-skel">
+          <div class="shimmer" style="height: 16px; width: 75%;"></div>
+          <div class="shimmer" style="height: 12px; width: 40%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="offlineBox">
+      <div style="font-size: 2rem; margin-bottom: 0.35rem;">📡</div>
+      <div style="font-weight: 800; color: #991b1b; font-size: 1rem;">No Internet Connection Detected</div>
+      <div style="font-size: 0.82rem; color: #b91c1c; margin-top: 0.25rem;">
+        Please check your mobile data or Wi-Fi connection and tap below.
+      </div>
+      <button class="btn-retry" onclick="triggerRetry()">Retry Connection</button>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="shimmer nav-item-skel"></div>
+    <div class="shimmer nav-item-skel"></div>
+    <div class="shimmer nav-item-skel"></div>
+    <div class="shimmer nav-item-skel"></div>
+  </div>
+
+  <script>
+    function triggerRetry() {
+      document.getElementById('offlineBox').style.display = 'none';
+      document.getElementById('statusText').innerText = 'Connecting...';
+      if (window.Android && window.Android.retryConnection) {
+        window.Android.retryConnection();
+      } else {
+        location.reload();
+      }
+    }
+
+    // After 8 seconds, if page hasn't navigated, display retry options
+    setTimeout(function() {
+      var box = document.getElementById('offlineBox');
+      if (box) {
+        box.style.display = 'block';
+        document.getElementById('statusText').innerText = 'Offline';
+      }
+    }, 8000);
+  </script>
+</body>
+</html>

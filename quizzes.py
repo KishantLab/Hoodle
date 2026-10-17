@@ -638,6 +638,14 @@ def take_quiz(course_id, quiz_id):
         return redirect(url_for("quizzes.course_quizzes", course_id=course_id))
 
     # 2. Check or Create Attempt
+    if course and dict(course).get("quiz_network_policy") == "intranet_only":
+        client_ip = request.headers.get("X-Forwarded-For", request.headers.get("X-Real-IP", request.remote_addr or "")).split(",")[0].strip()
+        is_intranet = client_ip.startswith("10.") or client_ip.startswith("192.168.") or client_ip in ("127.0.0.1", "::1")
+        if not is_intranet:
+            conn.close()
+            flash("🔒 Campus Wi-Fi Required: This quiz is restricted by your instructor to the IIT Bhilai Campus Intranet Wi-Fi (10.10.*.*). Please connect to campus Wi-Fi to attempt this quiz.", "danger")
+            return redirect(url_for("quizzes.course_quizzes", course_id=course_id))
+
     attempt = conn.execute("""
         SELECT * FROM quiz_attempts
         WHERE quiz_id = ? AND student_id = ?
@@ -844,6 +852,15 @@ def submit_quiz(course_id, quiz_id):
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     conn = get_db()
+    course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+    if course and dict(course).get("quiz_network_policy") == "intranet_only":
+        client_ip = request.headers.get("X-Forwarded-For", request.headers.get("X-Real-IP", request.remote_addr or "")).split(",")[0].strip()
+        is_intranet = client_ip.startswith("10.") or client_ip.startswith("192.168.") or client_ip in ("127.0.0.1", "::1")
+        if not is_intranet:
+            conn.close()
+            flash("🔒 Campus Wi-Fi Required: Submissions for this quiz can only be sent from the IIT Bhilai Campus Intranet Wi-Fi (10.10.*.*).", "danger")
+            return redirect(url_for("quizzes.course_quizzes", course_id=course_id))
+
     att = conn.execute("SELECT * FROM quiz_attempts WHERE id = ? AND student_id = ?", (attempt_id, user_id)).fetchone()
     if not att:
         conn.close()

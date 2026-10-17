@@ -351,6 +351,70 @@
         </p>
       </div>
 
+      {% if current_user and current_user.email and current_user.email.endswith('@iitbhilai.ac.in') %}
+      <!-- Campus Network & Security Controls (IIT Bhilai Only) -->
+      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-md); padding: 1.15rem; margin-bottom: 1.25rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+          <div style="font-weight: 800; font-size: 0.92rem; color: #166534; display: flex; align-items: center; gap: 0.4rem;">
+            🏫 Campus Network & Exam Security Controls
+          </div>
+          <span style="font-size: 0.72rem; background: #dcfce7; color: #15803d; font-weight: 700; padding: 2px 8px; border-radius: 9999px;">
+            IIT Bhilai Protected
+          </span>
+        </div>
+        <p style="font-size: 0.78rem; color: #15803d; margin-bottom: 1rem; line-height: 1.4;">
+          Restrict evaluations and attendance to on-campus physical presence via the IIT Bhilai Wi-Fi network (IP subnets 10.10.x.x).
+        </p>
+
+        <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem;">
+          <!-- Attendance Network Policy -->
+          <div>
+            <label style="font-size: 0.8rem; font-weight: 700; color: #1f2937; display: block; margin-bottom: 0.25rem;">
+              📅 Live QR Attendance Network Restriction
+            </label>
+            <select name="attendance_network_policy" class="form-control" style="font-size: 0.85rem;">
+              <option value="both" {% if course.attendance_network_policy != 'intranet_only' %}selected{% endif %}>
+                🌐 Allow Both Intranet (Campus Wi-Fi) & Internet (Standard Geofence)
+              </option>
+              <option value="intranet_only" {% if course.attendance_network_policy == 'intranet_only' %}selected{% endif %}>
+                🔒 Restrict to Campus Intranet Wi-Fi Only (10.10.*.*)
+              </option>
+            </select>
+          </div>
+
+          <!-- Quiz Network Policy -->
+          <div>
+            <label style="font-size: 0.8rem; font-weight: 700; color: #1f2937; display: block; margin-bottom: 0.25rem;">
+              📝 Quiz Attempts & Submissions
+            </label>
+            <select name="quiz_network_policy" class="form-control" style="font-size: 0.85rem;">
+              <option value="both" {% if course.quiz_network_policy != 'intranet_only' %}selected{% endif %}>
+                🌐 Allow Both Intranet & Internet
+              </option>
+              <option value="intranet_only" {% if course.quiz_network_policy == 'intranet_only' %}selected{% endif %}>
+                🔒 Restrict to Campus Intranet Wi-Fi Only
+              </option>
+            </select>
+          </div>
+
+          <!-- Exam Network Policy -->
+          <div>
+            <label style="font-size: 0.8rem; font-weight: 700; color: #1f2937; display: block; margin-bottom: 0.25rem;">
+              ⚡ Lab Exam & Coding IDE (Lockdown Mode)
+            </label>
+            <select name="exam_network_policy" class="form-control" style="font-size: 0.85rem;">
+              <option value="both" {% if course.exam_network_policy != 'intranet_only' %}selected{% endif %}>
+                🌐 Allow Both Intranet & Internet
+              </option>
+              <option value="intranet_only" {% if course.exam_network_policy == 'intranet_only' %}selected{% endif %}>
+                🔒 Restrict to Campus Intranet Wi-Fi Only
+              </option>
+            </select>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
       <!-- Class Code & Joining Settings -->
       <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
         <div style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.35rem; color: var(--text-main);">
