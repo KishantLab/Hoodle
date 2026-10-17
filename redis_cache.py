@@ -14,7 +14,29 @@ from typing import Optional, Any
 
 logger = logging.getLogger("hoodle.redis")
 
-REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
+def _get_redis_host():
+    env_h = os.environ.get("REDIS_HOST")
+    if env_h:
+        return env_h
+    try:
+        with open("/etc/hoodle/hoodle.env", "r") as f:
+            for line in f:
+                if line.strip().startswith("REDIS_HOST="):
+                    return line.strip().split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.05)
+        if s.connect_ex(("127.0.0.1", REDIS_PORT)) == 0:
+            s.close()
+            return "127.0.0.1"
+        s.close()
+    except Exception:
+        pass
+    return "192.168.99.2"
+
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 REDIS_DB = int(os.environ.get("REDIS_DB", "0"))
 REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", None)
@@ -38,8 +60,9 @@ def get_redis_client():
 
     try:
         import redis
+        target_host = _get_redis_host()
         pool = redis.ConnectionPool(
-            host=REDIS_HOST,
+            host=target_host,
             port=REDIS_PORT,
             db=REDIS_DB,
             password=REDIS_PASSWORD,
