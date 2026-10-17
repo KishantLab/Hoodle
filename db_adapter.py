@@ -40,8 +40,27 @@ if not DATABASE_BACKEND:
 # SQLite configuration
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "accl_lms.db"))
 
-# PostgreSQL configuration and connection pool
-pg_pool = None
+# PostgreSQL Primary & Read Replica configuration and connection pools
+pg_write_pool = None
+pg_read_pool = None
+pg_pool = None  # Backward-compatibility alias to primary write pool
+
+REPLICA_DATABASE_URL = os.environ.get("REPLICA_DATABASE_URL", "").strip()
+if not REPLICA_DATABASE_URL:
+    hoodle_env_path = "/etc/hoodle/hoodle.env"
+    if os.path.exists(hoodle_env_path):
+        try:
+            with open(hoodle_env_path, "r") as _ef:
+                for _line in _ef:
+                    _line = _line.strip()
+                    if _line.startswith("REPLICA_DATABASE_URL="):
+                        REPLICA_DATABASE_URL = _line.split("=", 1)[1].strip().strip('"').strip("'")
+        except Exception:
+            pass
+
+# Default replica URL to GPU1 internal node if available
+if not REPLICA_DATABASE_URL and DATABASE_BACKEND == "postgres":
+    REPLICA_DATABASE_URL = "postgresql://kishan_accl:HoodleLMS_Secure_2026@192.168.99.3:5432/accl_lms"
 
 if DATABASE_BACKEND == "postgres":
     try:
@@ -49,21 +68,39 @@ if DATABASE_BACKEND == "postgres":
         import psycopg2.pool
         import psycopg2.extras
 
-        # Allow standard postgres:// URL by normalizing to postgresql://
-        normalized_url = DATABASE_URL
-        if normalized_url.startswith("postgres://"):
-            normalized_url = "postgresql://" + normalized_url[len("postgres://"):]
+        # 1. Primary Write Connection Pool
+        normalized_write_url = DATABASE_URL
+        if normalized_write_url.startswith("postgres://"):
+            normalized_write_url = "postgresql://" + normalized_write_url[len("postgres://"):]
 
-        # Initialize thread-safe connection pool (min 1, max 16 connections per worker process)
-        pg_pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=1,
-            maxconn=16,
-            dsn=normalized_url
+        pg_write_pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=2,
+            maxconn=24,
+            dsn=normalized_write_url
         )
-        logger.info("PostgreSQL connection pool initialized successfully (minconn=1, maxconn=16).")
+        pg_pool = pg_write_pool
+        logger.info("PostgreSQL PRIMARY write connection pool initialized (minconn=2, maxconn=24).")
+
+        # 2. Read Replica Connection Pool (on GPU1)
+        if REPLICA_DATABASE_URL:
+            try:
+                normalized_read_url = REPLICA_DATABASE_URL
+                if normalized_read_url.startswith("postgres://"):
+                    normalized_read_url = "postgresql://" + normalized_read_url[len("postgres://"):]
+
+                pg_read_pool = psycopg2.pool.ThreadedConnectionPool(
+                    minconn=2,
+                    maxconn=24,
+                    dsn=normalized_read_url
+                )
+                logger.info("PostgreSQL READ REPLICA connection pool initialized on GPU1 (minconn=2, maxconn=24).")
+            except Exception as re_err:
+                logger.warning(f"Read replica pool initialization skipped/failed: {re_err}. All reads will use Primary.")
+                pg_read_pool = None
+
     except Exception as e:
         logger.error(f"Failed to initialize PostgreSQL pool: {e}. Falling back to SQLite.")
-        DATABASE_BACKEND = "sqlite"
+        DATABASE_BACKEND = "sqlite" 
 
 
 class DummyCursor:
@@ -257,6 +294,12 @@ class PgConnectionWrapper:
     def commit(self):
         if not self._closed and self._conn:
             self._conn.commit()
+            try:
+                from flask import session, has_request_context
+                if has_request_context():
+                    session["_last_db_write_ts"] = time.time()
+            except Exception:
+                pass
 
     def rollback(self):
         if not self._closed and self._conn:
@@ -284,22 +327,60 @@ class PgConnectionWrapper:
 def get_db(read_only=False):
     """
     Returns an active database connection:
-    - If DATABASE_BACKEND == 'postgres': checks out a thread-safe connection from PostgreSQL pool.
-    - If DATABASE_BACKEND == 'sqlite': returns an optimized SQLite connection (existing behavior).
+    - In PostgreSQL mode:
+        * Writes (read_only=False) ALWAYS route to Primary pool on Master.
+        * Reads (read_only=True) route to Read Replica pool on GPU1 with:
+            1. 'Read-Your-Own-Writes' session pinning (routes to primary if user wrote within 1.5s).
+            2. Transparent instant fallback to Primary if Replica pool is busy or down.
+    - In SQLite mode: returns an optimized local SQLite connection.
     """
-    global DATABASE_BACKEND, pg_pool
+    global DATABASE_BACKEND, pg_write_pool, pg_read_pool, pg_pool
 
-    if DATABASE_BACKEND == "postgres" and pg_pool is not None:
+    if DATABASE_BACKEND == "postgres" and (pg_write_pool is not None or pg_pool is not None):
+        primary_pool = pg_write_pool or pg_pool
+        target_pool = primary_pool
+
+        # Determine target pool based on read_only flag and replica health
+        if read_only and pg_read_pool is not None:
+            # Check Read-Your-Own-Writes session pinning window (1.5s)
+            try:
+                from flask import session, has_request_context
+                if has_request_context():
+                    last_write = session.get("_last_db_write_ts", 0)
+                    if time.time() - last_write < 1.5:
+                        target_pool = primary_pool
+                    else:
+                        target_pool = pg_read_pool
+                else:
+                    target_pool = pg_read_pool
+            except Exception:
+                target_pool = pg_read_pool
+
+        # Attempt to checkout from target_pool with fallback to primary
         for attempt in range(25):
             try:
-                raw_conn = pg_pool.getconn()
-                return PgConnectionWrapper(raw_conn, pg_pool)
+                raw_conn = target_pool.getconn()
+                return PgConnectionWrapper(raw_conn, target_pool)
             except psycopg2.pool.PoolError:
                 if attempt < 24:
                     time.sleep(0.02)
                 else:
+                    # If replica pool was exhausted, fallback immediately to primary pool
+                    if target_pool is pg_read_pool and primary_pool is not None:
+                        try:
+                            raw_conn = primary_pool.getconn()
+                            return PgConnectionWrapper(raw_conn, primary_pool)
+                        except Exception:
+                            pass
                     logger.error("PostgreSQL connection pool exhausted after 25 retries (500ms). Falling back to SQLite.")
             except Exception as e:
+                # If replica had an error, failover smoothly to primary
+                if target_pool is pg_read_pool and primary_pool is not None:
+                    try:
+                        raw_conn = primary_pool.getconn()
+                        return PgConnectionWrapper(raw_conn, primary_pool)
+                    except Exception:
+                        pass
                 logger.error(f"PostgreSQL connection checkout error: {e}. Falling back to SQLite.")
                 break
 
