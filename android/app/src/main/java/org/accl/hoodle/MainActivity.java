@@ -76,7 +76,7 @@ public class MainActivity extends AppCompatActivity {
     public static final String KEY_IS_IIT_BHILAI = "is_iit_bhilai";
 
     public static final String URL_LAN = "https://10.10.14.104/lms/";
-    public static final String URL_INTERNET = "https://hoodle.in/lms/";
+    public static final String URL_INTERNET = "https://hoodle.in/";
     public static final String URL_HTTP = "http://10.10.14.104/lms/";
     public static final String URL_DIRECT = "http://10.10.14.104:8095/lms/";
     private static final String CHANNEL_ID = "hoodle_notifications_channel";
@@ -193,10 +193,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void updateNetworkSwitchersVisibility() {
+        if (offlineLayout != null && offlineLayout.getVisibility() == View.VISIBLE) {
+            showOfflineView();
+            return;
+        }
         boolean isIit = isIitBhilaiUser();
-        if (btnSwitchLan != null) btnSwitchLan.setVisibility(isIit ? View.VISIBLE : View.GONE);
+        String currentServer = getSavedServerUrl();
+        boolean isLan = currentServer != null && currentServer.contains("10.10.14.104");
+
+        if (btnSwitchLan != null) btnSwitchLan.setVisibility(isIit && !isLan ? View.VISIBLE : View.GONE);
         if (btnCustomServer != null) btnCustomServer.setVisibility(isIit ? View.VISIBLE : View.GONE);
-        if (btnSwitchInternet != null) btnSwitchInternet.setVisibility(isIit ? View.VISIBLE : View.GONE);
+        if (btnSwitchInternet != null) btnSwitchInternet.setVisibility(isIit && isLan ? View.VISIBLE : View.GONE);
     }
 
     public void switchToInternet() {
@@ -275,8 +282,12 @@ public class MainActivity extends AppCompatActivity {
         }
         String url = prefs.getString(KEY_SERVER_URL, URL_INTERNET);
         // Normalize obsolete/broken links
-        if (url != null && (url.contains(":8095") || url.startsWith("http://10.10.14.104/lms/") || url.contains("ts.net"))) {
-            url = URL_INTERNET;
+        if (url != null && (url.contains(":8095") || url.startsWith("http://10.10.14.104/lms/") || url.contains("ts.net") || url.contains("hoodle.in"))) {
+            if (url.contains("hoodle.in")) {
+                url = URL_INTERNET;
+            } else {
+                url = URL_INTERNET;
+            }
             prefs.edit().putString(KEY_SERVER_URL, url).apply();
         }
         return url;
@@ -478,8 +489,31 @@ public class MainActivity extends AppCompatActivity {
         webView.setVisibility(View.GONE);
         offlineLayout.setVisibility(View.VISIBLE);
         progressBar.setVisibility(View.GONE);
+        String currentServer = getSavedServerUrl();
         if (tvCurrentServer != null) {
-            tvCurrentServer.setText("Server: " + getSavedServerUrl());
+            tvCurrentServer.setText("Server: " + currentServer);
+        }
+
+        boolean isLan = currentServer != null && currentServer.contains("10.10.14.104");
+        boolean isIit = isIitBhilaiUser();
+
+        TextView tvDesc = findViewById(R.id.tvOfflineDesc);
+        if (tvDesc != null) {
+            if (isLan) {
+                tvDesc.setText(R.string.offline_desc);
+            } else {
+                tvDesc.setText("Unable to reach Hoodle Cloud server. Please check your internet connection and tap retry.");
+            }
+        }
+
+        if (btnSwitchInternet != null) {
+            btnSwitchInternet.setVisibility(isIit && isLan ? View.VISIBLE : View.GONE);
+        }
+        if (btnSwitchLan != null) {
+            btnSwitchLan.setVisibility(isIit && !isLan ? View.VISIBLE : View.GONE);
+        }
+        if (btnCustomServer != null) {
+            btnCustomServer.setVisibility(isIit ? View.VISIBLE : View.GONE);
         }
     }
 

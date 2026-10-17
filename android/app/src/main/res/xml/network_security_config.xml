@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">hoodle.in</domain>
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
+            <certificates src="user" />
         </trust-anchors>
-    </domain-config>
+    </base-config>
     <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">hoodle.in</domain>
         <domain includeSubdomains="true">10.10.14.104</domain>
         <domain includeSubdomains="true">100.87.0.15</domain>
         <domain includeSubdomains="true">ts.net</domain>
